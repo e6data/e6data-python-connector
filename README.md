@@ -8,7 +8,7 @@ The e6data Connector for Python provides an interface for writing Python applica
 
 To install the Python package, use the command below:
 ```shell
-pip install e6xdb
+pip install e6data-python-connector
 ```
 ### Prerequisites
 
