@@ -3,7 +3,6 @@ certifi==2022.5.18.1
 charset-normalizer==2.0.12
 commonmark==0.9.1
 docutils==0.18.1
-e6xdb==0.0.27
 future==0.18.2
 greenlet==1.1.2
 idna==3.3
