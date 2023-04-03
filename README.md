@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.0.1-blue.svg)
+![version](https://img.shields.io/badge/version-1.0.2-blue.svg)
 
 ## Introduction
 
