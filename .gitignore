@@ -1,0 +1,12 @@
+build/
+dist/
+*.egg-info
+*.swp
+*.pyc
+__pycache__
+.idea/
+.pylintrc
+MANIFEST.in
+venv/
+.DS_Store
+gen-py/
