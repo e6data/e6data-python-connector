@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.0.2-blue.svg)
+![version](https://img.shields.io/badge/version-1.0.3-blue.svg)
 
 ## Introduction
 
@@ -14,22 +14,21 @@ pip install e6data-python-connector
 
 * Open Inbound Port 9000 in the Engine Cluster.
 * Limit access to Port 9000 according to your organizational security policy. Public access is not encouraged.
-* Generated Access Token in the e6data console.
+* Access Token generated in the e6data console.
 
-### Creating connection
+### Create a Connection
 
-Use your e6data email id as a username and access token as a password.
+Use your e6data Email ID as the username and your access token as the password.
 
 ```python
 import e6xdb.e6x as edb
 
-username = '<username>'  # Your e6data email id.
-password = '<password>'  # Generated Access Token from e6data console.
+username = '<username>'  # Your e6data Email ID.
+password = '<password>'  # Access Token generated in the e6data console.
 
-host = '<host>'  # Host name or IP address of you cluster.
-database = '<database>'  # Database name where you want to perform query.
-
-port = 9000  # Engine port.
+host = '<host>'  # IP address or hostname of the cluster to be used.
+database = '<database>'  # # Database to perform the query on.
+port = 9000  # Port of the e6data engine.
 
 conn = edb.connect(
     host=host,
@@ -40,50 +39,49 @@ conn = edb.connect(
 )
 ```
 
-### Performing query
-Performing query
+### Perform a Queries & Get Results
 
 ```python
 
-query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the actual query.
+query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the query.
 
 cursor = conn.cursor()
-query_id = cursor.execute(query)  # execute function returns query id, can be use for aborting the query.
+query_id = cursor.execute(query)  # The execute function returns a unique query ID, which can be use to abort the query.
 all_records = cursor.fetchall()
 for row in all_records:
    print(row)
 ```
 
-To fetch all the records.
+To fetch all the records:
 ```python
 records = cursor.fetchall()
 ```
 
-To fetch one record.
+To fetch one record:
 ```python
 record = cursor.fetchone()
 ```
 
-To fetch limited records.
+To fetch limited records:
 ```python
 limit = 500
 records = cursor.fetchmany(limit)
 ```
 
-To get execution plan after query execution.
+To get the execution plan after query execution:
 ```python
 import json
 
 query_planner = json.loads(cursor.explain_analyse())
 ```
 
-To abort running query.
+To abort a running query:
 ```python
 query_id = '<query_id>'  # query id from execute function response.
 cursor.cancel(query_id)
 ```
 
-Switch database in existing connection.
+Switch database in an existing connection:
 ```python
 database = '<new_database_name>'  # Replace with the new database.
 cursor = conn.cursor(database)
@@ -106,7 +104,7 @@ parsing_time = query_planner.get("parsingTime")  # In milliseconds
 row_count = query_planner.get('row_count_out')
 ```
 
-### Get list of databases, tables or columns
+### Get Schema - a list of Databases, Tables or Columns
 The following code returns a dictionary of all databases, all tables and all columns connected to the cluster currently in use.
 This function can be used without passing database name to get list of all databases.
 
@@ -140,18 +138,17 @@ conn.close()
 ```
 
 ### Code Example
-The following code is an example.
+The following code is an example which combines a few functions described above.
 ```python
 import e6xdb.e6x as edb
 import json
 
-username = '<username>'  # Your e6data email id.
-password = '<password>'  # Generated Access Token from e6data console.
+username = '<username>'  # Your e6data Email ID.
+password = '<password>'  # Access Token generated in the e6data console.
 
-host = '<host>'  # Host name or IP address of you cluster.
-database = '<database>'  # Database name where you want to perform query.
-
-port = 9000  # Engine port.
+host = '<host>'  # IP address or hostname of the cluster to be used.
+database = '<database>'  # # Database to perform the query on.
+port = 9000  # Port of the e6data engine.
 
 sql_query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the actual query.
 
@@ -169,7 +166,7 @@ all_records = cursor.fetchall()
 planner_result = json.loads(cursor.explain_analyse())
 execution_time = planner_result.get("total_query_time") / 1000  # Converting into seconds.
 row_count = planner_result.get('row_count_out')
-columns = [col[0] for col in cursor.description]  # Get the column names and merge with the records.
+columns = [col[0] for col in cursor.description]  # Get the column names and merge them with the results.
 results = []
 for row in all_records:
    row = dict(zip(columns, row))

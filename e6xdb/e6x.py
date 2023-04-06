@@ -101,7 +101,7 @@ class Connection(object):
             self,
             host=None,
             port=None,
-            scheme='e6xdb',
+            scheme='e6data',
             username=None,
             database='default',
             auth=None,
@@ -120,8 +120,8 @@ class Connection(object):
         # service_name = 'E6x'  # E6x  QueryExecutor
         service_name = 'QueryEngine'  # E6x  QueryExecutor
 
-        if scheme != "e6xdb":
-            raise ValueError("scheme is not e6xdb")
+        if scheme != "e6data":
+            raise ValueError("scheme is not e6data")
 
         if not self.__username or not self.__password:
             raise ValueError("username or password cannot be empty.")
