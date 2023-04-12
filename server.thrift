@@ -24,6 +24,13 @@ struct UserAccessInfo
 }
 
 
+struct Status
+{
+    1: bool status
+    2: i64 rowCount
+}
+
+
 service QueryEngineService
 {
    void clear(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
@@ -57,4 +64,7 @@ service QueryEngineService
    void updateUsers(1: binary userInfo) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
    void setProps(1: string sessionId, 2: string propMap) throws (1: AccessDeniedException error2),
+
+   Status status(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
 }

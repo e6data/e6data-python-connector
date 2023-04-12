@@ -315,6 +315,10 @@ class Cursor(DBAPICursor):
         _logger.info("Cancelling query")
         self.connection.query_cancel(query_id)
 
+    def status(self, query_id):
+        client = self.connection.client
+        return client.status(self.connection.get_session_id, query_id)
+
     def execute(self, operation, parameters=None, **kwargs):
         """Prepare and execute a database operation (query or command).
         Return values are not defined.
