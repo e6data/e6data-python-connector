@@ -3,6 +3,7 @@ namespace java io.e6x.engine.thrift
 exception QueryProcessingException
 {
     1: string reason,
+    2: string queryId,
 }
 
 exception AccessDeniedException
