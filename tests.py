@@ -3,7 +3,7 @@ import os
 import time
 from unittest import TestCase
 import e6xdb.e6x as edb
-
+import json
 import logging
 
 logging.getLogger(__name__)
@@ -19,16 +19,9 @@ class TestE6X(TestCase):
         self.e6x_connection = edb.connect(
             host=self._host,
             port=9000,
-            scheme='e6xdb',
             username='vishal@e6x.io',
             database=self._database,
-            auth=None,
-            configuration=None,
-            kerberos_service_name=None,
             password='75cei^%$TREdgfhU&T^RTYDrchfgvjy65dhcgf',
-            check_hostname=None,
-            ssl_cert=None,
-            thrift_transport=None
         )
         logging.debug('Successfully to connect to engine.')
 
@@ -97,13 +90,13 @@ class TestE6X(TestCase):
     def test_query_5_caches(self):
         sql = "select * from date_dim limit 3"
         logging.debug('Executing query: {}'.format(sql))
-        self.e6x_connection.set_or_update_caches(True)
+        self.e6x_connection.set_prop_map(json.dumps(dict(USE_QUERY_RESULT_CACHE=True)))
         cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
         self.assertIsNotNone(query_id)
         records = cursor.fetchall()
-        self.e6x_connection.set_or_update_caches(False)
+        self.e6x_connection.set_prop_map(json.dumps(dict(USE_QUERY_RESULT_CACHE=False)))
         now = time.time()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
