@@ -229,9 +229,9 @@ class Connection(object):
         """We do not support transactions, so this does nothing."""
         pass
 
-    def cursor(self, db_name=None):
+    def cursor(self, db_name=None, catalog_name=None):
         """Return a new :py:class:`Cursor` object using the connection."""
-        return Cursor(self, database=db_name)
+        return Cursor(self, database=db_name, catalog_name=catalog_name)
 
     def rollback(self):
         raise Exception("e6xdb does not support transactions")  # pragma: no cover
