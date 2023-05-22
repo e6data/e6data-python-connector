@@ -28,18 +28,24 @@ if len(sys.argv) <= 1 or sys.argv[1] == '--help':
     print('  void cancelQuery(string sessionId, string queryId)')
     print('  string explain(string sessionId, string queryId)')
     print('  string dryRun(string sessionId, string sSchema, string sQueryString)')
+    print('  string dryRunV2(string sessionId, string catalogName, string sSchema, string sQueryString)')
     print('  string explainAnalyze(string sessionId, string queryId)')
     print('  string prepareStatement(string sessionId, string sSchemaName, string query)')
+    print('  string prepareStatementV2(string sessionId, string catalogName, string sSchemaName, string query)')
     print('  void executeStatement(string sessionId, string queryId)')
     print('  string getNextResultRow(string sessionId, string queryId)')
     print('  string getNextResultBatch(string sessionId, string queryId)')
     print('  string getResultMetadata(string sessionId, string queryId)')
     print('  string authenticate(string user, string password)')
     print('   getTables(string sessionId, string schema)')
+    print('   getTablesV2(string sessionId, string catalogName, string schema)')
     print('   getSchemaNames(string sessionId)')
-    print('   getColumns(string sessionId, string schema, string table)')
+    print('   getSchemaNamesV2(string sessionId, string catalogName)')
+    print('   getColumns(string sessionId, string catalogName, string schema, string table)')
+    print('   getColumnsV2(string sessionId, string catalogName, string schema, string table)')
     print('  void updateUsers(string userInfo)')
     print('  void setProps(string sessionId, string propMap)')
+    print('  void addCatalogs(string sessionId, string jsonString)')
     print('')
     sys.exit(0)
 
@@ -143,6 +149,12 @@ elif cmd == 'dryRun':
         sys.exit(1)
     pp.pprint(client.dryRun(args[0], args[1], args[2],))
 
+elif cmd == 'dryRunV2':
+    if len(args) != 4:
+        print('dryRunV2 requires 4 args')
+        sys.exit(1)
+    pp.pprint(client.dryRunV2(args[0], args[1], args[2], args[3],))
+
 elif cmd == 'explainAnalyze':
     if len(args) != 2:
         print('explainAnalyze requires 2 args')
@@ -154,6 +166,12 @@ elif cmd == 'prepareStatement':
         print('prepareStatement requires 3 args')
         sys.exit(1)
     pp.pprint(client.prepareStatement(args[0], args[1], args[2],))
+
+elif cmd == 'prepareStatementV2':
+    if len(args) != 4:
+        print('prepareStatementV2 requires 4 args')
+        sys.exit(1)
+    pp.pprint(client.prepareStatementV2(args[0], args[1], args[2], args[3],))
 
 elif cmd == 'executeStatement':
     if len(args) != 2:
@@ -191,17 +209,35 @@ elif cmd == 'getTables':
         sys.exit(1)
     pp.pprint(client.getTables(args[0], args[1],))
 
+elif cmd == 'getTablesV2':
+    if len(args) != 3:
+        print('getTablesV2 requires 3 args')
+        sys.exit(1)
+    pp.pprint(client.getTablesV2(args[0], args[1], args[2],))
+
 elif cmd == 'getSchemaNames':
     if len(args) != 1:
         print('getSchemaNames requires 1 args')
         sys.exit(1)
     pp.pprint(client.getSchemaNames(args[0],))
 
-elif cmd == 'getColumns':
-    if len(args) != 3:
-        print('getColumns requires 3 args')
+elif cmd == 'getSchemaNamesV2':
+    if len(args) != 2:
+        print('getSchemaNamesV2 requires 2 args')
         sys.exit(1)
-    pp.pprint(client.getColumns(args[0], args[1], args[2],))
+    pp.pprint(client.getSchemaNamesV2(args[0], args[1],))
+
+elif cmd == 'getColumns':
+    if len(args) != 4:
+        print('getColumns requires 4 args')
+        sys.exit(1)
+    pp.pprint(client.getColumns(args[0], args[1], args[2], args[3],))
+
+elif cmd == 'getColumnsV2':
+    if len(args) != 4:
+        print('getColumnsV2 requires 4 args')
+        sys.exit(1)
+    pp.pprint(client.getColumnsV2(args[0], args[1], args[2], args[3],))
 
 elif cmd == 'updateUsers':
     if len(args) != 1:
@@ -214,6 +250,12 @@ elif cmd == 'setProps':
         print('setProps requires 2 args')
         sys.exit(1)
     pp.pprint(client.setProps(args[0], args[1],))
+
+elif cmd == 'addCatalogs':
+    if len(args) != 2:
+        print('addCatalogs requires 2 args')
+        sys.exit(1)
+    pp.pprint(client.addCatalogs(args[0], args[1],))
 
 else:
     print('Unrecognized method %s' % cmd)

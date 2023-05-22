@@ -35,9 +35,13 @@ service QueryEngineService
 
    string dryRun(1: string sessionId, 2: string sSchema, 3: string sQueryString) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2), // Executor, Engine
 
+   string dryRunV2(1: string sessionId, 2: string catalogName, 3: string sSchema, 4: string sQueryString) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2), // Executor, Engine
+
    string explainAnalyze(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2), // Executor, Engine
 
    string prepareStatement(1: string sessionId, 2: string sSchemaName, 3: string query) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
+   string prepareStatementV2(1: string sessionId,  2: string catalogName, 3: string sSchemaName, 4: string query) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
    void executeStatement(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
@@ -51,11 +55,20 @@ service QueryEngineService
 
    list<string> getTables(1: string sessionId, 2: string schema) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
+   list<string> getTablesV2(1: string sessionId, 2: string catalogName, 3:string schema) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
    list<string> getSchemaNames(1: string sessionId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
-   list<TFieldInfo> getColumns(1: string sessionId, 2: string schema, 3: string table) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+   list<string> getSchemaNamesV2(1: string sessionId,2: string catalogName) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
+   list<TFieldInfo> getColumns(1: string sessionId,2: string catalogName, 3: string schema, 4: string table) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
+   list<TFieldInfo> getColumnsV2(1: string sessionId,2: string catalogName, 3: string schema, 4: string table) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
    void updateUsers(1: binary userInfo) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
    void setProps(1: string sessionId, 2: string propMap) throws (1: AccessDeniedException error2),
+
+   void addCatalogs(1: string sessionId, 2: string jsonString) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
 }
