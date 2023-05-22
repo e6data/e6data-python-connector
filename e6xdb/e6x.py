@@ -189,14 +189,41 @@ class Connection(object):
     def dry_run(self, query):
         return self._client.dryRun(sessionId=self.get_session_id, sSchema=self._database, sQueryString=query)
 
+    def dry_run_v2(self, catalog_name, query):
+        return self._client.dryRunV2(
+            sessionId=self.get_session_id,
+            catalogName=catalog_name,
+            sSchema=self._database,
+            sQueryString=query
+        )
+
     def get_tables(self, database):
         return self._client.getTables(sessionId=self.get_session_id, schema=database)
 
+    def get_tables_v2(self, catalog_name, database):
+        return self._client.getTablesV2(sessionId=self.get_session_id, catalogName=catalog_name, schema=database)
+
     def get_columns(self, database, table):
-        return self._client.getColumns(sessionId=self.get_session_id, schema=database, table=table)
+        catalog_name = ''
+        return self._client.getColumns(sessionId=self.get_session_id, catalogName=catalog_name, schema=database,
+                                       table=table)
+
+    def get_columns_v2(self, catalog_name, database, table):
+        return self._client.getColumnsV2(
+            sessionId=self.get_session_id,
+            catalogName=catalog_name,
+            schema=database,
+            table=table
+        )
 
     def get_schema_names(self):
         return self._client.getSchemaNames(sessionId=self.get_session_id)
+
+    def get_schema_names_v2(self, catalog_name):
+        return self._client.getSchemaNamesV2(sessionId=self.get_session_id, catalogName=catalog_name)
+
+    def add_catalogs(self, catalogs_info):
+        return self._client.addCatalogs(sessionId=self.get_session_id, jsonString=catalogs_info)
 
     def commit(self):
         """We do not support transactions, so this does nothing."""
@@ -222,8 +249,9 @@ class Cursor(DBAPICursor):
     """
     rows_count = 0
 
-    def __init__(self, connection, arraysize=1000, database=None):
+    def __init__(self, connection, catalog_name=None, arraysize=1000, database=None):
         super(Cursor, self).__init__()
+        self._catalog_name = catalog_name
         self._arraysize = arraysize
         self.connection = connection
         self._data = None
@@ -332,11 +360,19 @@ class Cursor(DBAPICursor):
             sql = operation % _escaper.escape_args(parameters)
 
         client = self.connection.client
-        self._query_id = client.prepareStatement(
-            self.connection.get_session_id,
-            self._database,
-            sql
-        )
+        if self._catalog_name:
+            self._query_id = client.prepareStatementV2(
+                self.connection.get_session_id,
+                self._catalog_name,
+                self._database,
+                sql
+            )
+        else:
+            self._query_id = client.prepareStatement(
+                self.connection.get_session_id,
+                self._database,
+                sql
+            )
         client.executeStatement(self.connection.get_session_id, self._query_id)
         self.update_mete_data()
         return self._query_id
