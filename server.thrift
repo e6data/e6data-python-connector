@@ -24,6 +24,24 @@ struct UserAccessInfo
     3: list<string> tokens,
 }
 
+struct Status
+{
+    1: bool status
+    2: i64 rowCount
+}
+
+struct FailedSchemaElement
+{
+    1: string name
+    2: string type
+    3: string reason
+}
+
+struct AddCatalogsResponse
+{
+    1: string status
+    2: list<FailedSchemaElement> failures
+}
 
 service QueryEngineService
 {
@@ -61,7 +79,7 @@ service QueryEngineService
 
    list<string> getSchemaNamesV2(1: string sessionId,2: string catalogName) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
-   list<TFieldInfo> getColumns(1: string sessionId,2: string catalogName, 3: string schema, 4: string table) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+   list<TFieldInfo> getColumns(1: string sessionId, 2: string schema, 3: string table) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
    list<TFieldInfo> getColumnsV2(1: string sessionId,2: string catalogName, 3: string schema, 4: string table) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
@@ -69,6 +87,10 @@ service QueryEngineService
 
    void setProps(1: string sessionId, 2: string propMap) throws (1: AccessDeniedException error2),
 
+   Status status(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
    void addCatalogs(1: string sessionId, 2: string jsonString) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
+
+   AddCatalogsResponse getAddCatalogsResponse(1: string sessionId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2)
 
 }

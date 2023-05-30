@@ -178,11 +178,10 @@ class Iface(object):
         """
         pass
 
-    def getColumns(self, sessionId, catalogName, schema, table):
+    def getColumns(self, sessionId, schema, table):
         """
         Parameters:
          - sessionId
-         - catalogName
          - schema
          - table
 
@@ -217,11 +216,28 @@ class Iface(object):
         """
         pass
 
+    def status(self, sessionId, queryId):
+        """
+        Parameters:
+         - sessionId
+         - queryId
+
+        """
+        pass
+
     def addCatalogs(self, sessionId, jsonString):
         """
         Parameters:
          - sessionId
          - jsonString
+
+        """
+        pass
+
+    def getAddCatalogsResponse(self, sessionId):
+        """
+        Parameters:
+         - sessionId
 
         """
         pass
@@ -884,23 +900,21 @@ class Client(Iface):
             raise result.error2
         raise TApplicationException(TApplicationException.MISSING_RESULT, "getSchemaNamesV2 failed: unknown result")
 
-    def getColumns(self, sessionId, catalogName, schema, table):
+    def getColumns(self, sessionId, schema, table):
         """
         Parameters:
          - sessionId
-         - catalogName
          - schema
          - table
 
         """
-        self.send_getColumns(sessionId, catalogName, schema, table)
+        self.send_getColumns(sessionId, schema, table)
         return self.recv_getColumns()
 
-    def send_getColumns(self, sessionId, catalogName, schema, table):
+    def send_getColumns(self, sessionId, schema, table):
         self._oprot.writeMessageBegin('getColumns', TMessageType.CALL, self._seqid)
         args = getColumns_args()
         args.sessionId = sessionId
-        args.catalogName = catalogName
         args.schema = schema
         args.table = table
         args.write(self._oprot)
@@ -1036,6 +1050,44 @@ class Client(Iface):
             raise result.error2
         return
 
+    def status(self, sessionId, queryId):
+        """
+        Parameters:
+         - sessionId
+         - queryId
+
+        """
+        self.send_status(sessionId, queryId)
+        return self.recv_status()
+
+    def send_status(self, sessionId, queryId):
+        self._oprot.writeMessageBegin('status', TMessageType.CALL, self._seqid)
+        args = status_args()
+        args.sessionId = sessionId
+        args.queryId = queryId
+        args.write(self._oprot)
+        self._oprot.writeMessageEnd()
+        self._oprot.trans.flush()
+
+    def recv_status(self):
+        iprot = self._iprot
+        (fname, mtype, rseqid) = iprot.readMessageBegin()
+        if mtype == TMessageType.EXCEPTION:
+            x = TApplicationException()
+            x.read(iprot)
+            iprot.readMessageEnd()
+            raise x
+        result = status_result()
+        result.read(iprot)
+        iprot.readMessageEnd()
+        if result.success is not None:
+            return result.success
+        if result.error1 is not None:
+            raise result.error1
+        if result.error2 is not None:
+            raise result.error2
+        raise TApplicationException(TApplicationException.MISSING_RESULT, "status failed: unknown result")
+
     def addCatalogs(self, sessionId, jsonString):
         """
         Parameters:
@@ -1072,6 +1124,42 @@ class Client(Iface):
             raise result.error2
         return
 
+    def getAddCatalogsResponse(self, sessionId):
+        """
+        Parameters:
+         - sessionId
+
+        """
+        self.send_getAddCatalogsResponse(sessionId)
+        return self.recv_getAddCatalogsResponse()
+
+    def send_getAddCatalogsResponse(self, sessionId):
+        self._oprot.writeMessageBegin('getAddCatalogsResponse', TMessageType.CALL, self._seqid)
+        args = getAddCatalogsResponse_args()
+        args.sessionId = sessionId
+        args.write(self._oprot)
+        self._oprot.writeMessageEnd()
+        self._oprot.trans.flush()
+
+    def recv_getAddCatalogsResponse(self):
+        iprot = self._iprot
+        (fname, mtype, rseqid) = iprot.readMessageBegin()
+        if mtype == TMessageType.EXCEPTION:
+            x = TApplicationException()
+            x.read(iprot)
+            iprot.readMessageEnd()
+            raise x
+        result = getAddCatalogsResponse_result()
+        result.read(iprot)
+        iprot.readMessageEnd()
+        if result.success is not None:
+            return result.success
+        if result.error1 is not None:
+            raise result.error1
+        if result.error2 is not None:
+            raise result.error2
+        raise TApplicationException(TApplicationException.MISSING_RESULT, "getAddCatalogsResponse failed: unknown result")
+
 
 class Processor(Iface, TProcessor):
     def __init__(self, handler):
@@ -1098,7 +1186,9 @@ class Processor(Iface, TProcessor):
         self._processMap["getColumnsV2"] = Processor.process_getColumnsV2
         self._processMap["updateUsers"] = Processor.process_updateUsers
         self._processMap["setProps"] = Processor.process_setProps
+        self._processMap["status"] = Processor.process_status
         self._processMap["addCatalogs"] = Processor.process_addCatalogs
+        self._processMap["getAddCatalogsResponse"] = Processor.process_getAddCatalogsResponse
         self._on_message_begin = None
 
     def on_message_begin(self, func):
@@ -1617,7 +1707,7 @@ class Processor(Iface, TProcessor):
         iprot.readMessageEnd()
         result = getColumns_result()
         try:
-            result.success = self._handler.getColumns(args.sessionId, args.catalogName, args.schema, args.table)
+            result.success = self._handler.getColumns(args.sessionId, args.schema, args.table)
             msg_type = TMessageType.REPLY
         except TTransport.TTransportException:
             raise
@@ -1724,6 +1814,35 @@ class Processor(Iface, TProcessor):
         oprot.writeMessageEnd()
         oprot.trans.flush()
 
+    def process_status(self, seqid, iprot, oprot):
+        args = status_args()
+        args.read(iprot)
+        iprot.readMessageEnd()
+        result = status_result()
+        try:
+            result.success = self._handler.status(args.sessionId, args.queryId)
+            msg_type = TMessageType.REPLY
+        except TTransport.TTransportException:
+            raise
+        except QueryProcessingException as error1:
+            msg_type = TMessageType.REPLY
+            result.error1 = error1
+        except AccessDeniedException as error2:
+            msg_type = TMessageType.REPLY
+            result.error2 = error2
+        except TApplicationException as ex:
+            logging.exception('TApplication exception in handler')
+            msg_type = TMessageType.EXCEPTION
+            result = ex
+        except Exception:
+            logging.exception('Unexpected exception in handler')
+            msg_type = TMessageType.EXCEPTION
+            result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
+        oprot.writeMessageBegin("status", msg_type, seqid)
+        result.write(oprot)
+        oprot.writeMessageEnd()
+        oprot.trans.flush()
+
     def process_addCatalogs(self, seqid, iprot, oprot):
         args = addCatalogs_args()
         args.read(iprot)
@@ -1749,6 +1868,35 @@ class Processor(Iface, TProcessor):
             msg_type = TMessageType.EXCEPTION
             result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
         oprot.writeMessageBegin("addCatalogs", msg_type, seqid)
+        result.write(oprot)
+        oprot.writeMessageEnd()
+        oprot.trans.flush()
+
+    def process_getAddCatalogsResponse(self, seqid, iprot, oprot):
+        args = getAddCatalogsResponse_args()
+        args.read(iprot)
+        iprot.readMessageEnd()
+        result = getAddCatalogsResponse_result()
+        try:
+            result.success = self._handler.getAddCatalogsResponse(args.sessionId)
+            msg_type = TMessageType.REPLY
+        except TTransport.TTransportException:
+            raise
+        except QueryProcessingException as error1:
+            msg_type = TMessageType.REPLY
+            result.error1 = error1
+        except AccessDeniedException as error2:
+            msg_type = TMessageType.REPLY
+            result.error2 = error2
+        except TApplicationException as ex:
+            logging.exception('TApplication exception in handler')
+            msg_type = TMessageType.EXCEPTION
+            result = ex
+        except Exception:
+            logging.exception('Unexpected exception in handler')
+            msg_type = TMessageType.EXCEPTION
+            result = TApplicationException(TApplicationException.INTERNAL_ERROR, 'Internal error')
+        oprot.writeMessageBegin("getAddCatalogsResponse", msg_type, seqid)
         result.write(oprot)
         oprot.writeMessageEnd()
         oprot.trans.flush()
@@ -3951,10 +4099,10 @@ class getTables_result(object):
             if fid == 0:
                 if ftype == TType.LIST:
                     self.success = []
-                    (_etype10, _size7) = iprot.readListBegin()
-                    for _i11 in range(_size7):
-                        _elem12 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
-                        self.success.append(_elem12)
+                    (_etype17, _size14) = iprot.readListBegin()
+                    for _i18 in range(_size14):
+                        _elem19 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                        self.success.append(_elem19)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -3981,8 +4129,8 @@ class getTables_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.LIST, 0)
             oprot.writeListBegin(TType.STRING, len(self.success))
-            for iter13 in self.success:
-                oprot.writeString(iter13.encode('utf-8') if sys.version_info[0] == 2 else iter13)
+            for iter20 in self.success:
+                oprot.writeString(iter20.encode('utf-8') if sys.version_info[0] == 2 else iter20)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         if self.error1 is not None:
@@ -4130,10 +4278,10 @@ class getTablesV2_result(object):
             if fid == 0:
                 if ftype == TType.LIST:
                     self.success = []
-                    (_etype17, _size14) = iprot.readListBegin()
-                    for _i18 in range(_size14):
-                        _elem19 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
-                        self.success.append(_elem19)
+                    (_etype24, _size21) = iprot.readListBegin()
+                    for _i25 in range(_size21):
+                        _elem26 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                        self.success.append(_elem26)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -4160,8 +4308,8 @@ class getTablesV2_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.LIST, 0)
             oprot.writeListBegin(TType.STRING, len(self.success))
-            for iter20 in self.success:
-                oprot.writeString(iter20.encode('utf-8') if sys.version_info[0] == 2 else iter20)
+            for iter27 in self.success:
+                oprot.writeString(iter27.encode('utf-8') if sys.version_info[0] == 2 else iter27)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         if self.error1 is not None:
@@ -4285,10 +4433,10 @@ class getSchemaNames_result(object):
             if fid == 0:
                 if ftype == TType.LIST:
                     self.success = []
-                    (_etype24, _size21) = iprot.readListBegin()
-                    for _i25 in range(_size21):
-                        _elem26 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
-                        self.success.append(_elem26)
+                    (_etype31, _size28) = iprot.readListBegin()
+                    for _i32 in range(_size28):
+                        _elem33 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                        self.success.append(_elem33)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -4315,8 +4463,8 @@ class getSchemaNames_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.LIST, 0)
             oprot.writeListBegin(TType.STRING, len(self.success))
-            for iter27 in self.success:
-                oprot.writeString(iter27.encode('utf-8') if sys.version_info[0] == 2 else iter27)
+            for iter34 in self.success:
+                oprot.writeString(iter34.encode('utf-8') if sys.version_info[0] == 2 else iter34)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         if self.error1 is not None:
@@ -4452,10 +4600,10 @@ class getSchemaNamesV2_result(object):
             if fid == 0:
                 if ftype == TType.LIST:
                     self.success = []
-                    (_etype31, _size28) = iprot.readListBegin()
-                    for _i32 in range(_size28):
-                        _elem33 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
-                        self.success.append(_elem33)
+                    (_etype38, _size35) = iprot.readListBegin()
+                    for _i39 in range(_size35):
+                        _elem40 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                        self.success.append(_elem40)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -4482,8 +4630,8 @@ class getSchemaNamesV2_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.LIST, 0)
             oprot.writeListBegin(TType.STRING, len(self.success))
-            for iter34 in self.success:
-                oprot.writeString(iter34.encode('utf-8') if sys.version_info[0] == 2 else iter34)
+            for iter41 in self.success:
+                oprot.writeString(iter41.encode('utf-8') if sys.version_info[0] == 2 else iter41)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         if self.error1 is not None:
@@ -4522,16 +4670,14 @@ class getColumns_args(object):
     """
     Attributes:
      - sessionId
-     - catalogName
      - schema
      - table
 
     """
 
 
-    def __init__(self, sessionId=None, catalogName=None, schema=None, table=None,):
+    def __init__(self, sessionId=None, schema=None, table=None,):
         self.sessionId = sessionId
-        self.catalogName = catalogName
         self.schema = schema
         self.table = table
 
@@ -4551,15 +4697,10 @@ class getColumns_args(object):
                     iprot.skip(ftype)
             elif fid == 2:
                 if ftype == TType.STRING:
-                    self.catalogName = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
-                else:
-                    iprot.skip(ftype)
-            elif fid == 3:
-                if ftype == TType.STRING:
                     self.schema = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
                 else:
                     iprot.skip(ftype)
-            elif fid == 4:
+            elif fid == 3:
                 if ftype == TType.STRING:
                     self.table = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
                 else:
@@ -4578,16 +4719,12 @@ class getColumns_args(object):
             oprot.writeFieldBegin('sessionId', TType.STRING, 1)
             oprot.writeString(self.sessionId.encode('utf-8') if sys.version_info[0] == 2 else self.sessionId)
             oprot.writeFieldEnd()
-        if self.catalogName is not None:
-            oprot.writeFieldBegin('catalogName', TType.STRING, 2)
-            oprot.writeString(self.catalogName.encode('utf-8') if sys.version_info[0] == 2 else self.catalogName)
-            oprot.writeFieldEnd()
         if self.schema is not None:
-            oprot.writeFieldBegin('schema', TType.STRING, 3)
+            oprot.writeFieldBegin('schema', TType.STRING, 2)
             oprot.writeString(self.schema.encode('utf-8') if sys.version_info[0] == 2 else self.schema)
             oprot.writeFieldEnd()
         if self.table is not None:
-            oprot.writeFieldBegin('table', TType.STRING, 4)
+            oprot.writeFieldBegin('table', TType.STRING, 3)
             oprot.writeString(self.table.encode('utf-8') if sys.version_info[0] == 2 else self.table)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
@@ -4610,9 +4747,8 @@ all_structs.append(getColumns_args)
 getColumns_args.thrift_spec = (
     None,  # 0
     (1, TType.STRING, 'sessionId', 'UTF8', None, ),  # 1
-    (2, TType.STRING, 'catalogName', 'UTF8', None, ),  # 2
-    (3, TType.STRING, 'schema', 'UTF8', None, ),  # 3
-    (4, TType.STRING, 'table', 'UTF8', None, ),  # 4
+    (2, TType.STRING, 'schema', 'UTF8', None, ),  # 2
+    (3, TType.STRING, 'table', 'UTF8', None, ),  # 3
 )
 
 
@@ -4643,11 +4779,11 @@ class getColumns_result(object):
             if fid == 0:
                 if ftype == TType.LIST:
                     self.success = []
-                    (_etype38, _size35) = iprot.readListBegin()
-                    for _i39 in range(_size35):
-                        _elem40 = TFieldInfo()
-                        _elem40.read(iprot)
-                        self.success.append(_elem40)
+                    (_etype45, _size42) = iprot.readListBegin()
+                    for _i46 in range(_size42):
+                        _elem47 = TFieldInfo()
+                        _elem47.read(iprot)
+                        self.success.append(_elem47)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -4674,8 +4810,8 @@ class getColumns_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.LIST, 0)
             oprot.writeListBegin(TType.STRUCT, len(self.success))
-            for iter41 in self.success:
-                iter41.write(oprot)
+            for iter48 in self.success:
+                iter48.write(oprot)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         if self.error1 is not None:
@@ -4835,11 +4971,11 @@ class getColumnsV2_result(object):
             if fid == 0:
                 if ftype == TType.LIST:
                     self.success = []
-                    (_etype45, _size42) = iprot.readListBegin()
-                    for _i46 in range(_size42):
-                        _elem47 = TFieldInfo()
-                        _elem47.read(iprot)
-                        self.success.append(_elem47)
+                    (_etype52, _size49) = iprot.readListBegin()
+                    for _i53 in range(_size49):
+                        _elem54 = TFieldInfo()
+                        _elem54.read(iprot)
+                        self.success.append(_elem54)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -4866,8 +5002,8 @@ class getColumnsV2_result(object):
         if self.success is not None:
             oprot.writeFieldBegin('success', TType.LIST, 0)
             oprot.writeListBegin(TType.STRUCT, len(self.success))
-            for iter48 in self.success:
-                iter48.write(oprot)
+            for iter55 in self.success:
+                iter55.write(oprot)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         if self.error1 is not None:
@@ -5174,6 +5310,166 @@ setProps_result.thrift_spec = (
 )
 
 
+class status_args(object):
+    """
+    Attributes:
+     - sessionId
+     - queryId
+
+    """
+
+
+    def __init__(self, sessionId=None, queryId=None,):
+        self.sessionId = sessionId
+        self.queryId = queryId
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 1:
+                if ftype == TType.STRING:
+                    self.sessionId = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.STRING:
+                    self.queryId = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
+            return
+        oprot.writeStructBegin('status_args')
+        if self.sessionId is not None:
+            oprot.writeFieldBegin('sessionId', TType.STRING, 1)
+            oprot.writeString(self.sessionId.encode('utf-8') if sys.version_info[0] == 2 else self.sessionId)
+            oprot.writeFieldEnd()
+        if self.queryId is not None:
+            oprot.writeFieldBegin('queryId', TType.STRING, 2)
+            oprot.writeString(self.queryId.encode('utf-8') if sys.version_info[0] == 2 else self.queryId)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+all_structs.append(status_args)
+status_args.thrift_spec = (
+    None,  # 0
+    (1, TType.STRING, 'sessionId', 'UTF8', None, ),  # 1
+    (2, TType.STRING, 'queryId', 'UTF8', None, ),  # 2
+)
+
+
+class status_result(object):
+    """
+    Attributes:
+     - success
+     - error1
+     - error2
+
+    """
+
+
+    def __init__(self, success=None, error1=None, error2=None,):
+        self.success = success
+        self.error1 = error1
+        self.error2 = error2
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 0:
+                if ftype == TType.STRUCT:
+                    self.success = Status()
+                    self.success.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            elif fid == 1:
+                if ftype == TType.STRUCT:
+                    self.error1 = QueryProcessingException.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.STRUCT:
+                    self.error2 = AccessDeniedException.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
+            return
+        oprot.writeStructBegin('status_result')
+        if self.success is not None:
+            oprot.writeFieldBegin('success', TType.STRUCT, 0)
+            self.success.write(oprot)
+            oprot.writeFieldEnd()
+        if self.error1 is not None:
+            oprot.writeFieldBegin('error1', TType.STRUCT, 1)
+            self.error1.write(oprot)
+            oprot.writeFieldEnd()
+        if self.error2 is not None:
+            oprot.writeFieldBegin('error2', TType.STRUCT, 2)
+            self.error2.write(oprot)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+all_structs.append(status_result)
+status_result.thrift_spec = (
+    (0, TType.STRUCT, 'success', [Status, None], None, ),  # 0
+    (1, TType.STRUCT, 'error1', [QueryProcessingException, None], None, ),  # 1
+    (2, TType.STRUCT, 'error2', [AccessDeniedException, None], None, ),  # 2
+)
+
+
 class addCatalogs_args(object):
     """
     Attributes:
@@ -5317,6 +5613,154 @@ class addCatalogs_result(object):
 all_structs.append(addCatalogs_result)
 addCatalogs_result.thrift_spec = (
     None,  # 0
+    (1, TType.STRUCT, 'error1', [QueryProcessingException, None], None, ),  # 1
+    (2, TType.STRUCT, 'error2', [AccessDeniedException, None], None, ),  # 2
+)
+
+
+class getAddCatalogsResponse_args(object):
+    """
+    Attributes:
+     - sessionId
+
+    """
+
+
+    def __init__(self, sessionId=None,):
+        self.sessionId = sessionId
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 1:
+                if ftype == TType.STRING:
+                    self.sessionId = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
+            return
+        oprot.writeStructBegin('getAddCatalogsResponse_args')
+        if self.sessionId is not None:
+            oprot.writeFieldBegin('sessionId', TType.STRING, 1)
+            oprot.writeString(self.sessionId.encode('utf-8') if sys.version_info[0] == 2 else self.sessionId)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+all_structs.append(getAddCatalogsResponse_args)
+getAddCatalogsResponse_args.thrift_spec = (
+    None,  # 0
+    (1, TType.STRING, 'sessionId', 'UTF8', None, ),  # 1
+)
+
+
+class getAddCatalogsResponse_result(object):
+    """
+    Attributes:
+     - success
+     - error1
+     - error2
+
+    """
+
+
+    def __init__(self, success=None, error1=None, error2=None,):
+        self.success = success
+        self.error1 = error1
+        self.error2 = error2
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 0:
+                if ftype == TType.STRUCT:
+                    self.success = AddCatalogsResponse()
+                    self.success.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            elif fid == 1:
+                if ftype == TType.STRUCT:
+                    self.error1 = QueryProcessingException.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.STRUCT:
+                    self.error2 = AccessDeniedException.read(iprot)
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
+            return
+        oprot.writeStructBegin('getAddCatalogsResponse_result')
+        if self.success is not None:
+            oprot.writeFieldBegin('success', TType.STRUCT, 0)
+            self.success.write(oprot)
+            oprot.writeFieldEnd()
+        if self.error1 is not None:
+            oprot.writeFieldBegin('error1', TType.STRUCT, 1)
+            self.error1.write(oprot)
+            oprot.writeFieldEnd()
+        if self.error2 is not None:
+            oprot.writeFieldBegin('error2', TType.STRUCT, 2)
+            self.error2.write(oprot)
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
+all_structs.append(getAddCatalogsResponse_result)
+getAddCatalogsResponse_result.thrift_spec = (
+    (0, TType.STRUCT, 'success', [AddCatalogsResponse, None], None, ),  # 0
     (1, TType.STRUCT, 'error1', [QueryProcessingException, None], None, ),  # 1
     (2, TType.STRUCT, 'error2', [AccessDeniedException, None], None, ),  # 2
 )
