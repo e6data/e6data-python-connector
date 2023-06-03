@@ -365,6 +365,7 @@ class Cursor(DBAPICursor):
         """
         Semicolon is now not supported. So removing it from query end.
         """
+        operation = operation.strip()
         if operation.endswith(';'):
             operation = operation[:-1]
 
@@ -516,45 +517,3 @@ class Error(Exception):
 for type_id in PRIMITIVE_TYPES:
     name = TypeId._VALUES_TO_NAMES[type_id]
     setattr(sys.modules[__name__], name, DBAPITypeObject([name]))
-
-
-if __name__ == '__main__':
-    ip = '54.205.255.188'
-    conn = Connection(
-        host=ip,
-        username='admin',
-        password='admin',
-        port=9000
-    )
-    catalogs = {'catalogs': [{
-        "type": 'HIVE',
-        "name": 'hive',
-        "hive_ip": '18.233.112.169',
-        "hive_port": 9084,
-        "included_schemas": [],
-        "excluded_schemas": [],
-        "included_tables": [],
-        "excluded_tables": [],
-        "included_columns": [],
-        "excluded_columns": [],
-        "is_assumed_role": False,
-        "assumed_role_arn": '',
-        "default": True
-    }]}
-    import json
-    import time
-    start = time.time()
-    # print(conn.add_catalogs(json.dumps(catalogs)))
-    add_cat_time = time.time()
-    print('Add catalog time', add_cat_time - start)
-    status = 'in_progress'
-    res = conn.get_add_catalog_response()
-    print(res)
-    print(res.failures[0].reason)
-    # while status == 'in_progress':
-    #     res = conn.get_add_catalog_response()
-    #     status = res.status
-    #     print(res)
-    #     time.sleep(5)
-    print('get_add_catalog_response time', time.time() - add_cat_time)
-
