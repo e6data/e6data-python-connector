@@ -425,6 +425,13 @@ class Cursor(DBAPICursor):
         self._data = None
         return rows
 
+    def fetchall_buffer(self):
+        while True:
+            rows = self.fetch_batch()
+            if not rows:
+                return
+            yield rows
+
     def fetch_batch(self):
         # _logger.debug("fetching next batch from e6data")
         client = self.connection.client

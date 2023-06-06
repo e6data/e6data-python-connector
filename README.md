@@ -68,6 +68,13 @@ limit = 500
 records = cursor.fetchmany(limit)
 ```
 
+To fetch all the records in buffer to help in memory consumption:
+```python
+records_iterator = cursor.fetchall_buffer()  # Returns generator
+for item in records_iterator:
+    print(item)
+```
+
 To get the execution plan after query execution:
 ```python
 import json
