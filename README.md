@@ -68,7 +68,7 @@ limit = 500
 records = cursor.fetchmany(limit)
 ```
 
-To fetch all the records in buffer to help in memory consumption:
+To fetch all the records in buffer to reduce memory consumption:
 ```python
 records_iterator = cursor.fetchall_buffer()  # Returns generator
 for item in records_iterator:
