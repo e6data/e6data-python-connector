@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.0.8-blue.svg)
+![version](https://img.shields.io/badge/version-1.0.9-blue.svg)
 
 ## Introduction
 
@@ -66,6 +66,13 @@ To fetch limited records:
 ```python
 limit = 500
 records = cursor.fetchmany(limit)
+```
+
+To fetch all the records in buffer to reduce memory consumption:
+```python
+records_iterator = cursor.fetchall_buffer()  # Returns generator
+for item in records_iterator:
+    print(item)
 ```
 
 To get the execution plan after query execution:

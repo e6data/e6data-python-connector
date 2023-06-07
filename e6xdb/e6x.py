@@ -425,6 +425,15 @@ class Cursor(DBAPICursor):
         self._data = None
         return rows
 
+    def fetchall_buffer(self, query_id=None):
+        if query_id:
+            self._query_id = query_id
+        while True:
+            rows = self.fetch_batch()
+            if not rows:
+                return
+            yield rows
+
     def fetch_batch(self):
         # _logger.debug("fetching next batch from e6data")
         client = self.connection.client
@@ -439,11 +448,15 @@ class Cursor(DBAPICursor):
         # one batch retrieves the predefined set of rows
         return read_rows_from_batch(self._query_columns_description, dis)
 
-    def fetchall(self):
+    def fetchall(self, query_id=None):
+        if query_id:
+            self._query_id = query_id
         return self._fetch_all()
 
-    def fetchmany(self, size=None):
+    def fetchmany(self, size=None, query_id=None):
         # _logger.info("fetching all from overriden method")
+        if query_id:
+            self._query_id = query_id
         if size is None:
             size = self.arraysize
         if self._data is None:
