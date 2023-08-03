@@ -120,9 +120,6 @@ class Connection(object):
         # service_name = 'E6x'  # E6x  QueryExecutor
         service_name = 'QueryEngine'  # E6x  QueryExecutor
 
-        if scheme != "e6data":
-            raise ValueError("scheme is not e6data")
-
         if not self.__username or not self.__password:
             raise ValueError("username or password cannot be empty.")
         if port is None:
