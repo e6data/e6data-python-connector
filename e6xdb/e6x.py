@@ -15,7 +15,7 @@ from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
-from e6xdb.server import QueryEngineService
+from e6data_python_connector.server import QueryEngineService
 from thrift.protocol import TBinaryProtocol, TMultiplexedProtocol
 from thrift.transport import TSocket
 from thrift.transport import TTransport

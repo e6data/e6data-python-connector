@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import e6xdb.server.e6x_engine_pb2 as e6x__engine__pb2
+import e6data_python_connector.server.e6x_engine_pb2 as e6x__engine__pb2
 
 
 class QueryEngineServiceStub(object):

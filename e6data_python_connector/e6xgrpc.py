@@ -20,7 +20,7 @@ import grpc
 from e6xdb.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6xdb.constants import *
 from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array
-from e6xdb.server import e6x_engine_pb2_grpc, e6x_engine_pb2
+from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6xdb.typeId import *
 
 apilevel = '2.0'
@@ -225,7 +225,7 @@ class Connection(object):
         """We do not support transactions, so this does nothing."""
         pass
 
-    def cursor(self, db_name=None, catalog_name=None):
+    def cursor(self, catalog_name: str, db_name=None):
         """Return a new :py:class:`Cursor` object using the connection."""
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
@@ -245,9 +245,9 @@ class Cursor(DBAPICursor):
     """
     rows_count = 0
 
-    def __init__(self, connection: Connection, arraysize=1000, database=None, catalog_name=None):
+    def __init__(self, connection: Connection, array_size=1000, database=None, catalog_name=None):
         super(Cursor, self).__init__()
-        self._arraysize = arraysize
+        self._array_size = array_size
         self.connection = connection
         self._data = None
         self._query_columns_description = None
@@ -334,21 +334,14 @@ class Cursor(DBAPICursor):
         return self.connection.get_columns(database=schema, table=table)
 
     def clear(self):
-        """Clears the tmp data"""
-        # self.connection.clear(
-        #     query_id=self._query_id,
-        #     engine_ip=self._engine_ip
-        # )
         clear_request = e6x_engine_pb2.ClearRequest(
             sessionId=self.connection.get_session_id,
             queryId=self._query_id,
             engineIP=self._engine_ip
         )
-        response = self.connection.client.clear(clear_request)
-        print(response)
+        return self.connection.client.clear(clear_request)
 
     def cancel(self, query_id):
-        _logger.info("Cancelling query")
         self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
 
     def status(self, query_id):
@@ -567,31 +560,3 @@ class Error(Exception):
 for type_id in PRIMITIVE_TYPES:
     name = TypeId._VALUES_TO_NAMES[type_id]
     setattr(sys.modules[__name__], name, DBAPITypeObject([name]))
-
-if __name__ == '__main__':
-    query = 'select * from catalog_sales'
-    conn = Connection(
-        host='localhost',
-        port=4000,
-        username='shubham@e6x.io',
-        password='w3aSShTYPGt12Z8QuCXcxuAggKB4INyEzDwg1WFj0THDgJRMuwryt5dt',
-        database='tpcds_1000'
-    )
-    cursor = conn.cursor(
-        catalog_name='perfhive',
-        db_name='tpcds_1000'
-    )
-    qid = cursor.execute(query)
-    print(qid, qid)
-    # print(cursor.cancel(qid))
-    for i in cursor.fetchall_buffer():
-        print(sys.getsizeof(i))
-        print(cursor.cancel(qid))
-        break
-    # print('Response size', sys.getsizeof(res))
-    try:
-        cursor.clear()
-    except Exception as e:
-        print(e)
-    cursor.close()
-    conn.close()
