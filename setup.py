@@ -44,6 +44,8 @@ setuptools.setup(
         'pycryptodome',
         'pytz',
         'thrift',
+        'grpcio>=1.56.2',
+        'grpcio-tools>=1.56.2',
     ],
     classifiers=[
         "Operating System :: POSIX :: Linux",

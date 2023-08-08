@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.0.10-blue.svg)
+![version](https://img.shields.io/badge/version-1.1.0-blue.svg)
 
 ## Introduction
 
@@ -21,7 +21,7 @@ pip install e6data-python-connector
 Use your e6data Email ID as the username and your access token as the password.
 
 ```python
-import e6xdb.e6x as edb
+from e6data_python_connector import Connection
 
 username = '<username>'  # Your e6data Email ID.
 password = '<password>'  # Access Token generated in the e6data console.
@@ -29,8 +29,9 @@ password = '<password>'  # Access Token generated in the e6data console.
 host = '<host>'  # IP address or hostname of the cluster to be used.
 database = '<database>'  # # Database to perform the query on.
 port = 9000  # Port of the e6data engine.
+catalog_name = '<catalog_name>'
 
-conn = edb.connect(
+conn = Connection(
     host=host,
     port=port,
     username=username,
@@ -45,7 +46,7 @@ conn = edb.connect(
 
 query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the query.
 
-cursor = conn.cursor()
+cursor = conn.cursor(catalog_name=catalog_name)
 query_id = cursor.execute(query)  # The execute function returns a unique query ID, which can be use to abort the query.
 all_records = cursor.fetchall()
 for row in all_records:
@@ -91,7 +92,7 @@ cursor.cancel(query_id)
 Switch database in an existing connection:
 ```python
 database = '<new_database_name>'  # Replace with the new database.
-cursor = conn.cursor(database)
+cursor = conn.cursor(database, catalog_name)
 ```
 
 ### Get Query Time Metrics
@@ -99,7 +100,7 @@ cursor = conn.cursor(database)
 import json
 query = 'SELECT * FROM <TABLE_NAME>'
 
-cursor = conn.cursor()
+cursor = conn.cursor(catalog_name)
 query_id = cursor.execute(query)  # execute function returns query id, can be use for aborting th query.
 all_records = cursor.fetchall()
 
@@ -159,6 +160,8 @@ port = 9000  # Port of the e6data engine.
 
 sql_query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the actual query.
 
+catalog_name = '<catalog_name>'  # Replace with the actual catalog name.
+
 conn = edb.connect(
     host=host,
     port=port,
@@ -167,7 +170,7 @@ conn = edb.connect(
     password=password
 )
 
-cursor = conn.cursor(db_name=database)
+cursor = conn.cursor(db_name=database, catalog_name=catalog_name)
 query_id = cursor.execute(sql_query)
 all_records = cursor.fetchall()
 planner_result = json.loads(cursor.explain_analyse())
