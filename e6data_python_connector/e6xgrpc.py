@@ -363,8 +363,12 @@ class Cursor(DBAPICursor):
         self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
 
     def status(self, query_id):
-        client = self.connection.client
-        return client.status(self.connection.get_session_id, query_id)
+        status_request = e6x_engine_pb2.StatusRequest(
+            sessionId=self.connection.get_session_id,
+            queryId=query_id,
+            engineIP=self._engine_ip
+        )
+        return self.connection.client.status(status_request)
 
     def execute(self, operation, parameters=None, **kwargs):
         """Prepare and execute a database operation (query or command).

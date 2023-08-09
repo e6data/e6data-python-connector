@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.1.2-blue.svg)
+![version](https://img.shields.io/badge/version-1.1.3-blue.svg)
 
 ## Introduction
 
@@ -101,7 +101,7 @@ import json
 query = 'SELECT * FROM <TABLE_NAME>'
 
 cursor = conn.cursor(catalog_name)
-query_id = cursor.execute(query)  # execute function returns query id, can be use for aborting th query.
+query_id = cursor.execute(query)  # execute function returns query id, can be use for aborting the query.
 all_records = cursor.fetchall()
 
 query_planner = json.loads(cursor.explain_analyse())
