@@ -16,7 +16,7 @@ import setuptools
 
 envstring = lambda var: os.environ.get(var) or ""
 
-VERSION = [1, 1, 0]
+VERSION = [1, 1, 1]
 
 
 def get_long_desc():
