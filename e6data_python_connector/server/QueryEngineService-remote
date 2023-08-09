@@ -13,11 +13,11 @@ if sys.version_info[0] > 2:
     from urllib.parse import urlparse
 else:
     from urlparse import urlparse
-from thrift.transport import TTransport, TSocket, TSSLSocket, THttpClient
+from thrift.transport import TSocket, TSSLSocket, THttpClient
 from thrift.protocol.TBinaryProtocol import TBinaryProtocol
 
-from e6xdb.server import QueryEngineService
-from e6xdb.server.ttypes import *
+from e6data_python_connector.server import QueryEngineService
+from e6data_python_connector.server.ttypes import *
 
 if len(sys.argv) <= 1 or sys.argv[1] == '--help':
     print('')

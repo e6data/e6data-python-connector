@@ -1,0 +1,352 @@
+syntax = "proto3";
+option java_multiple_files = true;
+
+
+message GFieldInfo {
+  string fieldName = 1;
+  string fieldType = 2;
+}
+
+
+message FailedSchemaElement
+{
+  string name = 1;
+  string type = 2;
+  string reason = 3;
+}
+
+message GetAddCatalogsResponse
+{
+  string status = 1;
+  repeated FailedSchemaElement failures = 2;
+}
+
+message CatalogResponse
+{
+  string name = 1;
+  bool isDefault = 2;
+}
+
+
+message ParameterValue
+{
+  sint32 index = 1;
+  string type = 2;
+  string value = 3;
+}
+
+message ClearRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message ClearResponse{
+}
+
+message CancelQueryRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message CancelQueryResponse{
+}
+
+message ExplainRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message ExplainResponse{
+  string explain = 1;
+}
+
+message DryRunRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string schema = 3;
+  string queryString = 4;
+}
+
+message DryRunResponse{
+  string dryrunValue = 1;
+}
+
+message DryRunRequestV2{
+  string engineIP = 1;
+  string sessionId = 2;
+  string schema = 3;
+  string queryString = 4;
+  string catalog = 5;
+}
+
+message ExplainAnalyzeRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message ExplainAnalyzeResponse{
+  string explainAnalyze = 1;
+}
+
+message PrepareStatementRequest{
+  string sessionId = 1;
+  string schema = 2;
+  string queryString = 3;
+  string quoting = 4;
+}
+
+message PrepareStatementV2Request{
+  string sessionId = 1;
+  string schema = 2;
+  string queryString = 3;
+  string catalog = 4;
+  string quoting = 5;
+}
+message PrepareStatementResponse{
+  string engineIP = 1;
+  string queryId = 2;
+}
+
+message UserAccessInfo
+{
+  string uuid = 1;
+  string userName = 2;
+  repeated string tokens = 3; // lIST
+}
+
+message ExecuteStatementRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+message ExecuteStatementV2Request{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+  repeated ParameterValue params = 4;
+}
+
+message ExecuteStatementResponse{
+}
+
+message GetNextResultRowRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message GetNextResultRowResponse{
+  bytes resultRow = 2;
+}
+
+message GetNextResultBatchRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message GetNextResultBatchResponse{
+  bytes resultBatch = 2;
+}
+
+message GetResultMetadataRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message GetResultMetadataResponse{
+  bytes resultMetaData = 1;
+}
+
+message AuthenticateRequest{
+  string  user = 1;
+  string  password = 2;
+}
+
+message AuthenticateResponse{
+  string  sessionId = 1;
+}
+
+message GetTablesRequest{
+  string sessionId = 1;
+  string schema = 2;
+}
+
+message GetTablesV2Request{
+  string sessionId = 1;
+  string schema = 2;
+  string catalog = 3;
+}
+message GetTablesResponse{
+  repeated string tables = 1;
+}
+
+message GetSchemaNamesRequest{
+  string sessionId = 1;
+}
+
+message GetSchemaNamesV2Request{
+  string sessionId = 1;
+  string catalog = 2;
+}
+
+message GetSchemaNamesResponse{
+  repeated string schemas = 1;
+}
+
+message GetColumnsRequest{
+  string sessionId = 1;
+  string schema = 2;
+  string table = 3;
+}
+message GetColumnsV2Request{
+  string sessionId = 1;
+  string schema = 2;
+  string table = 3;
+  string catalog = 4;
+}
+
+message GetColumnsResponse{
+  repeated GFieldInfo fieldInfo = 1;
+}
+
+message StatusRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message StatusResponse
+{
+  bool status = 2;
+  sint64 rowCount = 3;
+}
+
+message AddCatalogsRequest{
+  string sessionId = 1;
+  string json = 2;
+}
+
+
+message UpdateUsersRequest{
+  bytes users = 1;
+}
+
+message UpdateUsersResponse{
+}
+
+message SetPropsRequest{
+  string sessionId = 1;
+  string props = 2;
+}
+message SetPropsResponse{
+}
+
+message GetAddCatalogsRequest{
+  string sessionId = 1;
+
+}
+
+message AddCatalogsResponse{
+
+}
+
+message GetCatalogesRequest{
+
+}
+
+message GetCatalogesResponse{
+  repeated CatalogResponse catalogResponses = 1;
+}
+
+message RefreshCatalogsRequest{
+  string sessionId = 1;
+}
+
+message RefreshCatalogsResponse{
+}
+
+message RemoteChunkRequest{
+  string originalQueryId = 1;
+  string remoteQueryId = 2;
+  string sQueryHash = 3;
+}
+
+message RemoteChunkResponse{
+  string error = 1;
+  bytes chunk = 2;
+}
+
+message ClearOrCancelQueryRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message ClearOrCancelQueryResponse{
+}
+
+service QueryEngineService {
+  rpc clear(ClearRequest) returns (ClearResponse);
+
+  rpc cancelQuery(CancelQueryRequest) returns (CancelQueryResponse);
+
+  rpc clearOrCancelQuery(ClearOrCancelQueryRequest) returns (ClearOrCancelQueryResponse);
+
+  rpc explain(ExplainRequest) returns (ExplainResponse);
+
+  rpc dryRun(DryRunRequest) returns (DryRunResponse); // Executor, Engine
+
+  rpc dryRunV2(DryRunRequestV2) returns (DryRunResponse);
+
+  rpc explainAnalyze(ExplainAnalyzeRequest) returns (ExplainAnalyzeResponse);
+
+  rpc prepareStatement(PrepareStatementRequest) returns (PrepareStatementResponse);
+
+  rpc prepareStatementV2(PrepareStatementV2Request) returns (PrepareStatementResponse);
+
+  rpc executeStatement(ExecuteStatementRequest) returns (ExecuteStatementResponse);
+
+  rpc executeStatementV2(ExecuteStatementV2Request) returns (ExecuteStatementResponse);
+
+  rpc getNextResultRow(GetNextResultRowRequest) returns (GetNextResultRowResponse);
+
+  rpc getNextResultBatch(GetNextResultBatchRequest) returns (GetNextResultBatchResponse);
+
+  rpc getResultMetadata(GetResultMetadataRequest) returns (GetResultMetadataResponse);
+
+  rpc authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+
+  rpc getTables(GetTablesRequest) returns (GetTablesResponse);
+
+  rpc getTablesV2(GetTablesV2Request) returns (GetTablesResponse);
+
+  rpc getSchemaNames(GetSchemaNamesRequest) returns (GetSchemaNamesResponse);
+
+  rpc getSchemaNamesV2(GetSchemaNamesV2Request) returns (GetSchemaNamesResponse);
+
+  rpc getColumns(GetColumnsRequest) returns (GetColumnsResponse);
+
+  rpc getColumnsV2(GetColumnsV2Request) returns (GetColumnsResponse);
+
+  rpc updateUsers(UpdateUsersRequest) returns (UpdateUsersResponse);
+
+  rpc setProps(SetPropsRequest) returns (SetPropsResponse);
+
+  rpc status(StatusRequest) returns (StatusResponse);
+
+  rpc addCatalogs(AddCatalogsRequest) returns (AddCatalogsResponse);
+
+  rpc getAddCatalogsResponse(GetAddCatalogsRequest) returns (GetAddCatalogsResponse);
+
+  rpc getCataloges(GetCatalogesRequest) returns (GetCatalogesResponse);
+
+  rpc getNextRemoteCachedChunk(RemoteChunkRequest) returns (RemoteChunkResponse);
+
+  rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
+}

@@ -15,14 +15,12 @@ from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
-from e6data_python_connector.server import QueryEngineService
-from thrift.protocol import TBinaryProtocol, TMultiplexedProtocol
-from thrift.transport import TSocket
-from thrift.transport import TTransport
+import grpc
 
 from e6xdb.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6xdb.constants import *
 from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array
+from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6xdb.typeId import *
 
 apilevel = '2.0'
@@ -66,7 +64,6 @@ TYPES_CONVERTER = {"DECIMAL_TYPE": Decimal,
 class HiveParamEscaper(ParamEscaper):
     def escape_string(self, item):
         # backslashes and single quotes need to be escaped
-        # TODO verify against parser
         # Need to decode UTF-8 because of old sqlalchemy.
         # Newer SQLAlchemy checks dialect.supports_unicode_binds before encoding Unicode strings
         # as byte strings. The old version always encodes Unicode as byte strings, which breaks
@@ -116,21 +113,15 @@ class Connection(object):
         self.__password = password
         self._database = database
         self._session_id = None
-
-        # service_name = 'E6x'  # E6x  QueryExecutor
-        service_name = 'QueryEngine'  # E6x  QueryExecutor
+        self._host = host
 
         if not self.__username or not self.__password:
             raise ValueError("username or password cannot be empty.")
         if port is None:
             port = 9000
-        self._transport = TSocket.TSocket(host, port)
-        self._transport = TTransport.TBufferedTransport(self._transport)
-
-        protocol = TBinaryProtocol.TBinaryProtocol(self._transport)
-        protocol = TMultiplexedProtocol.TMultiplexedProtocol(protocol, service_name)
-        self._client = QueryEngineService.Client(protocol)
-        self._transport.open()
+        self._port = port
+        self._channel = grpc.insecure_channel('{}:{}'.format(host, port))
+        self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     @property
     def get_session_id(self):
@@ -139,12 +130,18 @@ class Connection(object):
         """
         if not self._session_id:
             try:
-                self._session_id = self._client.authenticate(self.__username, self.__password)
+
+                authenticate_request = e6x_engine_pb2.AuthenticateRequest(
+                    user=self.__username,
+                    password=self.__password
+                )
+                authenticate_response = self._client.authenticate(authenticate_request)
+                self._session_id = authenticate_response.sessionId
                 if not self._session_id:
                     raise ValueError("Invalid credentials.")
                 # self._client.setSchema(database)
             except Exception as e:
-                self._transport.close()
+                self._channel.close()
                 raise e
         return self._session_id
 
@@ -156,7 +153,8 @@ class Connection(object):
         To enable to disable the caches.
         :param prop_map: To set engine props
         """
-        self._client.setProps(sessionId=self.get_session_id, propMap=prop_map)
+        set_props_request = e6x_engine_pb2.SetPropsRequest(sessionId=self.get_session_id, props=prop_map)
+        self._client.setProps(set_props_request)
 
     def __enter__(self):
         """Transport should already be opened by __init__"""
@@ -167,81 +165,67 @@ class Connection(object):
         self.close()
 
     def close(self):
-        self._transport.close()
+        if self._channel is not None:
+            self._channel.close()
+            self._channel = None
 
     def check_connection(self):
-        return self._transport.isOpen()
+        return self._channel is not None
 
-    def clear(self, query_id):
-        self._client.clear(sessionId=self.get_session_id, queryId=query_id)
+    def clear(self, query_id, engine_ip=None):
+        clear_request = e6x_engine_pb2.ClearRequest(
+            sessionId=self.get_session_id,
+            queryId=query_id,
+            engineIP=engine_ip
+        )
+        self._client.clear(clear_request)
         self._session_id = None
 
     def reopen(self):
-        self._transport.close()
-        self._transport.open()
+        self._channel.close()
+        self._channel = grpc.insecure_channel('{}:{}'.format(self._host, self._port))
 
-    def query_cancel(self, query_id):
-        self._client.cancelQuery(sessionId=self.get_session_id, queryId=query_id)
+    def query_cancel(self, engine_ip, query_id):
+        cancel_query_request = e6x_engine_pb2.CancelQueryRequest(
+            engineIP=engine_ip,
+            sessionId=self.get_session_id,
+            queryId=query_id
+        )
+        self._client.cancelQuery(cancel_query_request)
 
     def dry_run(self, query):
-        return self._client.dryRun(sessionId=self.get_session_id, sSchema=self._database, sQueryString=query)
-
-    def dry_run_v2(self, catalog_name, query):
-        return self._client.dryRunV2(
+        dry_run_request = e6x_engine_pb2.DryRunRequest(
             sessionId=self.get_session_id,
-            catalogName=catalog_name,
-            sSchema=self._database,
-            sQueryString=query
+            schema=self._database,
+            queryString=query
         )
+        dry_run_response = self._client.dryRun(dry_run_request)
+        return dry_run_response.dryrunValue
 
     def get_tables(self, database):
-        return self._client.getTables(sessionId=self.get_session_id, schema=database)
-
-    def get_tables_v2(self, catalog_name, database):
-        return self._client.getTablesV2(sessionId=self.get_session_id, catalogName=catalog_name, schema=database)
+        get_table_request = e6x_engine_pb2.GetTablesRequest(sessionId=self.get_session_id, schema=database)
+        get_table_response = self._client.getTables(get_table_request)
+        return get_table_response.tables
 
     def get_columns(self, database, table):
-        return self._client.getColumns(sessionId=self.get_session_id, schema=database, table=table)
-
-    def status(self, query_id):
-        return self._client.status(sessionId=self.get_session_id, queryId=query_id)
-
-    def get_add_catalog_response(self):
-        """
-        Response Type:
-            AddCatalogsResponse(status='success', failures=[])
-        Usage:
-            response.status: success, in_progress, failed
-
-        Error Usage:
-            response = conn.get_add_catalog_response()
-            if response.status == 'error'
-                print(response.failures[0].reason)
-        """
-        return self._client.getAddCatalogsResponse(sessionId=self.get_session_id)
-
-    def get_columns_v2(self, catalog_name, database, table):
-        return self._client.getColumnsV2(
+        get_columns_request = e6x_engine_pb2.GetColumnsRequest(
             sessionId=self.get_session_id,
-            catalogName=catalog_name,
             schema=database,
             table=table
         )
+        get_columns_response = self._client.getColumns(get_columns_request)
+        return get_columns_response.fieldInfo
 
     def get_schema_names(self):
-        return self._client.getSchemaNames(sessionId=self.get_session_id)
-
-    def get_schema_names_v2(self, catalog_name):
-        return self._client.getSchemaNamesV2(sessionId=self.get_session_id, catalogName=catalog_name)
-
-    def add_catalogs(self, catalogs_info):
-        return self._client.addCatalogs(sessionId=self.get_session_id, jsonString=catalogs_info)
+        get_schema_request = e6x_engine_pb2.GetSchemaNamesRequest(sessionId=self.get_session_id)
+        get_schema_response = self._client.getSchemaNames(get_schema_request)
+        return get_schema_response.schemas
 
     def commit(self):
         """We do not support transactions, so this does nothing."""
         pass
 
-    def cursor(self, db_name=None, catalog_name=None):
+    def cursor(self, catalog_name: str, db_name=None):
         """Return a new :py:class:`Cursor` object using the connection."""
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
@@ -261,19 +245,20 @@ class Cursor(DBAPICursor):
     """
     rows_count = 0
 
-    def __init__(self, connection, catalog_name=None, arraysize=1000, database=None):
+    def __init__(self, connection: Connection, array_size=1000, database=None, catalog_name=None):
         super(Cursor, self).__init__()
-        self._catalog_name = catalog_name
-        self._arraysize = arraysize
+        self._array_size = array_size
         self.connection = connection
         self._data = None
         self._query_columns_description = None
         self._is_metadata_updated = False
         self._description = None
         self._query_id = None
+        self._engine_ip = None
         self._batch = list()
         self._rowcount = 0
         self._database = self.connection._database if database is None else database
+        self._catalog_name = catalog_name
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
@@ -328,10 +313,11 @@ class Cursor(DBAPICursor):
 
     def close(self):
         """Close the operation handle"""
-        self.connection.close()
+        # self.connection.close()
         self._arraysize = None
         self.connection = None
         self._data = None
+        self._engine_ip = None
         self._query_columns_description = None
         self._description = None
         self._query_id = None
@@ -348,12 +334,19 @@ class Cursor(DBAPICursor):
         return self.connection.get_columns(database=schema, table=table)
 
     def clear(self):
-        """Clears the tmp data"""
-        self.connection.clear(self._query_id)
+        clear_request = e6x_engine_pb2.ClearRequest(
+            sessionId=self.connection.get_session_id,
+            queryId=self._query_id,
+            engineIP=self._engine_ip
+        )
+        return self.connection.client.clear(clear_request)
 
     def cancel(self, query_id):
-        _logger.info("Cancelling query")
-        self.connection.query_cancel(query_id)
+        self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
+
+    def status(self, query_id):
+        client = self.connection.client
+        return client.status(self.connection.get_session_id, query_id)
 
     def execute(self, operation, parameters=None, **kwargs):
         """Prepare and execute a database operation (query or command).
@@ -362,7 +355,6 @@ class Cursor(DBAPICursor):
         """
         Semicolon is now not supported. So removing it from query end.
         """
-        operation = operation.strip()
         if operation.endswith(';'):
             operation = operation[:-1]
 
@@ -373,20 +365,39 @@ class Cursor(DBAPICursor):
             sql = operation % _escaper.escape_args(parameters)
 
         client = self.connection.client
-        if self._catalog_name:
-            self._query_id = client.prepareStatementV2(
-                self.connection.get_session_id,
-                self._catalog_name,
-                self._database,
-                sql
+        if not self._catalog_name:
+            prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
+                sessionId=self.connection.get_session_id,
+                schema=self._database,
+                queryString=sql
             )
+            prepare_statement_response = client.prepareStatement(prepare_statement_request)
+
+            self._query_id = prepare_statement_response.queryId
+            self._engine_ip = prepare_statement_response.engineIP
+            execute_statement_request = e6x_engine_pb2.ExecuteStatementRequest(
+                engineIP=self._engine_ip,
+                sessionId=self.connection.get_session_id,
+                queryId=self._query_id
+            )
+            execute_statement_response = client.executeStatement(execute_statement_request)
         else:
-            self._query_id = client.prepareStatement(
-                self.connection.get_session_id,
-                self._database,
-                sql
+            prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
+                sessionId=self.connection.get_session_id,
+                schema=self._database,
+                queryString=sql,
+                catalog=self._catalog_name,
             )
-        client.executeStatement(self.connection.get_session_id, self._query_id)
+            prepare_statement_response = client.prepareStatementV2(prepare_statement_request)
+
+            self._query_id = prepare_statement_response.queryId
+            self._engine_ip = prepare_statement_response.engineIP
+            execute_statement_request = e6x_engine_pb2.ExecuteStatementV2Request(
+                engineIP=self._engine_ip,
+                sessionId=self.connection.get_session_id,
+                queryId=self._query_id
+            )
+            execute_statement_response = client.executeStatementV2(execute_statement_request)
         self.update_mete_data()
         return self._query_id
 
@@ -394,12 +405,16 @@ class Cursor(DBAPICursor):
         return self._rowcount
 
     def update_mete_data(self):
-        buffer = self.connection.client.getResultMetadata(self.connection.get_session_id, self._query_id)
-        buffer = BytesIO(buffer)
+        result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
+            engineIP=self._engine_ip,
+            sessionId=self.connection.get_session_id,
+            queryId=self._query_id
+        )
+        get_result_metadata_response = self.connection.client.getResultMetadata(result_meta_data_request)
+        buffer = BytesIO(get_result_metadata_response.resultMetaData)
         self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
 
     def _fetch_more(self):
-        # _logger.info("fetching batch")
         batch_size = self._arraysize
         self._data = list()
         for i in range(batch_size):
@@ -407,8 +422,6 @@ class Cursor(DBAPICursor):
             if rows is None:
                 return
             self._data = self._data + rows
-
-        # _logger.info("fetched batch of {num}".format(num=len(self._data)))
         return self._data
 
     def _fetch_all(self):
@@ -434,7 +447,13 @@ class Cursor(DBAPICursor):
     def fetch_batch(self):
         # _logger.debug("fetching next batch from e6data")
         client = self.connection.client
-        buffer = client.getNextResultBatch(self.connection.get_session_id, self._query_id)
+        get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
+            engineIP=self._engine_ip,
+            sessionId=self.connection.get_session_id,
+            queryId=self._query_id
+        )
+        get_next_result_batch_response = client.getNextResultBatch(get_next_result_batch_request)
+        buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
             self.update_mete_data()
             self._is_metadata_updated = True
@@ -445,15 +464,11 @@ class Cursor(DBAPICursor):
         # one batch retrieves the predefined set of rows
         return read_rows_from_batch(self._query_columns_description, dis)
 
-    def fetchall(self, query_id=None):
-        if query_id:
-            self._query_id = query_id
+    def fetchall(self):
         return self._fetch_all()
 
-    def fetchmany(self, size=None, query_id=None):
+    def fetchmany(self, size=None):
         # _logger.info("fetching all from overriden method")
-        if query_id:
-            self._query_id = query_id
         if size is None:
             size = self.arraysize
         if self._data is None:
@@ -477,7 +492,13 @@ class Cursor(DBAPICursor):
         # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
         rows_to_return = []
         client = self.connection.client
-        buffer = client.getNextResultRow(self.connection.get_session_id, self._query_id)
+        get_next_result_row_request = e6x_engine_pb2.GetNextResultRowRequest(
+            engineIP=self._engine_ip,
+            sessionId=self.connection.get_session_id,
+            queryId=self._query_id
+        )
+        get_next_result_row_response = client.getNextResultRow(get_next_result_row_request)
+        buffer = get_next_result_row_response.resultRow
         if not self._is_metadata_updated:
             self.update_mete_data()
             self._is_metadata_updated = True
@@ -489,10 +510,22 @@ class Cursor(DBAPICursor):
         return rows_to_return
 
     def explain(self):
-        return self.connection.client.explain(self.connection.get_session_id, self._query_id)
+        explain_request = e6x_engine_pb2.ExplainRequest(
+            engineIP=self._engine_ip,
+            sessionId=self.connection.get_session_id,
+            queryId=self._query_id
+        )
+        explain_response = self.connection.client.explain(explain_request)
+        return explain_response.explain
 
     def explain_analyse(self):
-        return self.connection.client.explainAnalyze(self.connection.get_session_id, self._query_id)
+        explain_analyze_request = e6x_engine_pb2.ExplainAnalyzeRequest(
+            engineIP=self._engine_ip,
+            sessionId=self.connection.get_session_id,
+            queryId=self._query_id
+        )
+        explain_analyze_response = self.connection.client.explainAnalyze(explain_analyze_request)
+        return explain_analyze_response.explainAnalyze
 
 
 def poll(self, get_progress_update=True):

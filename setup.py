@@ -16,7 +16,7 @@ import setuptools
 
 envstring = lambda var: os.environ.get(var) or ""
 
-VERSION = [1, 0, 10]
+VERSION = [1, 1, 0]
 
 
 def get_long_desc():
@@ -44,6 +44,8 @@ setuptools.setup(
         'pycryptodome',
         'pytz',
         'thrift',
+        'grpcio>=1.56.2',
+        'grpcio-tools>=1.56.2',
     ],
     classifiers=[
         "Operating System :: POSIX :: Linux",
