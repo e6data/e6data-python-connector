@@ -107,20 +107,29 @@ class Connection(object):
             password=None,
             check_hostname=None,
             ssl_cert=None,
-            thrift_transport=None
+            thrift_transport=None,
+            keepalive_timeout_ms=900000
     ):
+        if not username or not password:
+            raise ValueError("username or password cannot be empty.")
+        if not host or not port:
+            raise ValueError("host or port cannot be empty.")
         self.__username = username
         self.__password = password
         self._database = database
         self._session_id = None
         self._host = host
-
-        if not self.__username or not self.__password:
-            raise ValueError("username or password cannot be empty.")
-        if port is None:
-            port = 9000
         self._port = port
-        self._channel = grpc.insecure_channel('{}:{}'.format(host, port))
+        self._keepalive_timeout_ms = keepalive_timeout_ms
+        self._create_client()
+
+    def _create_client(self):
+        self._channel = grpc.insecure_channel(
+            target='{}:{}'.format(self._host, self._port),
+            options=[
+                ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
+            ],
+        )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     @property
@@ -139,7 +148,6 @@ class Connection(object):
                 self._session_id = authenticate_response.sessionId
                 if not self._session_id:
                     raise ValueError("Invalid credentials.")
-                # self._client.setSchema(database)
             except Exception as e:
                 self._channel.close()
                 raise e
@@ -183,7 +191,7 @@ class Connection(object):
 
     def reopen(self):
         self._channel.close()
-        self._channel = grpc.insecure_channel('{}:{}'.format(self._host, self._port))
+        self._create_client()
 
     def query_cancel(self, engine_ip, query_id):
         cancel_query_request = e6x_engine_pb2.CancelQueryRequest(
