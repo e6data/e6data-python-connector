@@ -148,7 +148,7 @@ conn.close()
 ### Code Example
 The following code is an example which combines a few functions described above.
 ```python
-import e6xdb.e6x as edb
+from e6data_python_connector import Connection
 import json
 
 username = '<username>'  # Your e6data Email ID.
@@ -162,7 +162,7 @@ sql_query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the actual query.
 
 catalog_name = '<catalog_name>'  # Replace with the actual catalog name.
 
-conn = edb.connect(
+conn = Connection(
     host=host,
     port=port,
     username=username,
