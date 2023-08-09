@@ -108,7 +108,7 @@ class Connection(object):
             check_hostname=None,
             ssl_cert=None,
             thrift_transport=None,
-            keepalive_timeout_ms=900000
+            grpc_options=None
     ):
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -120,7 +120,15 @@ class Connection(object):
         self._session_id = None
         self._host = host
         self._port = port
-        self._keepalive_timeout_ms = keepalive_timeout_ms
+
+        self._keepalive_timeout_ms = 900000
+        self._max_receive_message_length = 100 * 1024 * 1024  # mb
+        self._max_send_message_length = 300 * 1024 * 1024  # mb
+
+        if type(grpc_options) == dict:
+            self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
+            self._max_receive_message_length = grpc_options.get('max_receive_message_length') or self._max_receive_message_length
+            self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
         self._create_client()
 
     def _create_client(self):
@@ -128,6 +136,8 @@ class Connection(object):
             target='{}:{}'.format(self._host, self._port),
             options=[
                 ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
+                ('grpc.max_send_message_length', self._max_send_message_length),
+                ('grpc.max_receive_message_length', self._max_receive_message_length)
             ],
         )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
