@@ -12,8 +12,8 @@ pip install e6data-python-connector
 ```
 ### Prerequisites
 
-* Open Inbound Port 9000 in the Engine Cluster.
-* Limit access to Port 9000 according to your organizational security policy. Public access is not encouraged.
+* Open Inbound Port 9001 in the Engine Cluster.
+* Limit access to Port 9001 according to your organizational security policy. Public access is not encouraged.
 * Access Token generated in the e6data console.
 
 ### Create a Connection
@@ -28,7 +28,7 @@ password = '<password>'  # Access Token generated in the e6data console.
 
 host = '<host>'  # IP address or hostname of the cluster to be used.
 database = '<database>'  # # Database to perform the query on.
-port = 9000  # Port of the e6data engine.
+port = 9001  # Port of the e6data engine.
 catalog_name = '<catalog_name>'
 
 conn = Connection(
@@ -156,7 +156,7 @@ password = '<password>'  # Access Token generated in the e6data console.
 
 host = '<host>'  # IP address or hostname of the cluster to be used.
 database = '<database>'  # # Database to perform the query on.
-port = 9000  # Port of the e6data engine.
+port = 9001  # Port of the e6data engine.
 
 sql_query = 'SELECT * FROM <TABLE_NAME>'  # Replace with the actual query.
 
