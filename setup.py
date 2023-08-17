@@ -16,7 +16,7 @@ import setuptools
 
 envstring = lambda var: os.environ.get(var) or ""
 
-VERSION = [1, 1, 3]
+VERSION = [1, 1, 4]
 
 
 def get_long_desc():
@@ -46,6 +46,7 @@ setuptools.setup(
         'thrift',
         'grpcio>=1.56.2',
         'grpcio-tools>=1.56.2',
+        'sqlalchemy'
     ],
     classifiers=[
         "Operating System :: POSIX :: Linux",
@@ -58,7 +59,7 @@ setuptools.setup(
     ],
     entry_points={
         'sqlalchemy.dialects': [
-            'e6xdb = e6xdb.sqlalchemy_e6x:E6xDialect'
+            'e6data = e6data_python_connector.dialect:E6dataDialect'
         ],
     }
 )

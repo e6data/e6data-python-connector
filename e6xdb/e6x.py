@@ -273,7 +273,7 @@ class Cursor(DBAPICursor):
         self._query_id = None
         self._batch = list()
         self._rowcount = 0
-        self._database = self.connection._database if database is None else database
+        self._database = self.connection.database if database is None else database
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
@@ -340,11 +340,11 @@ class Cursor(DBAPICursor):
         self._database = None
 
     def get_tables(self):
-        schema = self.connection._database
+        schema = self.connection.database
         return self.connection.get_tables(database=schema)
 
     def get_columns(self, table):
-        schema = self.connection._database
+        schema = self.connection.database
         return self.connection.get_columns(database=schema, table=table)
 
     def clear(self):
