@@ -17,11 +17,12 @@ from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
 import grpc
 
-from e6xdb.common import DBAPITypeObject, ParamEscaper, DBAPICursor
-from e6xdb.constants import *
-from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array
+from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
+from e6data_python_connector.constants import *
+from e6data_python_connector.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, \
+    read_values_from_array
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
-from e6xdb.typeId import *
+from e6data_python_connector.typeId import *
 
 apilevel = '2.0'
 threadsafety = 2  # Threads may share the e6xdb and connections.
@@ -108,7 +109,8 @@ class Connection(object):
             check_hostname=None,
             ssl_cert=None,
             thrift_transport=None,
-            grpc_options=None
+            grpc_options=None,
+            catalog=None
     ):
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -116,10 +118,12 @@ class Connection(object):
             raise ValueError("host or port cannot be empty.")
         self.__username = username
         self.__password = password
-        self._database = database
+        self.database = database
         self._session_id = None
         self._host = host
         self._port = port
+
+        self.catalog_name = catalog
 
         self._keepalive_timeout_ms = 900000
         self._max_receive_message_length = 100 * 1024 * 1024  # mb
@@ -127,7 +131,8 @@ class Connection(object):
 
         if type(grpc_options) == dict:
             self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
-            self._max_receive_message_length = grpc_options.get('max_receive_message_length') or self._max_receive_message_length
+            self._max_receive_message_length = grpc_options.get(
+                'max_receive_message_length') or self._max_receive_message_length
             self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
         self._create_client()
 
@@ -214,7 +219,7 @@ class Connection(object):
     def dry_run(self, query):
         dry_run_request = e6x_engine_pb2.DryRunRequest(
             sessionId=self.get_session_id,
-            schema=self._database,
+            schema=self.database,
             queryString=query
         )
         dry_run_response = self._client.dryRun(dry_run_request)
@@ -243,7 +248,7 @@ class Connection(object):
         """We do not support transactions, so this does nothing."""
         pass
 
-    def cursor(self, catalog_name: str, db_name=None):
+    def cursor(self, catalog_name=None, db_name=None):
         """Return a new :py:class:`Cursor` object using the connection."""
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
@@ -275,8 +280,8 @@ class Cursor(DBAPICursor):
         self._engine_ip = None
         self._batch = list()
         self._rowcount = 0
-        self._database = self.connection._database if database is None else database
-        self._catalog_name = catalog_name
+        self._database = self.connection.database if database is None else database
+        self._catalog_name = catalog_name if catalog_name else self.connection.catalog_name
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
@@ -344,12 +349,15 @@ class Cursor(DBAPICursor):
         self._database = None
 
     def get_tables(self):
-        schema = self.connection._database
+        schema = self.connection.database
         return self.connection.get_tables(database=schema)
 
     def get_columns(self, table):
-        schema = self.connection._database
+        schema = self.connection.database
         return self.connection.get_columns(database=schema, table=table)
+
+    def get_schema_names(self):
+        return self.connection.get_schema_names()
 
     def clear(self):
         clear_request = e6x_engine_pb2.ClearRequest(
