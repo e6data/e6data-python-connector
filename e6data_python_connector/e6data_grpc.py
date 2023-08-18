@@ -225,24 +225,32 @@ class Connection(object):
         dry_run_response = self._client.dryRun(dry_run_request)
         return dry_run_response.dryrunValue
 
-    def get_tables(self, database):
-        get_table_request = e6x_engine_pb2.GetTablesRequest(sessionId=self.get_session_id, schema=database)
-        get_table_response = self._client.getTables(get_table_request)
-        return get_table_response.tables
-
-    def get_columns(self, database, table):
-        get_columns_request = e6x_engine_pb2.GetColumnsRequest(
+    def get_tables(self, catalog, database):
+        get_table_request = e6x_engine_pb2.GetTablesV2Request(
             sessionId=self.get_session_id,
             schema=database,
-            table=table
+            catalog=catalog
         )
-        get_columns_response = self._client.getColumns(get_columns_request)
-        return get_columns_response.fieldInfo
+        get_table_response = self._client.getTablesV2(get_table_request)
+        return list(get_table_response.tables)
 
-    def get_schema_names(self):
-        get_schema_request = e6x_engine_pb2.GetSchemaNamesRequest(sessionId=self.get_session_id)
-        get_schema_response = self._client.getSchemaNames(get_schema_request)
-        return get_schema_response.schemas
+    def get_columns(self, catalog, database, table):
+        get_columns_request = e6x_engine_pb2.GetColumnsV2Request(
+            sessionId=self.get_session_id,
+            schema=database,
+            table=table,
+            catalog=catalog
+        )
+        get_columns_response = self._client.getColumnsV2(get_columns_request)
+        return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
+
+    def get_schema_names(self, catalog):
+        get_schema_request = e6x_engine_pb2.GetSchemaNamesV2Request(
+            sessionId=self.get_session_id,
+            catalog=catalog
+        )
+        get_schema_response = self._client.getSchemaNamesV2(get_schema_request)
+        return list(get_schema_response.schemas)
 
     def commit(self):
         """We do not support transactions, so this does nothing."""
@@ -590,3 +598,22 @@ class Error(Exception):
 for type_id in PRIMITIVE_TYPES:
     name = TypeId._VALUES_TO_NAMES[type_id]
     setattr(sys.modules[__name__], name, DBAPITypeObject([name]))
+
+
+if __name__ == '__main__':
+
+    client = Connection(
+        host='a623f252cd7df4d80af98d39014c61ee-982335581.us-east-1.elb.amazonaws.com',
+        port=80,
+        username='admin',
+        password='admin',
+        database='tpcds_1000'
+    )
+    columns = client.get_columns('tpcds_1000', '')
+    rows = list()
+    for column in columns:
+        row = dict()
+        row["col_name"] = column.get('fieldName')
+        row["data_type"] = column.get('fieldType')
+        rows.append(row)
+

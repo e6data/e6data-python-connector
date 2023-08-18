@@ -10,13 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 import setuptools
 
-envstring = lambda var: os.environ.get(var) or ""
-
-VERSION = [1, 1, 4]
+VERSION = [1, 1, 5]
 
 
 def get_long_desc():
