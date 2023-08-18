@@ -211,7 +211,6 @@ class E6dataDialect(default.DefaultDialect):
     type_compiler = E6dataTypeCompiler
     supports_sane_rowcount = False
     driver = b'thrift'
-    name = b'E6data'
     scheme = 'e6data'
     catalog_name = None
 
@@ -223,19 +222,20 @@ class E6dataDialect(default.DefaultDialect):
         return e6data_grpc
 
     def create_connect_args(self, url):
-        db = None
+        database = None
         if url.query.get("schema"):
-            db = url.query.get("schema")
+            database = url.query.get("schema")
         self.catalog_name = url.query.get("catalog")
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
+
         kwargs = {
             "host": url.host,
             "port": url.port,
             "scheme": self.scheme,
             "username": url.username or None,
             "password": url.password or None,
-            "database": db,
+            "database": database,
             "catalog": self.catalog_name
         }
         return [], kwargs
@@ -243,7 +243,6 @@ class E6dataDialect(default.DefaultDialect):
     def get_schema_names(self, connection, **kw):
         # Equivalent to SHOW DATABASES
         # Rerouting to view names
-        engine = connection
         if isinstance(connection, Engine):
             cursor = connection.raw_connection().connection.cursor(catalog_name=self.catalog_name)
         elif isinstance(connection, Connection):
@@ -252,12 +251,12 @@ class E6dataDialect(default.DefaultDialect):
             raise Exception("Got type of object {typ}".format(typ=type(connection)))
 
         client = cursor.connection
-        return client.get_schema_names()
+        return client.get_schema_names(catalog=self.catalog_name)
 
     def get_view_names(self, connection, schema=None, **kw):
         return []
 
-    def _get_table_columns(self, connection, table):
+    def _get_table_columns(self, connection, schema, table):
         try:
             if isinstance(connection, Engine):
                 cursor = connection.raw_connection().connection.cursor(catalog_name=self.catalog_name)
@@ -267,54 +266,43 @@ class E6dataDialect(default.DefaultDialect):
                 raise Exception("Got type of object {typ}".format(typ=type(connection)))
 
             client = cursor.connection
-            columns = client.getColumns("default", table)
+            columns = client.get_columns(self, self.catalog_name, schema, table)
             rows = list()
             for column in columns:
                 row = dict()
-                row["col_name"] = column.fieldName
-                row["data_type"] = column.fieldType
+                row["col_name"] = column.get('fieldName')
+                row["data_type"] = column.get('fieldType')
                 rows.append(row)
-
             return rows
         except exc.OperationalError as e:
             # Does the table exist?
             raise e
 
     def has_table(self, connection, table_name, schema=None, **kwargs):
-        try:
-            self._get_table_columns(connection, table_name)
-            return True
-        except Exception:
-            return False
+        return True
+        # try:
+        #     self._get_table_columns(connection, schema, table_name)
+        #     return True
+        # except Exception as e:
+        #     return False
 
-    def get_columns(self, connection, table_name, schema=None, **kw):
-        rows = self._get_table_columns(connection, table_name)
-        # # Strip whitespace
-        # rows = [[col.strip() if col else None for col in row] for row in rows]
-        # Filter out empty rows and comment
-        # rows = [row for row in rows if row[0] and row[0] != '# col_name']
-        result = []
-        for row in rows:
-            col_name = row['col_name']
-            col_type = row['data_type']
-            # Take out the more detailed type information
-            # e.g. 'map<int,int>' -> 'map'
-            #      'decimal(10,1)' -> decimal
-            col_type = re.search(r'^\w+', col_type).group(0)
-            try:
-                coltype = _type_map[col_type.lower()]
-                _logger.info("Got column {column} with data type {dt}".format(column=col_name, dt=coltype))
-            except KeyError:
-                util.warn("Did not recognize type '%s' of column '%s'" % (col_type, col_name))
-                coltype = types.NullType
+    def get_columns(self, connection, table_name, schema, **kwargs):
+        if isinstance(connection, Engine):
+            cursor = connection.raw_connection().connection.cursor(catalog_name=self.catalog_name)
+        elif isinstance(connection, Connection):
+            cursor = connection.connection.cursor(catalog_name=self.catalog_name)
+        else:
+            raise Exception("Got type of object {typ}".format(typ=type(connection)))
 
-            result.append({
-                'name': col_name,
-                'type': coltype,
-                'nullable': True,
-                'default': None,
-            })
-        return result
+        client = cursor.connection
+        columns = client.get_columns(self.catalog_name, schema, table_name)
+        rows = list()
+        for column in columns:
+            row = dict()
+            row["name"] = column.get('fieldName')
+            row["type"] = lambda: column.get('fieldType')
+            rows.append(row)
+        return rows
 
     def get_foreign_keys(self, connection, table_name, schema=None, **kw):
         # Hive has no support for foreign keys.
@@ -333,12 +321,12 @@ class E6dataDialect(default.DefaultDialect):
         if isinstance(connection, Engine):
             cursor = connection.raw_connection().connection.cursor(catalog_name=self.catalog_name)
         elif isinstance(connection, Connection):
-            cursor = connection.connection.cursor()
+            cursor = connection.connection.cursor(catalog_name=self.catalog_name)
         else:
             raise Exception("Got type of object {typ}".format(typ=type(connection)))
 
         client = cursor.connection
-        return client.getTables(schema)
+        return client.get_tables(self.catalog_name, schema)
 
     def do_rollback(self, dbapi_connection):
         # No transactions for Hive
