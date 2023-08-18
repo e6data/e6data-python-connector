@@ -598,22 +598,3 @@ class Error(Exception):
 for type_id in PRIMITIVE_TYPES:
     name = TypeId._VALUES_TO_NAMES[type_id]
     setattr(sys.modules[__name__], name, DBAPITypeObject([name]))
-
-
-if __name__ == '__main__':
-
-    client = Connection(
-        host='a623f252cd7df4d80af98d39014c61ee-982335581.us-east-1.elb.amazonaws.com',
-        port=80,
-        username='admin',
-        password='admin',
-        database='tpcds_1000'
-    )
-    columns = client.get_columns('tpcds_1000', '')
-    rows = list()
-    for column in columns:
-        row = dict()
-        row["col_name"] = column.get('fieldName')
-        row["data_type"] = column.get('fieldType')
-        rows.append(row)
-
