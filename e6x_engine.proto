@@ -133,16 +133,6 @@ message ExecuteStatementV2Request{
 message ExecuteStatementResponse{
 }
 
-message GetNextResultRowRequest{
-  string engineIP = 1;
-  string sessionId = 2;
-  string queryId = 3;
-}
-
-message GetNextResultRowResponse{
-  bytes resultRow = 2;
-}
-
 message GetNextResultBatchRequest{
   string engineIP = 1;
   string sessionId = 2;
@@ -313,8 +303,6 @@ service QueryEngineService {
   rpc executeStatement(ExecuteStatementRequest) returns (ExecuteStatementResponse);
 
   rpc executeStatementV2(ExecuteStatementV2Request) returns (ExecuteStatementResponse);
-
-  rpc getNextResultRow(GetNextResultRowRequest) returns (GetNextResultRowResponse);
 
   rpc getNextResultBatch(GetNextResultBatchRequest) returns (GetNextResultBatchResponse);
 

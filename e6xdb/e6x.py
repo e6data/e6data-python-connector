@@ -22,7 +22,7 @@ from thrift.transport import TTransport
 
 from e6xdb.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6xdb.constants import *
-from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array
+from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array, read_rows_from_chunk
 from e6xdb.typeId import *
 
 apilevel = '2.0'
@@ -268,7 +268,7 @@ class Cursor(DBAPICursor):
         self.connection = connection
         self._data = None
         self._query_columns_description = None
-        self._is_metadata_updated = False
+        self._is_metadata_updated: bool = False
         self._description = None
         self._query_id = None
         self._batch = list()
@@ -431,6 +431,7 @@ class Cursor(DBAPICursor):
                 return
             yield rows
 
+    # Look at this as well
     def fetch_batch(self):
         # _logger.debug("fetching next batch from e6data")
         client = self.connection.client
@@ -440,10 +441,10 @@ class Cursor(DBAPICursor):
             self._is_metadata_updated = True
         if not buffer:
             return None
-        buffer = BytesIO(buffer)
-        dis = DataInputStream(buffer)
+        return read_rows_from_chunk(self._query_columns_description, buffer)
+        # dis = DataInputStream(buffer)
         # one batch retrieves the predefined set of rows
-        return read_rows_from_batch(self._query_columns_description, dis)
+        # return read_rows_from_batch(self._query_columns_description, dis)
 
     def fetchall(self, query_id=None):
         if query_id:
