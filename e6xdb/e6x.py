@@ -474,6 +474,7 @@ class Cursor(DBAPICursor):
         self._data = self._data[size:]
         return rows
 
+# Doesn't work now
     def fetchone(self):
         # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
         rows_to_return = []

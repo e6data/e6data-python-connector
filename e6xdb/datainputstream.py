@@ -168,6 +168,9 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     chunkWrapper = ChunkWrapper()
     chunkWrapper.read(protocol)
 
+    if chunkWrapper.size <= 0:
+        return None
+
     # Create a transport and protocol instance for deserialization
     transport = TTransport.TMemoryBuffer(chunkWrapper.chunk)
     protocol = TBinaryProtocol.TBinaryProtocol(transport)
@@ -178,10 +181,9 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
 
     rows = list()
 
-    for index, value in enumerate(chunk.vectors):
-        value: Vector
-        index: int
-        rows.append(get_row_from_chunk(index, chunk.vectors, query_columns_description))
+    for rowIndex in range(chunk.size):
+        rowIndex: int
+        rows.append(get_row_from_chunk(rowIndex, chunk.vectors, query_columns_description))
 
     return rows
 
