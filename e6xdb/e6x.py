@@ -11,9 +11,11 @@ import datetime
 import logging
 import re
 import sys
+from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
+from typing import List, Any
 
 from e6data_python_connector.server import QueryEngineService
 from thrift.protocol import TBinaryProtocol, TMultiplexedProtocol
@@ -22,7 +24,8 @@ from thrift.transport import TTransport
 
 from e6xdb.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6xdb.constants import *
-from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array, read_rows_from_chunk
+from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array, \
+    read_rows_from_chunk
 from e6xdb.typeId import *
 
 apilevel = '2.0'
@@ -266,7 +269,7 @@ class Cursor(DBAPICursor):
         self._catalog_name = catalog_name
         self._arraysize = arraysize
         self.connection = connection
-        self._data = None
+        self._data: list = None
         self._query_columns_description = None
         self._is_metadata_updated: bool = False
         self._description = None
@@ -432,7 +435,7 @@ class Cursor(DBAPICursor):
             yield rows
 
     # Look at this as well
-    def fetch_batch(self):
+    def fetch_batch(self) -> list | None:
         # _logger.debug("fetching next batch from e6data")
         client = self.connection.client
         buffer = client.getNextResultBatch(self.connection.get_session_id, self._query_id)
@@ -474,21 +477,11 @@ class Cursor(DBAPICursor):
         self._data = self._data[size:]
         return rows
 
-# Doesn't work now
     def fetchone(self):
-        # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
-        rows_to_return = []
-        client = self.connection.client
-        buffer = client.getNextResultRow(self.connection.get_session_id, self._query_id)
-        if not self._is_metadata_updated:
-            self.update_mete_data()
-            self._is_metadata_updated = True
-        if not buffer:
-            return None
-        buffer = BytesIO(buffer)
-        dis = DataInputStream(buffer)
-        rows_to_return.append(read_values_from_array(self._query_columns_description, dis))
-        return rows_to_return
+        if self._data is not None and len(self._data) > 0:
+            return self._data.pop(0)
+        self._data = self.fetch_batch()
+        return self._data.pop(0)
 
     def explain(self):
         return self.connection.client.explain(self.connection.get_session_id, self._query_id)
