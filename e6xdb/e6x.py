@@ -15,17 +15,15 @@ from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
-from typing import List, Any
 
-from e6data_python_connector.server import QueryEngineService
 from thrift.protocol import TBinaryProtocol, TMultiplexedProtocol
 from thrift.transport import TSocket
 from thrift.transport import TTransport
 
+from e6data_python_connector.server import QueryEngineService
 from e6xdb.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6xdb.constants import *
-from e6xdb.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, read_values_from_array, \
-    read_rows_from_chunk
+from e6xdb.datainputstream import get_query_columns_info, read_rows_from_chunk
 from e6xdb.typeId import *
 
 apilevel = '2.0'
