@@ -1,13 +1,13 @@
-import struct
 import logging
+import struct
+from datetime import datetime, timedelta
 
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TTransport
 
-from e6data_python_connector.e6x_vector.ttypes import ChunkWrapper, Chunk, Vector
-from e6xdb.date_time_utils import FORMATS, floor_div, floor_mod
-from datetime import datetime, timedelta
+from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector
 from e6xdb.constants import ZONE
+from e6xdb.date_time_utils import floor_div, floor_mod
 
 _logger = logging.getLogger(__name__)
 
@@ -161,17 +161,6 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
 def read_rows_from_chunk(query_columns_description: list, buffer):
     # Create a transport and protocol instance for deserialization
     transport = TTransport.TMemoryBuffer(buffer)
-    protocol = TBinaryProtocol.TBinaryProtocol(transport)
-
-    # Create an instance of the Thrift struct and read from the protocol
-    chunk_wrapper = ChunkWrapper()
-    chunk_wrapper.read(protocol)
-
-    if chunk_wrapper.size <= 0:
-        return None
-
-    # Create a transport and protocol instance for deserialization
-    transport = TTransport.TMemoryBuffer(chunk_wrapper.chunk)
     protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
     # Create an instance of the Thrift struct and read from the protocol

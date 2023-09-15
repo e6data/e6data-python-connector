@@ -19,7 +19,7 @@ import grpc
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, \
+from e6data_python_connector.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_chunk, \
     read_values_from_array
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
@@ -497,10 +497,8 @@ class Cursor(DBAPICursor):
             self._is_metadata_updated = True
         if not buffer:
             return None
-        buffer = BytesIO(buffer)
-        dis = DataInputStream(buffer)
         # one batch retrieves the predefined set of rows
-        return read_rows_from_batch(self._query_columns_description, dis)
+        return read_rows_from_chunk(self._query_columns_description, buffer)
 
     def fetchall(self):
         return self._fetch_all()
