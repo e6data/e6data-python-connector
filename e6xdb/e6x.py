@@ -472,10 +472,7 @@ class Cursor(DBAPICursor):
         return rows
 
     def fetchone(self):
-        if self._data is not None and len(self._data) > 0:
-            return self._data.pop(0)
-        self._data = self.fetch_batch()
-        return self._data.pop(0)
+        return self.fetchmany(1, self._query_id)[0]
 
     def explain(self):
         return self.connection.client.explain(self.connection.get_session_id, self._query_id)

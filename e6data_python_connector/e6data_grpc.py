@@ -503,7 +503,7 @@ class Cursor(DBAPICursor):
     def fetchall(self):
         return self._fetch_all()
 
-    def fetchmany(self, size=None):
+    def fetchmany(self, size: int = None):
         # _logger.info("fetching all from overriden method")
         if size is None:
             size = self.arraysize
@@ -526,24 +526,7 @@ class Cursor(DBAPICursor):
 
     def fetchone(self):
         # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
-        rows_to_return = []
-        client = self.connection.client
-        get_next_result_row_request = e6x_engine_pb2.GetNextResultRowRequest(
-            engineIP=self._engine_ip,
-            sessionId=self.connection.get_session_id,
-            queryId=self._query_id
-        )
-        get_next_result_row_response = client.getNextResultRow(get_next_result_row_request)
-        buffer = get_next_result_row_response.resultRow
-        if not self._is_metadata_updated:
-            self.update_mete_data()
-            self._is_metadata_updated = True
-        if not buffer:
-            return None
-        buffer = BytesIO(buffer)
-        dis = DataInputStream(buffer)
-        rows_to_return.append(read_values_from_array(self._query_columns_description, dis))
-        return rows_to_return
+        return self.fetchmany(1)[0]
 
     def explain(self):
         explain_request = e6x_engine_pb2.ExplainRequest(
