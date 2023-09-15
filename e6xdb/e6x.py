@@ -432,7 +432,6 @@ class Cursor(DBAPICursor):
                 return
             yield rows
 
-    # Look at this as well
     def fetch_batch(self) -> list | None:
         # _logger.debug("fetching next batch from e6data")
         client = self.connection.client
@@ -443,9 +442,6 @@ class Cursor(DBAPICursor):
         if not buffer:
             return None
         return read_rows_from_chunk(self._query_columns_description, buffer)
-        # dis = DataInputStream(buffer)
-        # one batch retrieves the predefined set of rows
-        # return read_rows_from_batch(self._query_columns_description, dis)
 
     def fetchall(self, query_id=None):
         if query_id:

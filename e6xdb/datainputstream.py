@@ -102,7 +102,6 @@ def get_query_columns_info(buffer):
     return rowcount, columns_description
 
 
-# Look at this for reference on how to deserialize into valueArray
 def read_values_from_array(query_columns_description: list, dis: DataInputStream) -> list:
     value_array = list()
     for i in query_columns_description:
@@ -165,14 +164,14 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
     # Create an instance of the Thrift struct and read from the protocol
-    chunkWrapper = ChunkWrapper()
-    chunkWrapper.read(protocol)
+    chunk_wrapper = ChunkWrapper()
+    chunk_wrapper.read(protocol)
 
-    if chunkWrapper.size <= 0:
+    if chunk_wrapper.size <= 0:
         return None
 
     # Create a transport and protocol instance for deserialization
-    transport = TTransport.TMemoryBuffer(chunkWrapper.chunk)
+    transport = TTransport.TMemoryBuffer(chunk_wrapper.chunk)
     protocol = TBinaryProtocol.TBinaryProtocol(transport)
 
     # Create an instance of the Thrift struct and read from the protocol
@@ -187,7 +186,8 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
 
     return rows
 
-def get_row_from_chunk(row: int, vectors: list[Vector], query_columns_description: list):
+
+def get_row_from_chunk(row: int, vectors: list[Vector], query_columns_description: list) -> list:
     value_array = list()
     for col, colName in enumerate(query_columns_description):
         d_type = colName.get_field_type()
@@ -231,23 +231,4 @@ def get_row_from_chunk(row: int, vectors: list[Vector], query_columns_descriptio
             _logger.error(e)
             value_array.append('Failed to parse.')
 
-
     return value_array
-
-
-# Update this part
-def read_rows_from_batch(query_columns_description: list, dis: DataInputStream):
-    is_row_present = dis.read_byte()
-    if not is_row_present:
-        return None
-    rows = list()
-    while is_row_present == 1:
-        if is_row_present:
-            row = read_values_from_array(query_columns_description, dis)
-            rows.append(row)
-            #   if rows become 1000, break it
-            # if len(rows) == 1000:
-            #     _logger.info("Read Batch - Breaking the loop after 1000 records")
-            #     break
-        is_row_present = dis.read_byte()
-    return rows
