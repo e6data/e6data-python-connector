@@ -3,7 +3,7 @@ See http://www.python.org/dev/peps/pep-0249/
 Many docstrings in this file are based on the PEP, which is in the public domain.
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, annotations
 from __future__ import unicode_literals
 
 import datetime
@@ -439,7 +439,7 @@ class Cursor(DBAPICursor):
         if not self._is_metadata_updated:
             self.update_mete_data()
             self._is_metadata_updated = True
-        if not buffer:
+        if not buffer or len(buffer) == 0:
             return None
         return read_rows_from_chunk(self._query_columns_description, buffer)
 

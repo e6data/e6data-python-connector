@@ -495,7 +495,7 @@ class Cursor(DBAPICursor):
         if not self._is_metadata_updated:
             self.update_mete_data()
             self._is_metadata_updated = True
-        if not buffer:
+        if not buffer or len(buffer) == 0:
             return None
         # one batch retrieves the predefined set of rows
         return read_rows_from_chunk(self._query_columns_description, buffer)
