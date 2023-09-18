@@ -563,7 +563,12 @@ class Cursor(DBAPICursor):
             queryId=self._query_id
         )
         explain_analyze_response = self.connection.client.explainAnalyze(explain_analyze_request)
-        return explain_analyze_response.explainAnalyze
+        return dict(
+            is_cached=explain_analyze_response.isCached,
+            persing_time=explain_analyze_response.parsingTime,
+            queuing_time=explain_analyze_response.queueingTime,
+            planner=explain_analyze_response.explainAnalyze,
+        )
 
 
 def poll(self, get_progress_update=True):
@@ -598,3 +603,21 @@ class Error(Exception):
 for type_id in PRIMITIVE_TYPES:
     name = TypeId._VALUES_TO_NAMES[type_id]
     setattr(sys.modules[__name__], name, DBAPITypeObject([name]))
+
+if __name__ == '__main__':
+    conn = Connection(
+        host='e6data-vish04-s169o1w84r-532fd90e36b23261.elb.us-east-1.amazonaws.com',
+        port=80,
+        username='vishal@e6x.io',
+        password='521F6o7anSVDLPxbSDxfx2Skp1TiSm9evtGfKjrP1cF08qhoDas164zc'
+    )
+    cursor = conn.cursor(
+        catalog_name='dsas',
+        db_name='tpcds_1000'
+    )
+    qid = cursor.execute('select * from date_dim limit 2')
+    print(qid)
+    response = cursor.fetchall()
+    plan = cursor.explain_analyse()
+    print(plan)
+    conn.close()
