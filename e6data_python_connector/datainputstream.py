@@ -183,7 +183,7 @@ def get_row_from_chunk(row: int, vectors: list[Vector], query_columns_descriptio
     value_array = list()
     for col, colName in enumerate(query_columns_description):
         d_type = colName.get_field_type()
-        if not vectors[col].nullSet[row]:
+        if vectors[col].nullSet[row]:
             value_array.append(None)
             continue
         try:
