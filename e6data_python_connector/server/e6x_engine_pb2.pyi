@@ -136,10 +136,16 @@ class ExplainAnalyzeRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class ExplainAnalyzeResponse(_message.Message):
-    __slots__ = ["explainAnalyze"]
+    __slots__ = ["explainAnalyze", "isCached", "parsingTime", "queueingTime"]
     EXPLAINANALYZE_FIELD_NUMBER: _ClassVar[int]
+    ISCACHED_FIELD_NUMBER: _ClassVar[int]
+    PARSINGTIME_FIELD_NUMBER: _ClassVar[int]
+    QUEUEINGTIME_FIELD_NUMBER: _ClassVar[int]
     explainAnalyze: str
-    def __init__(self, explainAnalyze: _Optional[str] = ...) -> None: ...
+    isCached: bool
+    parsingTime: int
+    queueingTime: int
+    def __init__(self, explainAnalyze: _Optional[str] = ..., isCached: bool = ..., parsingTime: _Optional[int] = ..., queueingTime: _Optional[int] = ...) -> None: ...
 
 class PrepareStatementRequest(_message.Message):
     __slots__ = ["sessionId", "schema", "queryString", "quoting"]

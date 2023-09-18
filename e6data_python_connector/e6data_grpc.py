@@ -563,7 +563,12 @@ class Cursor(DBAPICursor):
             queryId=self._query_id
         )
         explain_analyze_response = self.connection.client.explainAnalyze(explain_analyze_request)
-        return explain_analyze_response.explainAnalyze
+        return dict(
+            is_cached=explain_analyze_response.isCached,
+            persing_time=explain_analyze_response.parsingTime,
+            queuing_time=explain_analyze_response.queueingTime,
+            planner=explain_analyze_response.explainAnalyze,
+        )
 
 
 def poll(self, get_progress_update=True):
