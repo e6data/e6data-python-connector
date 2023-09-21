@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.1.7-blue.svg)
+![version](https://img.shields.io/badge/version-1.1.8-blue.svg)
 
 ## Introduction
 
@@ -79,8 +79,8 @@ for item in records_iterator:
 To get the execution plan after query execution:
 ```python
 import json
-
-query_planner = json.loads(cursor.explain_analyse())
+explain_response = cursor.explain_analyse()
+query_planner = json.loads(explain_response.get('planner'))
 ```
 
 To abort a running query:
@@ -103,8 +103,8 @@ query = 'SELECT * FROM <TABLE_NAME>'
 cursor = conn.cursor(catalog_name)
 query_id = cursor.execute(query)  # execute function returns query id, can be use for aborting the query.
 all_records = cursor.fetchall()
-
-query_planner = json.loads(cursor.explain_analyse())
+explain_response = cursor.explain_analyse()
+query_planner = json.loads(explain_response.get('planner'))
 
 execution_time = query_planner.get("total_query_time")  # In milliseconds
 queue_time = query_planner.get("executionQueueingTime")  # In milliseconds
@@ -173,7 +173,8 @@ conn = Connection(
 cursor = conn.cursor(db_name=database, catalog_name=catalog_name)
 query_id = cursor.execute(sql_query)
 all_records = cursor.fetchall()
-planner_result = json.loads(cursor.explain_analyse())
+explain_response = cursor.explain_analyse()
+planner_result = json.loads(explain_response.get('planner'))
 execution_time = planner_result.get("total_query_time") / 1000  # Converting into seconds.
 row_count = planner_result.get('row_count_out')
 columns = [col[0] for col in cursor.description]  # Get the column names and merge them with the results.
