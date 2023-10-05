@@ -2,10 +2,11 @@ import logging
 import struct
 from datetime import datetime, timedelta
 
+import pytz
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TTransport
 
-from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector
+from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6xdb.constants import ZONE
 from e6xdb.date_time_utils import floor_div, floor_mod
 
@@ -182,43 +183,45 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
 def get_row_from_chunk(row: int, vectors: list[Vector], query_columns_description: list) -> list:
     value_array = list()
     for col, colName in enumerate(query_columns_description):
-        d_type = colName.get_field_type()
+        d_type = vectors[col].vectorType
         if vectors[col].nullSet[row]:
             value_array.append(None)
             continue
         try:
-            if d_type == "LONG":
+            if d_type == VectorType.LONG:
                 value_array.append(vectors[col].data.int64Data.data[row] if not vectors[col].isConstantVector else vectors[col].data.numericConstantData.data)
-            elif d_type == "DATE":
+            elif d_type == VectorType.DATE:
                 epoch_seconds = floor_div(vectors[col].data.dateData.data[row] if not vectors[col].isConstantVector else vectors[col].data.dateConstantData.data, 1000_000)
-                date = datetime.fromtimestamp(epoch_seconds, ZONE)
+                date = datetime.fromtimestamp(epoch_seconds, pytz.timezone(vectors[col].zoneOffset))
                 value_array.append(date.strftime("%Y-%m-%d"))
-            elif d_type == "DATETIME":
+            elif d_type == VectorType.DATETIME:
                 epoch_micros = vectors[col].data.timeData.data[row] if not vectors[col].isConstantVector else vectors[col].data.timeConstantData.data
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                date_time = datetime.fromtimestamp(epoch_seconds, ZONE)
+                date_time = datetime.fromtimestamp(epoch_seconds, pytz.timezone(vectors[col].zoneOffset))
                 date_time = date_time + timedelta(microseconds=micros_of_the_day)
                 value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
-            elif d_type == "STRING" or d_type == "ARRAY" or d_type == "MAP" or d_type == "STRUCT":
+            elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
                 value_array.append(vectors[col].data.varcharData.data[row] if not vectors[col].isConstantVector else vectors[col].data.varcharConstantData.data)
-            elif d_type == "DOUBLE":
+            elif d_type == VectorType.DOUBLE:
                 value_array.append(vectors[col].data.float64Data.data[row] if not vectors[col].isConstantVector else vectors[col].data.numericDecimalConstantData.data)
-            elif d_type == "BINARY":
+            elif d_type == VectorType.BINARY:
                 value_array.append(vectors[col].data.varcharData.data[row] if not vectors[col].isConstantVector else vectors[col].data.varcharConstantData.data)
-            elif d_type == "FLOAT":
+            elif d_type == VectorType.FLOAT:
                 value_array.append(vectors[col].data.float32Data.data[row] if not vectors[col].isConstantVector else vectors[col].data.float32Data.data)
-            elif d_type == "BOOLEAN":
+            elif d_type == VectorType.BOOLEAN:
                 value_array.append(vectors[col].data.boolData.data[row] if not vectors[col].isConstantVector else vectors[col].data.boolConstantData.data)
-            elif d_type == "INT96":
+            elif d_type == VectorType.INT96:
                 binary_data: str = vectors[col].data.varcharData.data[row] if not vectors[col].isConstantVector else vectors[col].data.varcharConstantData.data
                 julian_day: int = struct.unpack('>i', binary_data.encode()[:4])[0]
                 time = struct.unpack('>q', binary_data.encode()[4:12])[0]
                 date_time = datetime.fromtimestamp((julian_day - 2440588) * 86400)
                 date_time_with_nanos = date_time + timedelta(microseconds=(time / 1000))
                 value_array.append(date_time_with_nanos)
-            elif d_type == "INTEGER":
+            elif d_type == VectorType.INTEGER:
                 value_array.append(vectors[col].data.int32Data.data[row] if not vectors[col].isConstantVector else vectors[col].data.numericConstantData.data)
+            else:
+                value_array.append(None)
         except Exception as e:
             _logger.error(e)
             value_array.append('Failed to parse.')

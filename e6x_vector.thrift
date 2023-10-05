@@ -45,10 +45,8 @@ union Data
     12: NumericDecimalConstantData numericDecimalConstantData
     13: TemporalIntervalConstantData temporalIntervalConstantData
     14: TimeConstantData timeConstantData
-    15: TimeStampConstantData timeStampConstantData
-    16: VarcharConstantData varcharConstantData
-    17: TimeData timeData
-    18: TimeStampData timeStampData
+    15: VarcharConstantData varcharConstantData
+    16: TimeData timeData
 }
 
 struct BoolData
@@ -121,11 +119,6 @@ struct TimeConstantData
     1: i64 data
 }
 
-struct TimeStampConstantData
-{
-    1: i64 data
-}
-
 struct VarcharConstantData
 {
     1: string data
@@ -136,19 +129,8 @@ struct TimeData
     1: list<i64> data
 }
 
-struct TimeStampData
-{
-    1: list<i64> data
-}
-
 struct Chunk
 {
     1: i32 size,
     2: list <Vector> vectors
-}
-
-struct ChunkWrapper
-{
-    1: binary chunk // thrift srialized Chunk
-    2: i32 size
 }

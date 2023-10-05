@@ -216,15 +216,13 @@ class Data(object):
      - numericDecimalConstantData
      - temporalIntervalConstantData
      - timeConstantData
-     - timeStampConstantData
      - varcharConstantData
      - timeData
-     - timeStampData
 
     """
 
 
-    def __init__(self, boolData=None, int32Data=None, int64Data=None, dateData=None, float32Data=None, float64Data=None, varcharData=None, boolConstantData=None, dateConstantData=None, nullConstantData=None, numericConstantData=None, numericDecimalConstantData=None, temporalIntervalConstantData=None, timeConstantData=None, timeStampConstantData=None, varcharConstantData=None, timeData=None, timeStampData=None,):
+    def __init__(self, boolData=None, int32Data=None, int64Data=None, dateData=None, float32Data=None, float64Data=None, varcharData=None, boolConstantData=None, dateConstantData=None, nullConstantData=None, numericConstantData=None, numericDecimalConstantData=None, temporalIntervalConstantData=None, timeConstantData=None, varcharConstantData=None, timeData=None,):
         self.boolData = boolData
         self.int32Data = int32Data
         self.int64Data = int64Data
@@ -239,10 +237,8 @@ class Data(object):
         self.numericDecimalConstantData = numericDecimalConstantData
         self.temporalIntervalConstantData = temporalIntervalConstantData
         self.timeConstantData = timeConstantData
-        self.timeStampConstantData = timeStampConstantData
         self.varcharConstantData = varcharConstantData
         self.timeData = timeData
-        self.timeStampData = timeStampData
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -339,26 +335,14 @@ class Data(object):
                     iprot.skip(ftype)
             elif fid == 15:
                 if ftype == TType.STRUCT:
-                    self.timeStampConstantData = TimeStampConstantData()
-                    self.timeStampConstantData.read(iprot)
-                else:
-                    iprot.skip(ftype)
-            elif fid == 16:
-                if ftype == TType.STRUCT:
                     self.varcharConstantData = VarcharConstantData()
                     self.varcharConstantData.read(iprot)
                 else:
                     iprot.skip(ftype)
-            elif fid == 17:
+            elif fid == 16:
                 if ftype == TType.STRUCT:
                     self.timeData = TimeData()
                     self.timeData.read(iprot)
-                else:
-                    iprot.skip(ftype)
-            elif fid == 18:
-                if ftype == TType.STRUCT:
-                    self.timeStampData = TimeStampData()
-                    self.timeStampData.read(iprot)
                 else:
                     iprot.skip(ftype)
             else:
@@ -427,21 +411,13 @@ class Data(object):
             oprot.writeFieldBegin('timeConstantData', TType.STRUCT, 14)
             self.timeConstantData.write(oprot)
             oprot.writeFieldEnd()
-        if self.timeStampConstantData is not None:
-            oprot.writeFieldBegin('timeStampConstantData', TType.STRUCT, 15)
-            self.timeStampConstantData.write(oprot)
-            oprot.writeFieldEnd()
         if self.varcharConstantData is not None:
-            oprot.writeFieldBegin('varcharConstantData', TType.STRUCT, 16)
+            oprot.writeFieldBegin('varcharConstantData', TType.STRUCT, 15)
             self.varcharConstantData.write(oprot)
             oprot.writeFieldEnd()
         if self.timeData is not None:
-            oprot.writeFieldBegin('timeData', TType.STRUCT, 17)
+            oprot.writeFieldBegin('timeData', TType.STRUCT, 16)
             self.timeData.write(oprot)
-            oprot.writeFieldEnd()
-        if self.timeStampData is not None:
-            oprot.writeFieldBegin('timeStampData', TType.STRUCT, 18)
-            self.timeStampData.write(oprot)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1315,63 +1291,6 @@ class TimeConstantData(object):
         return not (self == other)
 
 
-class TimeStampConstantData(object):
-    """
-    Attributes:
-     - data
-
-    """
-
-
-    def __init__(self, data=None,):
-        self.data = data
-
-    def read(self, iprot):
-        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
-            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
-            return
-        iprot.readStructBegin()
-        while True:
-            (fname, ftype, fid) = iprot.readFieldBegin()
-            if ftype == TType.STOP:
-                break
-            if fid == 1:
-                if ftype == TType.I64:
-                    self.data = iprot.readI64()
-                else:
-                    iprot.skip(ftype)
-            else:
-                iprot.skip(ftype)
-            iprot.readFieldEnd()
-        iprot.readStructEnd()
-
-    def write(self, oprot):
-        if oprot._fast_encode is not None and self.thrift_spec is not None:
-            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
-            return
-        oprot.writeStructBegin('TimeStampConstantData')
-        if self.data is not None:
-            oprot.writeFieldBegin('data', TType.I64, 1)
-            oprot.writeI64(self.data)
-            oprot.writeFieldEnd()
-        oprot.writeFieldStop()
-        oprot.writeStructEnd()
-
-    def validate(self):
-        return
-
-    def __repr__(self):
-        L = ['%s=%r' % (key, value)
-             for key, value in self.__dict__.items()]
-        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
-
-    def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return not (self == other)
-
-
 class VarcharConstantData(object):
     """
     Attributes:
@@ -1494,71 +1413,6 @@ class TimeData(object):
         return not (self == other)
 
 
-class TimeStampData(object):
-    """
-    Attributes:
-     - data
-
-    """
-
-
-    def __init__(self, data=None,):
-        self.data = data
-
-    def read(self, iprot):
-        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
-            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
-            return
-        iprot.readStructBegin()
-        while True:
-            (fname, ftype, fid) = iprot.readFieldBegin()
-            if ftype == TType.STOP:
-                break
-            if fid == 1:
-                if ftype == TType.LIST:
-                    self.data = []
-                    (_etype66, _size63) = iprot.readListBegin()
-                    for _i67 in range(_size63):
-                        _elem68 = iprot.readI64()
-                        self.data.append(_elem68)
-                    iprot.readListEnd()
-                else:
-                    iprot.skip(ftype)
-            else:
-                iprot.skip(ftype)
-            iprot.readFieldEnd()
-        iprot.readStructEnd()
-
-    def write(self, oprot):
-        if oprot._fast_encode is not None and self.thrift_spec is not None:
-            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
-            return
-        oprot.writeStructBegin('TimeStampData')
-        if self.data is not None:
-            oprot.writeFieldBegin('data', TType.LIST, 1)
-            oprot.writeListBegin(TType.I64, len(self.data))
-            for iter69 in self.data:
-                oprot.writeI64(iter69)
-            oprot.writeListEnd()
-            oprot.writeFieldEnd()
-        oprot.writeFieldStop()
-        oprot.writeStructEnd()
-
-    def validate(self):
-        return
-
-    def __repr__(self):
-        L = ['%s=%r' % (key, value)
-             for key, value in self.__dict__.items()]
-        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
-
-    def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return not (self == other)
-
-
 class Chunk(object):
     """
     Attributes:
@@ -1589,11 +1443,11 @@ class Chunk(object):
             elif fid == 2:
                 if ftype == TType.LIST:
                     self.vectors = []
-                    (_etype73, _size70) = iprot.readListBegin()
-                    for _i74 in range(_size70):
-                        _elem75 = Vector()
-                        _elem75.read(iprot)
-                        self.vectors.append(_elem75)
+                    (_etype66, _size63) = iprot.readListBegin()
+                    for _i67 in range(_size63):
+                        _elem68 = Vector()
+                        _elem68.read(iprot)
+                        self.vectors.append(_elem68)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -1614,77 +1468,9 @@ class Chunk(object):
         if self.vectors is not None:
             oprot.writeFieldBegin('vectors', TType.LIST, 2)
             oprot.writeListBegin(TType.STRUCT, len(self.vectors))
-            for iter76 in self.vectors:
-                iter76.write(oprot)
+            for iter69 in self.vectors:
+                iter69.write(oprot)
             oprot.writeListEnd()
-            oprot.writeFieldEnd()
-        oprot.writeFieldStop()
-        oprot.writeStructEnd()
-
-    def validate(self):
-        return
-
-    def __repr__(self):
-        L = ['%s=%r' % (key, value)
-             for key, value in self.__dict__.items()]
-        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
-
-    def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return not (self == other)
-
-
-class ChunkWrapper(object):
-    """
-    Attributes:
-     - chunk
-     - size
-
-    """
-
-
-    def __init__(self, chunk=None, size=None,):
-        self.chunk = chunk
-        self.size = size
-
-    def read(self, iprot):
-        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
-            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
-            return
-        iprot.readStructBegin()
-        while True:
-            (fname, ftype, fid) = iprot.readFieldBegin()
-            if ftype == TType.STOP:
-                break
-            if fid == 1:
-                if ftype == TType.STRING:
-                    self.chunk = iprot.readBinary()
-                else:
-                    iprot.skip(ftype)
-            elif fid == 2:
-                if ftype == TType.I32:
-                    self.size = iprot.readI32()
-                else:
-                    iprot.skip(ftype)
-            else:
-                iprot.skip(ftype)
-            iprot.readFieldEnd()
-        iprot.readStructEnd()
-
-    def write(self, oprot):
-        if oprot._fast_encode is not None and self.thrift_spec is not None:
-            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
-            return
-        oprot.writeStructBegin('ChunkWrapper')
-        if self.chunk is not None:
-            oprot.writeFieldBegin('chunk', TType.STRING, 1)
-            oprot.writeBinary(self.chunk)
-            oprot.writeFieldEnd()
-        if self.size is not None:
-            oprot.writeFieldBegin('size', TType.I32, 2)
-            oprot.writeI32(self.size)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1730,10 +1516,8 @@ Data.thrift_spec = (
     (12, TType.STRUCT, 'numericDecimalConstantData', [NumericDecimalConstantData, None], None, ),  # 12
     (13, TType.STRUCT, 'temporalIntervalConstantData', [TemporalIntervalConstantData, None], None, ),  # 13
     (14, TType.STRUCT, 'timeConstantData', [TimeConstantData, None], None, ),  # 14
-    (15, TType.STRUCT, 'timeStampConstantData', [TimeStampConstantData, None], None, ),  # 15
-    (16, TType.STRUCT, 'varcharConstantData', [VarcharConstantData, None], None, ),  # 16
-    (17, TType.STRUCT, 'timeData', [TimeData, None], None, ),  # 17
-    (18, TType.STRUCT, 'timeStampData', [TimeStampData, None], None, ),  # 18
+    (15, TType.STRUCT, 'varcharConstantData', [VarcharConstantData, None], None, ),  # 15
+    (16, TType.STRUCT, 'timeData', [TimeData, None], None, ),  # 16
 )
 all_structs.append(BoolData)
 BoolData.thrift_spec = (
@@ -1805,11 +1589,6 @@ TimeConstantData.thrift_spec = (
     None,  # 0
     (1, TType.I64, 'data', None, None, ),  # 1
 )
-all_structs.append(TimeStampConstantData)
-TimeStampConstantData.thrift_spec = (
-    None,  # 0
-    (1, TType.I64, 'data', None, None, ),  # 1
-)
 all_structs.append(VarcharConstantData)
 VarcharConstantData.thrift_spec = (
     None,  # 0
@@ -1820,22 +1599,11 @@ TimeData.thrift_spec = (
     None,  # 0
     (1, TType.LIST, 'data', (TType.I64, None, False), None, ),  # 1
 )
-all_structs.append(TimeStampData)
-TimeStampData.thrift_spec = (
-    None,  # 0
-    (1, TType.LIST, 'data', (TType.I64, None, False), None, ),  # 1
-)
 all_structs.append(Chunk)
 Chunk.thrift_spec = (
     None,  # 0
     (1, TType.I32, 'size', None, None, ),  # 1
     (2, TType.LIST, 'vectors', (TType.STRUCT, [Vector, None], False), None, ),  # 2
-)
-all_structs.append(ChunkWrapper)
-ChunkWrapper.thrift_spec = (
-    None,  # 0
-    (1, TType.STRING, 'chunk', 'BINARY', None, ),  # 1
-    (2, TType.I32, 'size', None, None, ),  # 2
 )
 fix_spec(all_structs)
 del all_structs
