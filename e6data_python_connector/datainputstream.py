@@ -202,7 +202,8 @@ def get_column_from_chunk(vector: Vector) -> list:
                     value_array.append(None)
                     continue
                 epoch_seconds = floor_div(vector.data.dateData.data[row] if not vector.isConstantVector else vector.data.dateConstantData.data, 1000_000)
-                date = datetime.fromtimestamp(epoch_seconds, pytz.timezone(vector.zoneOffset))
+                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(vector.zoneOffset)
+                date = datetime.fromtimestamp(epoch_seconds, zone_offset)
                 value_array.append(date.strftime("%Y-%m-%d"))
         elif d_type == VectorType.DATETIME:
             for row in range(vector.size):
@@ -212,7 +213,8 @@ def get_column_from_chunk(vector: Vector) -> list:
                 epoch_micros = vector.data.timeData.data[row] if not vector.isConstantVector else vector.data.timeConstantData.data
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                date_time = datetime.fromtimestamp(epoch_seconds, pytz.timezone(vector.zoneOffset))
+                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(vector.zoneOffset)
+                date_time = datetime.fromtimestamp(epoch_seconds, zone_offset)
                 date_time = date_time + timedelta(microseconds=micros_of_the_day)
                 value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
         elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
