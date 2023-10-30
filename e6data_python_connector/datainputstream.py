@@ -256,3 +256,4 @@ def get_column_from_chunk(vector: Vector) -> list:
     except Exception as e:
         _logger.error(e)
         value_array.append('Failed to parse.')
+    return value_array
