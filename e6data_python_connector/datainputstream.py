@@ -179,8 +179,8 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
 
     for rowIndex in range(chunk.size):
         value = list()
-        for col, colName in enumerate(query_columns_description):
-            value.append(columns[col][rowIndex])
+        for colIndex, colName in enumerate(query_columns_description):
+            value.append(columns[colIndex][rowIndex])
         rows.append(value)
 
     return rows
