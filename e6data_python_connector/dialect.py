@@ -210,7 +210,7 @@ class E6dataDialect(default.DefaultDialect):
     supports_multivalues_insert = True
     type_compiler = E6dataTypeCompiler
     supports_sane_rowcount = False
-    driver = b'thrift'
+    driver = 'e6data'
     scheme = 'e6data'
     catalog_name = None
 
