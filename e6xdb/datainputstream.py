@@ -171,7 +171,6 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     rows = list()
 
     for rowIndex in range(chunk.size):
-        rowIndex: int
         rows.append(get_row_from_chunk(rowIndex, chunk.vectors, query_columns_description))
 
     return rows

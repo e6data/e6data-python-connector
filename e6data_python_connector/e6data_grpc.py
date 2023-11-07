@@ -526,7 +526,10 @@ class Cursor(DBAPICursor):
 
     def fetchone(self):
         # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
-        return self.fetchmany(1)[0]
+        rows = self.fetchmany(1)
+        if rows is None or len(rows) == 0:
+            return None
+        return rows[0]
 
     def explain(self):
         explain_request = e6x_engine_pb2.ExplainRequest(
