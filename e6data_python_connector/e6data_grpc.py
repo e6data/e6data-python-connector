@@ -358,14 +358,14 @@ class Cursor(DBAPICursor):
 
     def get_tables(self):
         schema = self.connection.database
-        return self.connection.get_tables(database=schema)
+        return self.connection.get_tables(catalog=self._catalog_name, database=schema)
 
     def get_columns(self, table):
         schema = self.connection.database
-        return self.connection.get_columns(database=schema, table=table)
+        return self.connection.get_columns(catalog=self._catalog_name, database=schema, table=table)
 
     def get_schema_names(self):
-        return self.connection.get_schema_names()
+        return self.connection.get_schema_names(catalog=self._catalog_name)
 
     def clear(self):
         clear_request = e6x_engine_pb2.ClearRequest(
