@@ -1,10 +1,16 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-1.1.9-blue.svg)
+![version](https://img.shields.io/badge/version-1.1.10-blue.svg)
 
 ## Introduction
 
 The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations.
+
+#### Amazon Linux Wheel dependency
+Make sure to install wheel before install e6data-python-connector.
+```shell
+pip install wheel
+```
 
 To install the Python package, use the command below:
 ```shell
