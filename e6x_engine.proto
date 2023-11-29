@@ -90,6 +90,9 @@ message ExplainAnalyzeRequest{
 
 message ExplainAnalyzeResponse{
   string explainAnalyze = 1;
+  bool isCached = 2;
+  sint64 parsingTime = 3;
+  sint64 queueingTime = 4;
 }
 
 message PrepareStatementRequest{

@@ -358,19 +358,21 @@ class Cursor(DBAPICursor):
 
     def get_tables(self):
         schema = self.connection.database
-        return self.connection.get_tables(database=schema)
+        return self.connection.get_tables(catalog=self._catalog_name, database=schema)
 
     def get_columns(self, table):
         schema = self.connection.database
-        return self.connection.get_columns(database=schema, table=table)
+        return self.connection.get_columns(catalog=self._catalog_name, database=schema, table=table)
 
     def get_schema_names(self):
-        return self.connection.get_schema_names()
+        return self.connection.get_schema_names(catalog=self._catalog_name)
 
-    def clear(self):
+    def clear(self, query_id=None):
+        if not query_id:
+            query_id = self._query_id
         clear_request = e6x_engine_pb2.ClearRequest(
             sessionId=self.connection.get_session_id,
-            queryId=self._query_id,
+            queryId=query_id,
             engineIP=self._engine_ip
         )
         return self.connection.client.clear(clear_request)
@@ -547,7 +549,12 @@ class Cursor(DBAPICursor):
             queryId=self._query_id
         )
         explain_analyze_response = self.connection.client.explainAnalyze(explain_analyze_request)
-        return explain_analyze_response.explainAnalyze
+        return dict(
+            is_cached=explain_analyze_response.isCached,
+            parsing_time=explain_analyze_response.parsingTime,
+            queuing_time=explain_analyze_response.queueingTime,
+            planner=explain_analyze_response.explainAnalyze,
+        )
 
 
 def poll(self, get_progress_update=True):
