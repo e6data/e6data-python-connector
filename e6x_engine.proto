@@ -150,6 +150,7 @@ message GetNextResultBatchRequest{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
+  optional bool asRowData = 4; //This is false by default
 }
 
 message GetNextResultBatchResponse{

@@ -234,14 +234,16 @@ class GetNextResultRowResponse(_message.Message):
     def __init__(self, resultRow: _Optional[bytes] = ...) -> None: ...
 
 class GetNextResultBatchRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ["engineIP", "sessionId", "queryId", "asRowData"]
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
+    ASROWDATA_FIELD_NUMBER: _ClassVar[int]
     engineIP: str
     sessionId: str
     queryId: str
-    def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
+    asRowData: bool
+    def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., asRowData: bool = ...) -> None: ...
 
 class GetNextResultBatchResponse(_message.Message):
     __slots__ = ["resultBatch"]

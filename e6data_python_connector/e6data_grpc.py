@@ -490,7 +490,8 @@ class Cursor(DBAPICursor):
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
-            queryId=self._query_id
+            queryId=self._query_id,
+            asRowData=True
         )
         get_next_result_batch_response = client.getNextResultBatch(get_next_result_batch_request)
         buffer = get_next_result_batch_response.resultBatch
@@ -519,7 +520,6 @@ class Cursor(DBAPICursor):
             if rows is None:
                 break
             self._data += rows
-        _logger.info(len(self._data))
         if len(self._data) <= size:
             rows = self._data
             self._data = None
