@@ -217,22 +217,6 @@ class ExecuteStatementResponse(_message.Message):
     __slots__ = []
     def __init__(self) -> None: ...
 
-class GetNextResultRowRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
-    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
-    SESSIONID_FIELD_NUMBER: _ClassVar[int]
-    QUERYID_FIELD_NUMBER: _ClassVar[int]
-    engineIP: str
-    sessionId: str
-    queryId: str
-    def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
-
-class GetNextResultRowResponse(_message.Message):
-    __slots__ = ["resultRow"]
-    RESULTROW_FIELD_NUMBER: _ClassVar[int]
-    resultRow: bytes
-    def __init__(self, resultRow: _Optional[bytes] = ...) -> None: ...
-
 class GetNextResultBatchRequest(_message.Message):
     __slots__ = ["engineIP", "sessionId", "queryId"]
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]

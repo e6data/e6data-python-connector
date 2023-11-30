@@ -512,12 +512,10 @@ class Cursor(DBAPICursor):
         if self._data is None:
             self._data = list()
         while len(self._data) < size:
-            # _logger.info("fetching next batch from fetch many")
             rows = self.fetch_batch()
             if rows is None:
                 break
             self._data += rows
-        _logger.info(len(self._data))
         if len(self._data) <= size:
             rows = self._data
             self._data = None
@@ -531,7 +529,7 @@ class Cursor(DBAPICursor):
         rows = self.fetchmany(1)
         if rows is None or len(rows) == 0:
             return None
-        return rows[0]
+        return rows
 
     def explain(self):
         explain_request = e6x_engine_pb2.ExplainRequest(
