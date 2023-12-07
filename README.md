@@ -6,13 +6,20 @@
 
 The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations.
 
-#### Amazon Linux dependency
-Make sure to install C compiler dependencies and wheel before install e6data-python-connector.
+### Dependencies
+Make sure to install below dependencies and wheel before install e6data-python-connector.
 ```shell
+# Amazon Linux / CentOS dependencies
 yum install python3-devel gcc-c++ -y
 
+# Ubuntu/Debian dependencies
+apt install python3-dev g++ -y
+
+
+# Pip dependencies
 pip install wheel
 ```
+
 
 To install the Python package, use the command below:
 ```shell
