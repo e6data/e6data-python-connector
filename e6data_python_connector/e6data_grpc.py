@@ -126,7 +126,7 @@ class Connection(object):
         self.catalog_name = catalog
 
         self._keepalive_timeout_ms = 900000
-        self._max_receive_message_length = 100 * 1024 * 1024  # mb
+        self._max_receive_message_length = -1
         self._max_send_message_length = 300 * 1024 * 1024  # mb
 
         if type(grpc_options) == dict:
