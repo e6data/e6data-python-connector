@@ -63,8 +63,6 @@ service QueryEngineService
 
    void executeStatement(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
-   binary getNextResultRow(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
-
    binary getNextResultBatch(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),
 
    binary getResultMetadata(1: string sessionId, 2: string queryId) throws (1: QueryProcessingException error1, 2: AccessDeniedException error2),

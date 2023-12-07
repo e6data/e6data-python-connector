@@ -19,7 +19,7 @@ import grpc
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_batch, \
+from e6data_python_connector.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_chunk, \
     read_values_from_array
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
@@ -490,32 +490,28 @@ class Cursor(DBAPICursor):
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
-            queryId=self._query_id,
-            asRowData=True
+            queryId=self._query_id
         )
         get_next_result_batch_response = client.getNextResultBatch(get_next_result_batch_request)
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
             self.update_mete_data()
             self._is_metadata_updated = True
-        if not buffer:
+        if not buffer or len(buffer) == 0:
             return None
-        buffer = BytesIO(buffer)
-        dis = DataInputStream(buffer)
         # one batch retrieves the predefined set of rows
-        return read_rows_from_batch(self._query_columns_description, dis)
+        return read_rows_from_chunk(self._query_columns_description, buffer)
 
     def fetchall(self):
         return self._fetch_all()
 
-    def fetchmany(self, size=None):
+    def fetchmany(self, size: int = None):
         # _logger.info("fetching all from overriden method")
         if size is None:
             size = self.arraysize
         if self._data is None:
             self._data = list()
         while len(self._data) < size:
-            # _logger.info("fetching next batch from fetch many")
             rows = self.fetch_batch()
             if rows is None:
                 break
@@ -530,24 +526,10 @@ class Cursor(DBAPICursor):
 
     def fetchone(self):
         # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
-        rows_to_return = []
-        client = self.connection.client
-        get_next_result_row_request = e6x_engine_pb2.GetNextResultRowRequest(
-            engineIP=self._engine_ip,
-            sessionId=self.connection.get_session_id,
-            queryId=self._query_id
-        )
-        get_next_result_row_response = client.getNextResultRow(get_next_result_row_request)
-        buffer = get_next_result_row_response.resultRow
-        if not self._is_metadata_updated:
-            self.update_mete_data()
-            self._is_metadata_updated = True
-        if not buffer:
+        rows = self.fetchmany(1)
+        if rows is None or len(rows) == 0:
             return None
-        buffer = BytesIO(buffer)
-        dis = DataInputStream(buffer)
-        rows_to_return.append(read_values_from_array(self._query_columns_description, dis))
-        return rows_to_return
+        return rows
 
     def explain(self):
         explain_request = e6x_engine_pb2.ExplainRequest(

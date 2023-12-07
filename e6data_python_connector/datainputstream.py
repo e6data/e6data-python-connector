@@ -1,8 +1,14 @@
-import struct
 import logging
-from e6xdb.date_time_utils import FORMATS, floor_div, floor_mod
+import struct
 from datetime import datetime, timedelta
+
+import pytz
+from thrift.protocol import TBinaryProtocol
+from thrift.transport import TTransport
+
+from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6xdb.constants import ZONE
+from e6xdb.date_time_utils import floor_div, floor_mod
 
 _logger = logging.getLogger(__name__)
 
@@ -153,18 +159,103 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
     return value_array
 
 
-def read_rows_from_batch(query_columns_description: list, dis: DataInputStream):
-    is_row_present = dis.read_byte()
-    if not is_row_present:
+def read_rows_from_chunk(query_columns_description: list, buffer):
+    # Create a transport and protocol instance for deserialization
+    transport = TTransport.TMemoryBuffer(buffer)
+    protocol = TBinaryProtocol.TBinaryProtocolAccelerated(transport)
+
+    # Create an instance of the Thrift struct and read from the protocol
+    chunk = Chunk()
+    chunk.read(protocol)
+
+    if chunk.size <= 0:
         return None
+
     rows = list()
-    while is_row_present == 1:
-        if is_row_present:
-            row = read_values_from_array(query_columns_description, dis)
-            rows.append(row)
-            #   if rows become 1000, break it
-            # if len(rows) == 1000:
-            #     _logger.info("Read Batch - Breaking the loop after 1000 records")
-            #     break
-        is_row_present = dis.read_byte()
+    columns = list()
+
+    for col, colName in enumerate(query_columns_description):
+        columns.append(get_column_from_chunk(chunk.vectors[col]))
+
+    for rowIndex in range(chunk.size):
+        value = list()
+        for colIndex, colName in enumerate(query_columns_description):
+            value.append(columns[colIndex][rowIndex])
+        rows.append(value)
+
     return rows
+
+
+def get_column_from_chunk(vector: Vector) -> list:
+    value_array = list()
+    d_type = vector.vectorType
+    try:
+        if d_type == VectorType.LONG:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.int64Data.data[row] if not vector.isConstantVector else vector.data.numericConstantData.data)
+        elif d_type == VectorType.DATE:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                epoch_seconds = floor_div(vector.data.dateData.data[row] if not vector.isConstantVector else vector.data.dateConstantData.data, 1000_000)
+                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(vector.zoneOffset)
+                date = datetime.fromtimestamp(epoch_seconds, zone_offset)
+                value_array.append(date.strftime("%Y-%m-%d"))
+        elif d_type == VectorType.DATETIME:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                epoch_micros = vector.data.timeData.data[row] if not vector.isConstantVector else vector.data.timeConstantData.data
+                epoch_seconds = floor_div(epoch_micros, 1000_000)
+                micros_of_the_day = floor_mod(epoch_micros, 1000_000)
+                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(vector.zoneOffset)
+                date_time = datetime.fromtimestamp(epoch_seconds, zone_offset)
+                date_time = date_time + timedelta(microseconds=micros_of_the_day)
+                value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
+        elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.varcharData.data[row] if not vector.isConstantVector else vector.data.varcharConstantData.data)
+        elif d_type == VectorType.DOUBLE:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.float64Data.data[row] if not vector.isConstantVector else vector.data.numericDecimalConstantData.data)
+        elif d_type == VectorType.BINARY:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.varcharData.data[row] if not vector.isConstantVector else vector.data.varcharConstantData.data)
+        elif d_type == VectorType.FLOAT:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.float32Data.data[row] if not vector.isConstantVector else vector.data.numericDecimalConstantData.data)
+        elif d_type == VectorType.BOOLEAN:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.boolData.data[row] if not vector.isConstantVector else vector.data.boolConstantData.data)
+        elif d_type == VectorType.INTEGER:
+            for row in range(vector.size):
+                if vector.nullSet[row]:
+                    value_array.append(None)
+                    continue
+                value_array.append(vector.data.int32Data.data[row] if not vector.isConstantVector else vector.data.numericConstantData.data)
+        else:
+            value_array.append(None)
+    except Exception as e:
+        _logger.error(e)
+        value_array.append('Failed to parse.')
+    return value_array
