@@ -16,7 +16,7 @@ pip install wheel
 
 To install the Python package, use the command below:
 ```shell
-pip install e6data-python-connector
+pip install --no-cache-dir e6data-python-connector
 ```
 ### Prerequisites
 
