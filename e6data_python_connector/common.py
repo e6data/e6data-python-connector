@@ -18,7 +18,7 @@ from builtins import str
 from future.utils import with_metaclass
 from past.builtins import basestring
 
-from e6xdb.exceptions import ProgrammingError
+from e6data_python_connector.exceptions import ProgrammingError
 
 _logger = logging.getLogger(__name__)
 

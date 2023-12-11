@@ -2,7 +2,7 @@ import csv
 import os
 import time
 from unittest import TestCase
-import e6xdb.e6x as edb
+from e6data_python_connector import Connection
 import json
 import logging
 
@@ -16,7 +16,7 @@ class TestE6X(TestCase):
         self._database = os.environ.get('DB_NAME')
         self.e6x_connection = None
         logging.debug('Trying to connect to engine host {}, database {}.'.format(self._host, self._database))
-        self.e6x_connection = edb.connect(
+        self.e6x_connection = Connection(
             host=self._host,
             port=9000,
             username='vishal@e6x.io',
