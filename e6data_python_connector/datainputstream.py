@@ -8,8 +8,7 @@ from thrift.transport import TTransport
 
 from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6data_python_connector.constants import ZONE
-from e6data_python_connector.date_time_utils import floor_div, floor_mod
-from e6data_python_connector.date_time_utils import get_zone
+from e6data_python_connector.date_time_utils import floor_div, floor_mod, get_zone
 
 try:
     from thrift.protocol import fastbinary
