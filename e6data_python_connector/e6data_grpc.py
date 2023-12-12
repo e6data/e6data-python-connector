@@ -395,6 +395,7 @@ class Cursor(DBAPICursor):
         """
         Semicolon is now not supported. So removing it from query end.
         """
+        operation = operation.strip()  # Remove leading and trailing whitespaces.
         if operation.endswith(';'):
             operation = operation[:-1]
 
