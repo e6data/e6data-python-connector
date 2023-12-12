@@ -24,6 +24,10 @@ except ImportError:
 _logger = logging.getLogger(__name__)
 
 
+def get_null(vector: Vector, index: int):
+    return vector.nullSet[0] if vector.isConstantVector else vector.nullSet[index]
+
+
 class DataInputStream:
     def __init__(self, stream):
         self.stream = stream
@@ -203,14 +207,14 @@ def get_column_from_chunk(vector: Vector) -> list:
     try:
         if d_type == VectorType.LONG:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.int64Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericConstantData.data)
         elif d_type == VectorType.DATE:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 epoch_seconds = floor_div(vector.data.dateData.data[
@@ -221,54 +225,56 @@ def get_column_from_chunk(vector: Vector) -> list:
                 value_array.append(date.strftime("%Y-%m-%d"))
         elif d_type == VectorType.DATETIME:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
-                epoch_micros = vector.data.timeData.data[row] if not vector.isConstantVector else vector.data.timeConstantData.data
+                epoch_micros = vector.data.timeData.data[
+                    row] if not vector.isConstantVector else vector.data.timeConstantData.data
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(get_zone(vector.zoneOffset))
+                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(
+                    get_zone(vector.zoneOffset))
                 date_time = datetime.fromtimestamp(epoch_seconds, zone_offset)
                 date_time = date_time + timedelta(microseconds=micros_of_the_day)
                 value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
         elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.varcharData.data[
                                        row] if not vector.isConstantVector else vector.data.varcharConstantData.data)
         elif d_type == VectorType.DOUBLE:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.float64Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericDecimalConstantData.data)
         elif d_type == VectorType.BINARY:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.varcharData.data[
                                        row] if not vector.isConstantVector else vector.data.varcharConstantData.data)
         elif d_type == VectorType.FLOAT:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.float32Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericDecimalConstantData.data)
         elif d_type == VectorType.BOOLEAN:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.boolData.data[
                                        row] if not vector.isConstantVector else vector.data.boolConstantData.data)
         elif d_type == VectorType.INTEGER:
             for row in range(vector.size):
-                if vector.nullSet[row]:
+                if get_null(vector, row):
                     value_array.append(None)
                     continue
                 value_array.append(vector.data.int32Data.data[
