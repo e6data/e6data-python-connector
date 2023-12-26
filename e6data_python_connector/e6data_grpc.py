@@ -454,6 +454,7 @@ class Cursor(DBAPICursor):
         get_result_metadata_response = self.connection.client.getResultMetadata(result_meta_data_request)
         buffer = BytesIO(get_result_metadata_response.resultMetaData)
         self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
+        self._is_metadata_updated = True
 
     def _fetch_more(self):
         batch_size = self._arraysize
@@ -497,7 +498,6 @@ class Cursor(DBAPICursor):
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
             self.update_mete_data()
-            self._is_metadata_updated = True
         if not buffer or len(buffer) == 0:
             return None
         # one batch retrieves the predefined set of rows
