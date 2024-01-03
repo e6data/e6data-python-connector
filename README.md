@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.0.4-blue.svg)
+![version](https://img.shields.io/badge/version-2.0.5-blue.svg)
 
 ## Introduction
 
@@ -124,7 +124,7 @@ query_planner = json.loads(explain_response.get('planner'))
 execution_time = query_planner.get("total_query_time")  # In milliseconds
 queue_time = query_planner.get("executionQueueingTime")  # In milliseconds
 parsing_time = query_planner.get("parsingTime")  # In milliseconds
-row_count = query_planner.get('row_count_out')
+row_count = query_planner.rowcount
 ```
 
 ### Get Schema - a list of Databases, Tables or Columns
@@ -191,7 +191,7 @@ all_records = cursor.fetchall()
 explain_response = cursor.explain_analyse()
 planner_result = json.loads(explain_response.get('planner'))
 execution_time = planner_result.get("total_query_time") / 1000  # Converting into seconds.
-row_count = planner_result.get('row_count_out')
+row_count = cursor.rowcount
 columns = [col[0] for col in cursor.description]  # Get the column names and merge them with the results.
 results = []
 for row in all_records:
