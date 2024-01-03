@@ -442,7 +442,9 @@ class Cursor(DBAPICursor):
         self.update_mete_data()
         return self._query_id
 
+    @property
     def rowcount(self):
+        self.update_mete_data()
         return self._rowcount
 
     def update_mete_data(self):
