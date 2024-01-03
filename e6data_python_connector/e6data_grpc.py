@@ -274,7 +274,6 @@ class Cursor(DBAPICursor):
     Cursors are not isolated, i.e., any changes done to the database by a cursor are immediately
     visible by other cursors or connections.
     """
-    rows_count = 0
 
     def __init__(self, connection: Connection, array_size=1000, database=None, catalog_name=None):
         super(Cursor, self).__init__()
