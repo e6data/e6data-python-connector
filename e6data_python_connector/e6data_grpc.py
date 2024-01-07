@@ -19,8 +19,7 @@ import grpc
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import DataInputStream, get_query_columns_info, read_rows_from_chunk, \
-    read_values_from_array
+from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
 
@@ -82,6 +81,10 @@ class HiveParamEscaper(ParamEscaper):
 
 
 _escaper = HiveParamEscaper()
+
+
+def _get_grpc_header(engine_ip):
+    return [('plannerip', engine_ip)]
 
 
 def connect(*args, **kwargs):
@@ -154,7 +157,6 @@ class Connection(object):
         """
         if not self._session_id:
             try:
-
                 authenticate_request = e6x_engine_pb2.AuthenticateRequest(
                     user=self.__username,
                     password=self.__password
@@ -201,7 +203,10 @@ class Connection(object):
             queryId=query_id,
             engineIP=engine_ip
         )
-        self._client.clear(clear_request)
+        self._client.clear(
+            clear_request,
+            metadata=_get_grpc_header(engine_ip)
+        )
         self._session_id = None
 
     def reopen(self):
@@ -214,7 +219,10 @@ class Connection(object):
             sessionId=self.get_session_id,
             queryId=query_id
         )
-        self._client.cancelQuery(cancel_query_request)
+        self._client.cancelQuery(
+            cancel_query_request,
+            metadata=_get_grpc_header(engine_ip)
+        )
 
     def dry_run(self, query):
         dry_run_request = e6x_engine_pb2.DryRunRequest(
@@ -293,6 +301,10 @@ class Cursor(DBAPICursor):
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
         pass
+
+    @property
+    def metadata(self):
+        return _get_grpc_header(self._engine_ip)
 
     @property
     def arraysize(self):
@@ -374,7 +386,7 @@ class Cursor(DBAPICursor):
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        return self.connection.client.clear(clear_request)
+        return self.connection.client.clear(clear_request, metadata=self.metadata)
 
     def cancel(self, query_id):
         self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
@@ -418,15 +430,15 @@ class Cursor(DBAPICursor):
             execute_statement_request = e6x_engine_pb2.ExecuteStatementRequest(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
-                queryId=self._query_id
+                queryId=self._query_id,
             )
             execute_statement_response = client.executeStatement(execute_statement_request)
         else:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
-                queryString=sql,
                 catalog=self._catalog_name,
+                queryString=sql
             )
             prepare_statement_response = client.prepareStatementV2(prepare_statement_request)
 
@@ -437,7 +449,10 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id
             )
-            execute_statement_response = client.executeStatementV2(execute_statement_request)
+            execute_statement_response = client.executeStatementV2(
+                execute_statement_request,
+                metadata=self.metadata
+            )
         self.update_mete_data()
         return self._query_id
 
@@ -452,7 +467,10 @@ class Cursor(DBAPICursor):
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
-        get_result_metadata_response = self.connection.client.getResultMetadata(result_meta_data_request)
+        get_result_metadata_response = self.connection.client.getResultMetadata(
+            result_meta_data_request,
+            metadata=self.metadata
+        )
         buffer = BytesIO(get_result_metadata_response.resultMetaData)
         self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
         self._is_metadata_updated = True
@@ -488,14 +506,16 @@ class Cursor(DBAPICursor):
             yield rows
 
     def fetch_batch(self):
-        # _logger.debug("fetching next batch from e6data")
         client = self.connection.client
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
-        get_next_result_batch_response = client.getNextResultBatch(get_next_result_batch_request)
+        get_next_result_batch_response = client.getNextResultBatch(
+            get_next_result_batch_request,
+            metadata=self.metadata
+        )
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
             self.update_mete_data()
@@ -539,7 +559,10 @@ class Cursor(DBAPICursor):
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
-        explain_response = self.connection.client.explain(explain_request)
+        explain_response = self.connection.client.explain(
+            explain_request,
+            metadata=self.metadata
+        )
         return explain_response.explain
 
     def explain_analyse(self):
@@ -548,7 +571,10 @@ class Cursor(DBAPICursor):
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
-        explain_analyze_response = self.connection.client.explainAnalyze(explain_analyze_request)
+        explain_analyze_response = self.connection.client.explainAnalyze(
+            explain_analyze_request,
+            metadata=self.metadata
+        )
         return dict(
             is_cached=explain_analyze_response.isCached,
             parsing_time=explain_analyze_response.parsingTime,

@@ -105,8 +105,8 @@ message PrepareStatementRequest{
 message PrepareStatementV2Request{
   string sessionId = 1;
   string schema = 2;
-  string queryString = 3;
-  string catalog = 4;
+  string catalog = 3;
+  string queryString = 4;
   string quoting = 5;
 }
 message PrepareStatementResponse{
@@ -125,15 +125,27 @@ message ExecuteStatementRequest{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
+  bool shouldNotCache = 4;
 }
 message ExecuteStatementV2Request{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
-  repeated ParameterValue params = 4;
+  bool shouldNotCache = 4;
+  repeated ParameterValue params = 5;
 }
 
 message ExecuteStatementResponse{
+}
+
+message GetNextResultRowRequest{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message GetNextResultRowResponse{
+  bytes resultRow = 2;
 }
 
 message GetNextResultBatchRequest{
@@ -307,6 +319,8 @@ service QueryEngineService {
   rpc executeStatement(ExecuteStatementRequest) returns (ExecuteStatementResponse);
 
   rpc executeStatementV2(ExecuteStatementV2Request) returns (ExecuteStatementResponse);
+
+  rpc getNextResultRow(GetNextResultRowRequest) returns (GetNextResultRowResponse);
 
   rpc getNextResultBatch(GetNextResultBatchRequest) returns (GetNextResultBatchResponse);
 
