@@ -160,18 +160,18 @@ class PrepareStatementRequest(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., queryString: _Optional[str] = ..., quoting: _Optional[str] = ...) -> None: ...
 
 class PrepareStatementV2Request(_message.Message):
-    __slots__ = ["sessionId", "schema", "queryString", "catalog", "quoting"]
+    __slots__ = ["sessionId", "schema", "catalog", "queryString", "quoting"]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
-    QUERYSTRING_FIELD_NUMBER: _ClassVar[int]
     CATALOG_FIELD_NUMBER: _ClassVar[int]
+    QUERYSTRING_FIELD_NUMBER: _ClassVar[int]
     QUOTING_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
     schema: str
-    queryString: str
     catalog: str
+    queryString: str
     quoting: str
-    def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., queryString: _Optional[str] = ..., catalog: _Optional[str] = ..., quoting: _Optional[str] = ...) -> None: ...
+    def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., catalog: _Optional[str] = ..., queryString: _Optional[str] = ..., quoting: _Optional[str] = ...) -> None: ...
 
 class PrepareStatementResponse(_message.Message):
     __slots__ = ["engineIP", "queryId"]
@@ -192,6 +192,36 @@ class UserAccessInfo(_message.Message):
     def __init__(self, uuid: _Optional[str] = ..., userName: _Optional[str] = ..., tokens: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ExecuteStatementRequest(_message.Message):
+    __slots__ = ["engineIP", "sessionId", "queryId", "shouldNotCache"]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SHOULDNOTCACHE_FIELD_NUMBER: _ClassVar[int]
+    engineIP: str
+    sessionId: str
+    queryId: str
+    shouldNotCache: bool
+    def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., shouldNotCache: bool = ...) -> None: ...
+
+class ExecuteStatementV2Request(_message.Message):
+    __slots__ = ["engineIP", "sessionId", "queryId", "shouldNotCache", "params"]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SHOULDNOTCACHE_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_FIELD_NUMBER: _ClassVar[int]
+    engineIP: str
+    sessionId: str
+    queryId: str
+    shouldNotCache: bool
+    params: _containers.RepeatedCompositeFieldContainer[ParameterValue]
+    def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., shouldNotCache: bool = ..., params: _Optional[_Iterable[_Union[ParameterValue, _Mapping]]] = ...) -> None: ...
+
+class ExecuteStatementResponse(_message.Message):
+    __slots__ = []
+    def __init__(self) -> None: ...
+
+class GetNextResultRowRequest(_message.Message):
     __slots__ = ["engineIP", "sessionId", "queryId"]
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
@@ -201,21 +231,11 @@ class ExecuteStatementRequest(_message.Message):
     queryId: str
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
-class ExecuteStatementV2Request(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId", "params"]
-    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
-    SESSIONID_FIELD_NUMBER: _ClassVar[int]
-    QUERYID_FIELD_NUMBER: _ClassVar[int]
-    PARAMS_FIELD_NUMBER: _ClassVar[int]
-    engineIP: str
-    sessionId: str
-    queryId: str
-    params: _containers.RepeatedCompositeFieldContainer[ParameterValue]
-    def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., params: _Optional[_Iterable[_Union[ParameterValue, _Mapping]]] = ...) -> None: ...
-
-class ExecuteStatementResponse(_message.Message):
-    __slots__ = []
-    def __init__(self) -> None: ...
+class GetNextResultRowResponse(_message.Message):
+    __slots__ = ["resultRow"]
+    RESULTROW_FIELD_NUMBER: _ClassVar[int]
+    resultRow: bytes
+    def __init__(self, resultRow: _Optional[bytes] = ...) -> None: ...
 
 class GetNextResultBatchRequest(_message.Message):
     __slots__ = ["engineIP", "sessionId", "queryId", "asRowData"]
