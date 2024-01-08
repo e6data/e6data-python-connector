@@ -113,7 +113,8 @@ class Connection(object):
             ssl_cert=None,
             thrift_transport=None,
             grpc_options=None,
-            catalog=None
+            catalog=None,
+            secure_channel=False
     ):
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -125,6 +126,9 @@ class Connection(object):
         self._session_id = None
         self._host = host
         self._port = port
+
+        self._ssl_cert = ssl_cert
+        self._secure_channel = secure_channel
 
         self.catalog_name = catalog
 
@@ -140,14 +144,25 @@ class Connection(object):
         self._create_client()
 
     def _create_client(self):
-        self._channel = grpc.insecure_channel(
-            target='{}:{}'.format(self._host, self._port),
-            options=[
-                ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
-                ('grpc.max_send_message_length', self._max_send_message_length),
-                ('grpc.max_receive_message_length', self._max_receive_message_length)
-            ],
-        )
+        if self._secure_channel:
+            self._channel = grpc.secure_channel(
+                target='{}:{}'.format(self._host, self._port),
+                options=[
+                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
+                    ('grpc.max_send_message_length', self._max_send_message_length),
+                    ('grpc.max_receive_message_length', self._max_receive_message_length)
+                ],
+                credentials=grpc.ssl_channel_credentials()
+            )
+        else:
+            self._channel = grpc.insecure_channel(
+                target='{}:{}'.format(self._host, self._port),
+                options=[
+                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
+                    ('grpc.max_send_message_length', self._max_send_message_length),
+                    ('grpc.max_receive_message_length', self._max_receive_message_length)
+                ]
+            )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     @property
