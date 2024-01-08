@@ -412,7 +412,7 @@ class Cursor(DBAPICursor):
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        return self.connection.client.status(status_request)
+        return self.connection.client.status(status_request, metadata=self.metadata)
 
     def execute(self, operation, parameters=None, **kwargs):
         """Prepare and execute a database operation (query or command).
