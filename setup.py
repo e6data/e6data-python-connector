@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = [2, 1, 7]
+VERSION = [2, 1, 8]
 
 
 def get_long_desc():
@@ -23,7 +23,7 @@ def get_long_desc():
 
 setuptools.setup(
     name="e6data-python-connector",
-    version='.'.join('%d' % v for v in VERSION[0:3]),
+    version='.'.join('%s' % v for v in VERSION),
     author="Uniphi, Inc.",
     author_email="info@e6data.com",
     description="Client for the e6data distributed SQL Engine.",

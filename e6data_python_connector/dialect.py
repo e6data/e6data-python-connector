@@ -213,6 +213,8 @@ class E6dataDialect(default.DefaultDialect):
     driver = 'e6data'
     scheme = 'e6data'
     catalog_name = None
+    cluster_uuid = None
+    secure_channel = False
 
     def _dialect_specific_select_one(self):
         return "NOOP"
@@ -226,6 +228,8 @@ class E6dataDialect(default.DefaultDialect):
         if url.query.get("schema"):
             database = url.query.get("schema")
         self.catalog_name = url.query.get("catalog")
+        self.cluster_uuid = url.query.get("cluster-uuid")
+        self.secure_channel = url.query.get("secure") == 'true'
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
 
@@ -236,7 +240,9 @@ class E6dataDialect(default.DefaultDialect):
             "username": url.username or None,
             "password": url.password or None,
             "database": database,
-            "catalog": self.catalog_name
+            "catalog": self.catalog_name,
+            "cluster_uuid": self.cluster_uuid,
+            'secure_channel': self.secure_channel
         }
         return [], kwargs
 
