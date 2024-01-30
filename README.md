@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.1.5-blue.svg)
+![version](https://img.shields.io/badge/version-2.1.8-blue.svg)
 
 ## Introduction
 
@@ -42,7 +42,7 @@ username = '<username>'  # Your e6data Email ID.
 password = '<password>'  # Access Token generated in the e6data console.
 
 host = '<host>'  # IP address or hostname of the cluster to be used.
-database = '<database>'  # # Database to perform the query on.
+database = '<database>'  # Database to perform the query on.
 port = 80  # Port of the e6data engine.
 catalog_name = '<catalog_name>'
 

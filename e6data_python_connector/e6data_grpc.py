@@ -83,8 +83,13 @@ class HiveParamEscaper(ParamEscaper):
 _escaper = HiveParamEscaper()
 
 
-def _get_grpc_header(engine_ip):
-    return [('plannerip', engine_ip)]
+def _get_grpc_header(engine_ip=None, cluster=None):
+    metadata = []
+    if engine_ip:
+        metadata.append(('plannerip', engine_ip))
+    if cluster:
+        metadata.append(('cluster-uuid', cluster))
+    return metadata
 
 
 def connect(*args, **kwargs):
@@ -96,25 +101,48 @@ def connect(*args, **kwargs):
 
 
 class Connection(object):
-    """Wraps a http e6xdb session"""
+    """Create connection to e6data """
 
     def __init__(
             self,
-            host=None,
-            port=None,
-            scheme='e6data',
-            username=None,
-            database='default',
-            auth=None,
-            configuration=None,
-            kerberos_service_name=None,
-            password=None,
-            check_hostname=None,
-            ssl_cert=None,
-            thrift_transport=None,
-            grpc_options=None,
-            catalog=None
+            host: str,
+            port: int,
+            username: str,
+            password: str,
+            scheme: str = 'e6data',
+            catalog: str = None,
+            database: str = None,
+            cluster_uuid: str = None,
+            secure: bool = False,
+            grpc_options: str = None,
     ):
+        """
+        Parameters
+        ----------
+            host: str
+                IP address or hostname of e6data cluster
+            port: int
+                Port of the e6data engine
+            username: str
+                Your e6data Email ID
+            password: str
+                Access Token generated in the e6data console
+            scheme: str
+                e6data
+            catalog: str
+                Catalog name
+            database: str
+                Database to perform the query on
+            cluster_uuid: str
+                Cluster's uuid
+            secure: bool, Optional
+                Flag to use a secure channel for data transfer
+            grpc_options: dict, Optional
+                Specify gRPC configuration
+                - keepalive_timeout_ms: This parameter defines the time, in milliseconds, that a gRPC connection should remain idle before sending a keepalive ping to check if the connection is still alive.
+                - max_receive_message_length: This parameter sets the maximum allowed size (in bytes) for incoming messages on the gRPC server.
+                - max_send_message_length: Similar to max_receive_message_length, this parameter sets the maximum allowed size (in bytes) for outgoing messages from the gRPC client
+        """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
         if not host or not port:
@@ -122,9 +150,12 @@ class Connection(object):
         self.__username = username
         self.__password = password
         self.database = database
+        self.cluster_uuid = cluster_uuid
         self._session_id = None
         self._host = host
         self._port = port
+
+        self._secure_channel = secure
 
         self.catalog_name = catalog
 
@@ -140,14 +171,25 @@ class Connection(object):
         self._create_client()
 
     def _create_client(self):
-        self._channel = grpc.insecure_channel(
-            target='{}:{}'.format(self._host, self._port),
-            options=[
-                ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
-                ('grpc.max_send_message_length', self._max_send_message_length),
-                ('grpc.max_receive_message_length', self._max_receive_message_length)
-            ],
-        )
+        if self._secure_channel:
+            self._channel = grpc.secure_channel(
+                target='{}:{}'.format(self._host, self._port),
+                options=[
+                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
+                    ('grpc.max_send_message_length', self._max_send_message_length),
+                    ('grpc.max_receive_message_length', self._max_receive_message_length)
+                ],
+                credentials=grpc.ssl_channel_credentials()
+            )
+        else:
+            self._channel = grpc.insecure_channel(
+                target='{}:{}'.format(self._host, self._port),
+                options=[
+                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
+                    ('grpc.max_send_message_length', self._max_send_message_length),
+                    ('grpc.max_receive_message_length', self._max_receive_message_length)
+                ]
+            )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     @property
@@ -161,7 +203,10 @@ class Connection(object):
                     user=self.__username,
                     password=self.__password
                 )
-                authenticate_response = self._client.authenticate(authenticate_request)
+                authenticate_response = self._client.authenticate(
+                    authenticate_request,
+                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
+                )
                 self._session_id = authenticate_response.sessionId
                 if not self._session_id:
                     raise ValueError("Invalid credentials.")
@@ -205,7 +250,7 @@ class Connection(object):
         )
         self._client.clear(
             clear_request,
-            metadata=_get_grpc_header(engine_ip)
+            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
         self._session_id = None
 
@@ -221,7 +266,7 @@ class Connection(object):
         )
         self._client.cancelQuery(
             cancel_query_request,
-            metadata=_get_grpc_header(engine_ip)
+            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
 
     def dry_run(self, query):
@@ -230,7 +275,10 @@ class Connection(object):
             schema=self.database,
             queryString=query
         )
-        dry_run_response = self._client.dryRun(dry_run_request)
+        dry_run_response = self._client.dryRun(
+            dry_run_request,
+            metadata=_get_grpc_header(cluster=self.cluster_uuid)
+        )
         return dry_run_response.dryrunValue
 
     def get_tables(self, catalog, database):
@@ -239,7 +287,10 @@ class Connection(object):
             schema=database,
             catalog=catalog
         )
-        get_table_response = self._client.getTablesV2(get_table_request)
+        get_table_response = self._client.getTablesV2(
+            get_table_request,
+            metadata=_get_grpc_header(cluster=self.cluster_uuid)
+        )
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
@@ -249,7 +300,10 @@ class Connection(object):
             table=table,
             catalog=catalog
         )
-        get_columns_response = self._client.getColumnsV2(get_columns_request)
+        get_columns_response = self._client.getColumnsV2(
+            get_columns_request,
+            metadata=_get_grpc_header(cluster=self.cluster_uuid)
+        )
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
@@ -257,7 +311,10 @@ class Connection(object):
             sessionId=self.get_session_id,
             catalog=catalog
         )
-        get_schema_response = self._client.getSchemaNamesV2(get_schema_request)
+        get_schema_response = self._client.getSchemaNamesV2(
+            get_schema_request,
+            metadata=_get_grpc_header(cluster=self.cluster_uuid)
+        )
         return list(get_schema_response.schemas)
 
     def commit(self):
@@ -304,7 +361,7 @@ class Cursor(DBAPICursor):
 
     @property
     def metadata(self):
-        return _get_grpc_header(self._engine_ip)
+        return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_uuid)
 
     @property
     def arraysize(self):
@@ -397,7 +454,7 @@ class Cursor(DBAPICursor):
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        return self.connection.client.status(status_request)
+        return self.connection.client.status(status_request, metadata=self.metadata)
 
     def execute(self, operation, parameters=None, **kwargs):
         """Prepare and execute a database operation (query or command).
@@ -423,7 +480,10 @@ class Cursor(DBAPICursor):
                 schema=self._database,
                 queryString=sql
             )
-            prepare_statement_response = client.prepareStatement(prepare_statement_request)
+            prepare_statement_response = client.prepareStatement(
+                prepare_statement_request,
+                metadata=self.metadata
+            )
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
@@ -432,7 +492,10 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id,
             )
-            execute_statement_response = client.executeStatement(execute_statement_request)
+            client.executeStatement(
+                execute_statement_request,
+                metadata=self.metadata
+            )
         else:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
                 sessionId=self.connection.get_session_id,
@@ -440,7 +503,10 @@ class Cursor(DBAPICursor):
                 catalog=self._catalog_name,
                 queryString=sql
             )
-            prepare_statement_response = client.prepareStatementV2(prepare_statement_request)
+            prepare_statement_response = client.prepareStatementV2(
+                prepare_statement_request,
+                metadata=self.metadata
+            )
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
@@ -449,7 +515,7 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id
             )
-            execute_statement_response = client.executeStatementV2(
+            client.executeStatementV2(
                 execute_statement_request,
                 metadata=self.metadata
             )
