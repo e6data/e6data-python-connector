@@ -204,6 +204,7 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
 def get_column_from_chunk(vector: Vector) -> list:
     value_array = list()
     d_type = vector.vectorType
+    zone = vector.zoneOffset
     try:
         if d_type == VectorType.LONG:
             for row in range(vector.size):
@@ -220,7 +221,7 @@ def get_column_from_chunk(vector: Vector) -> list:
                 epoch_seconds = floor_div(vector.data.dateData.data[
                                               row] if not vector.isConstantVector else vector.data.dateConstantData.data,
                                           1000_000)
-                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(vector.zoneOffset)
+                zone_offset = pytz.timezone('UTC') if zone == 'Z' else pytz.timezone(zone)
                 date = datetime.fromtimestamp(epoch_seconds, zone_offset)
                 value_array.append(date.strftime("%Y-%m-%d"))
         elif d_type == VectorType.DATETIME:
@@ -232,8 +233,7 @@ def get_column_from_chunk(vector: Vector) -> list:
                     row] if not vector.isConstantVector else vector.data.timeConstantData.data
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                zone_offset = pytz.timezone('UTC') if vector.zoneOffset == 'Z' else pytz.timezone(
-                    get_zone(vector.zoneOffset))
+                zone_offset = pytz.timezone('UTC') if zone == 'Z' else pytz.timezone(zone)
                 date_time = datetime.fromtimestamp(epoch_seconds, zone_offset)
                 date_time = date_time + timedelta(microseconds=micros_of_the_day)
                 value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
