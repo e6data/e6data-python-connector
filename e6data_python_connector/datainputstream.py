@@ -174,7 +174,7 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
     return value_array
 
 
-def read_rows_from_chunk(query_columns_description: list, buffer):
+def reconstruct_chunk(buffer):
     # Create a transport and protocol instance for deserialization
     transport = TTransport.TMemoryBuffer(buffer)
     protocol = TBinaryProtocol.TBinaryProtocolAccelerated(transport)
@@ -182,8 +182,16 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     # Create an instance of the Thrift struct and read from the protocol
     chunk = Chunk()
     chunk.read(protocol)
+    return chunk
 
-    if chunk.size <= 0:
+
+def read_rows_from_chunk(query_columns_description: list, buffer):
+    chunk = reconstruct_chunk(buffer)
+    return deserialize_chunk_to_rows(query_columns_description, chunk)
+
+
+def deserialize_chunk_to_rows(query_columns_description: list, chunk):
+    if chunk is None or chunk.size <= 0:
         return None
 
     rows = list()

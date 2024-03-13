@@ -19,7 +19,8 @@ import grpc
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
+from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk, reconstruct_chunk, \
+    deserialize_chunk_to_rows
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
 
@@ -72,11 +73,11 @@ class HiveParamEscaper(ParamEscaper):
             item = item.decode('utf-8')
         return "'{}'".format(
             item
-            .replace('\\', '\\\\')
-            .replace("'", "\\'")
-            .replace('\r', '\\r')
-            .replace('\n', '\\n')
-            .replace('\t', '\\t')
+                .replace('\\', '\\\\')
+                .replace("'", "\\'")
+                .replace('\r', '\\r')
+                .replace('\n', '\\n')
+                .replace('\t', '\\t')
         )
 
 
@@ -519,15 +520,14 @@ class Cursor(DBAPICursor):
                 execute_statement_request,
                 metadata=self.metadata
             )
-        self.update_mete_data()
+        self.update_meta_data()
         return self._query_id
 
     @property
     def rowcount(self):
-        self.update_mete_data()
         return self._rowcount
 
-    def update_mete_data(self):
+    def update_meta_data(self):
         result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -571,7 +571,7 @@ class Cursor(DBAPICursor):
                 return
             yield rows
 
-    def fetch_batch(self):
+    def get_next_batch(self):
         client = self.connection.client
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
@@ -584,17 +584,32 @@ class Cursor(DBAPICursor):
         )
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
-            self.update_mete_data()
+            self.update_meta_data()
         if not buffer or len(buffer) == 0:
             return None
+        return buffer
+
+    def fetch_batch(self):
+        buffer = self.get_next_batch()
         # one batch retrieves the predefined set of rows
         return read_rows_from_chunk(self._query_columns_description, buffer)
+
+    def fetch_all_columnar(self):
+        list_chunk = list()
+        while True:
+            buffer = self.get_next_batch()
+            if buffer is None:
+                break
+            chunk = reconstruct_chunk(buffer)
+            list_chunk.append(chunk)
+        result = ColumnarResult(list_chunk, self._query_columns_description)
+        return result
 
     def fetchall(self):
         return self._fetch_all()
 
     def fetchmany(self, size: int = None):
-        # _logger.info("fetching all from overriden method")
+        # _logger.info("fetching all from overridden method")
         if size is None:
             size = self.arraysize
         if self._data is None:
@@ -672,6 +687,35 @@ def fetch_logs(self):
 
 class Error(Exception):
     pass
+
+
+class ColumnarResult:
+    def __init__(self, list_chunk, list_column_description):
+        self.rows = None
+        self._list_chunk = list_chunk
+        self._cur_chunk = None
+        self._list_column_description = list_column_description
+        self._cur_chunk_index = 0
+        self._cur_chunk_row_idx = 0
+
+    def get_next_row(self):
+        if self._cur_chunk is None or self._cur_chunk_row_idx >= self._cur_chunk.size:
+            self.move_to_next_chunk()
+            self.rows = deserialize_chunk_to_rows(self._list_column_description, self._cur_chunk)
+            _cur_chunk_row_idx = 0
+        if self._cur_chunk is None:
+            return None
+        row = self.rows[self._cur_chunk_row_idx]
+        self._cur_chunk_row_idx += 1
+        return row
+
+    def move_to_next_chunk(self):
+        if self._cur_chunk_index >= len(self._list_chunk):
+            self._cur_chunk = None
+
+        else:
+            self._cur_chunk = self._list_chunk[self._cur_chunk_index]
+            self._cur_chunk_index += 1
 
 
 #
