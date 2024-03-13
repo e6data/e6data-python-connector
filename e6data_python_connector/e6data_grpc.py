@@ -717,6 +717,12 @@ class ColumnarResult:
             self._cur_chunk = self._list_chunk[self._cur_chunk_index]
             self._cur_chunk_index += 1
 
+    def size(self):
+        size = 0
+        for chunk in self._list_chunk:
+            size += chunk.size
+        return size
+
 
 #
 # Type Objects and Constructors
