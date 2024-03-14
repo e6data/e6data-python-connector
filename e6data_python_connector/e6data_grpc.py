@@ -445,12 +445,12 @@ class Cursor(DBAPICursor):
     def clear(self, query_id=None):
         if not query_id:
             query_id = self._query_id
-        clear_request = e6x_engine_pb2.ClearRequest(
+        clear_request = e6x_engine_pb2.ClearOrCancelQueryRequest(
             sessionId=self.connection.get_session_id,
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        return self.connection.client.clear(clear_request, metadata=self.metadata)
+        return self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
 
     def cancel(self, query_id):
         self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
