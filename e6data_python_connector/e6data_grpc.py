@@ -415,6 +415,10 @@ class Cursor(DBAPICursor):
     def close(self):
         """Close the operation handle"""
         # self.connection.close()
+        try:
+            self.clear()
+        except:
+            pass
         self._arraysize = None
         self.connection = None
         self._data = None
