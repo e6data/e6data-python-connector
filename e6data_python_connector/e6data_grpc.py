@@ -163,14 +163,14 @@ class Connection(object):
         self._keepalive_timeout_ms = 900000
         self._max_receive_message_length = -1
         self._max_send_message_length = 300 * 1024 * 1024  # mb
-        self._grpc_prepare_timeout = 10 * 60  # 10 minutes
+        self.grpc_prepare_timeout = 10 * 60  # 10 minutes
 
         if type(grpc_options) == dict:
             self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
             self._max_receive_message_length = grpc_options.get(
                 'max_receive_message_length') or self._max_receive_message_length
             self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
-            self._grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self._grpc_prepare_timeout
+            self.grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self.grpc_prepare_timeout
         self._create_client()
 
     def _create_client(self):
@@ -241,6 +241,7 @@ class Connection(object):
         if self._channel is not None:
             self._channel.close()
             self._channel = None
+        self._session_id = None
 
     def check_connection(self):
         return self._channel is not None
@@ -255,7 +256,6 @@ class Connection(object):
             clear_request,
             metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
-        self._session_id = None
 
     def reopen(self):
         self._channel.close()
@@ -513,7 +513,7 @@ class Cursor(DBAPICursor):
             prepare_statement_response = client.prepareStatementV2(
                 prepare_statement_request,
                 metadata=self.metadata,
-                timeout=self._grpc_prepare_timeout
+                timeout=self.connection.grpc_prepare_timeout
             )
 
             self._query_id = prepare_statement_response.queryId
