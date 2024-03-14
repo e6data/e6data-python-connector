@@ -114,7 +114,7 @@ class Connection(object):
             database: str = None,
             cluster_uuid: str = None,
             secure: bool = False,
-            grpc_options: str = None,
+            grpc_options: dict = None,
     ):
         """
         Parameters
@@ -142,6 +142,7 @@ class Connection(object):
                 - keepalive_timeout_ms: This parameter defines the time, in milliseconds, that a gRPC connection should remain idle before sending a keepalive ping to check if the connection is still alive.
                 - max_receive_message_length: This parameter sets the maximum allowed size (in bytes) for incoming messages on the gRPC server.
                 - max_send_message_length: Similar to max_receive_message_length, this parameter sets the maximum allowed size (in bytes) for outgoing messages from the gRPC client
+                - grpc_prepare_timeout: Timeout for prepare statement API call (default to 10 minutes).
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
