@@ -162,12 +162,14 @@ class Connection(object):
         self._keepalive_timeout_ms = 900000
         self._max_receive_message_length = -1
         self._max_send_message_length = 300 * 1024 * 1024  # mb
+        self._grpc_prepare_timeout = 10 * 60  # 10 minutes
 
         if type(grpc_options) == dict:
             self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
             self._max_receive_message_length = grpc_options.get(
                 'max_receive_message_length') or self._max_receive_message_length
             self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
+            self._grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self._grpc_prepare_timeout
         self._create_client()
 
     def _create_client(self):
@@ -413,6 +415,10 @@ class Cursor(DBAPICursor):
     def close(self):
         """Close the operation handle"""
         # self.connection.close()
+        try:
+            self.clear()
+        except:
+            pass
         self._arraysize = None
         self.connection = None
         self._data = None
@@ -505,7 +511,8 @@ class Cursor(DBAPICursor):
             )
             prepare_statement_response = client.prepareStatementV2(
                 prepare_statement_request,
-                metadata=self.metadata
+                metadata=self.metadata,
+                timeout=self._grpc_prepare_timeout
             )
 
             self._query_id = prepare_statement_response.queryId
