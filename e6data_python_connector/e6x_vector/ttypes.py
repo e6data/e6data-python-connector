@@ -1238,12 +1238,14 @@ class TimeConstantData(object):
     """
     Attributes:
      - data
+     - zoneData
 
     """
 
 
-    def __init__(self, data=None,):
+    def __init__(self, data=None, zoneData=None,):
         self.data = data
+        self.zoneData = zoneData
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -1259,6 +1261,11 @@ class TimeConstantData(object):
                     self.data = iprot.readI64()
                 else:
                     iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.STRING:
+                    self.zoneData = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -1272,6 +1279,10 @@ class TimeConstantData(object):
         if self.data is not None:
             oprot.writeFieldBegin('data', TType.I64, 1)
             oprot.writeI64(self.data)
+            oprot.writeFieldEnd()
+        if self.zoneData is not None:
+            oprot.writeFieldBegin('zoneData', TType.STRING, 2)
+            oprot.writeString(self.zoneData.encode('utf-8') if sys.version_info[0] == 2 else self.zoneData)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1352,12 +1363,14 @@ class TimeData(object):
     """
     Attributes:
      - data
+     - zoneData
 
     """
 
 
-    def __init__(self, data=None,):
+    def __init__(self, data=None, zoneData=None,):
         self.data = data
+        self.zoneData = zoneData
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -1378,6 +1391,16 @@ class TimeData(object):
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.LIST:
+                    self.zoneData = []
+                    (_etype65, _size62) = iprot.readListBegin()
+                    for _i66 in range(_size62):
+                        _elem67 = iprot.readString().decode('utf-8', errors='replace') if sys.version_info[0] == 2 else iprot.readString()
+                        self.zoneData.append(_elem67)
+                    iprot.readListEnd()
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -1391,8 +1414,15 @@ class TimeData(object):
         if self.data is not None:
             oprot.writeFieldBegin('data', TType.LIST, 1)
             oprot.writeListBegin(TType.I64, len(self.data))
-            for iter62 in self.data:
-                oprot.writeI64(iter62)
+            for iter68 in self.data:
+                oprot.writeI64(iter68)
+            oprot.writeListEnd()
+            oprot.writeFieldEnd()
+        if self.zoneData is not None:
+            oprot.writeFieldBegin('zoneData', TType.LIST, 2)
+            oprot.writeListBegin(TType.STRING, len(self.zoneData))
+            for iter69 in self.zoneData:
+                oprot.writeString(iter69.encode('utf-8') if sys.version_info[0] == 2 else iter69)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
@@ -1443,11 +1473,11 @@ class Chunk(object):
             elif fid == 2:
                 if ftype == TType.LIST:
                     self.vectors = []
-                    (_etype66, _size63) = iprot.readListBegin()
-                    for _i67 in range(_size63):
-                        _elem68 = Vector()
-                        _elem68.read(iprot)
-                        self.vectors.append(_elem68)
+                    (_etype73, _size70) = iprot.readListBegin()
+                    for _i74 in range(_size70):
+                        _elem75 = Vector()
+                        _elem75.read(iprot)
+                        self.vectors.append(_elem75)
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
@@ -1468,8 +1498,8 @@ class Chunk(object):
         if self.vectors is not None:
             oprot.writeFieldBegin('vectors', TType.LIST, 2)
             oprot.writeListBegin(TType.STRUCT, len(self.vectors))
-            for iter69 in self.vectors:
-                iter69.write(oprot)
+            for iter76 in self.vectors:
+                iter76.write(oprot)
             oprot.writeListEnd()
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
@@ -1588,6 +1618,7 @@ all_structs.append(TimeConstantData)
 TimeConstantData.thrift_spec = (
     None,  # 0
     (1, TType.I64, 'data', None, None, ),  # 1
+    (2, TType.STRING, 'zoneData', 'UTF8', None, ),  # 2
 )
 all_structs.append(VarcharConstantData)
 VarcharConstantData.thrift_spec = (
@@ -1598,6 +1629,7 @@ all_structs.append(TimeData)
 TimeData.thrift_spec = (
     None,  # 0
     (1, TType.LIST, 'data', (TType.I64, None, False), None, ),  # 1
+    (2, TType.LIST, 'zoneData', (TType.STRING, 'UTF8', False), None, ),  # 2
 )
 all_structs.append(Chunk)
 Chunk.thrift_spec = (
