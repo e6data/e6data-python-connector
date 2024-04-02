@@ -231,7 +231,10 @@ def get_column_from_chunk(vector: Vector) -> list:
                     continue
                 epoch_micros = vector.data.timeData.data[
                     row] if not vector.isConstantVector else vector.data.timeConstantData.data
-                zone = vector.data.timeData.zoneData[row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
+                if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
+                        vector.data.timeData.zoneData is not None):
+                    zone = vector.data.timeData.zoneData[
+                        row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
                 zone_offset = pytz.timezone(zone)
