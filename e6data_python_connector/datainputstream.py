@@ -8,7 +8,7 @@ from thrift.transport import TTransport
 
 from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6data_python_connector.constants import ZONE
-from e6data_python_connector.date_time_utils import floor_div, floor_mod, get_zone
+from e6data_python_connector.date_time_utils import floor_div, floor_mod, timezone_from_offset
 
 try:
     from thrift.protocol import fastbinary
@@ -201,6 +201,7 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     return rows
 
 
+
 def get_column_from_chunk(vector: Vector) -> list:
     value_array = list()
     d_type = vector.vectorType
@@ -232,9 +233,10 @@ def get_column_from_chunk(vector: Vector) -> list:
                 epoch_micros = vector.data.timeData.data[
                     row] if not vector.isConstantVector else vector.data.timeConstantData.data
                 if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
-                        vector.data.timeData.zoneData is not None):
+                        (not vector.isConstantVector and vector.data.timeData.zoneData is not None)):
                     zone = vector.data.timeData.zoneData[
                         row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
+                    zone = timezone_from_offset(zone)
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
                 zone_offset = pytz.timezone(zone)

@@ -1,3 +1,7 @@
+from datetime import datetime, timedelta
+from typing import Final
+import pytz
+
 TIME_ZONES = {
     "+12:00": ["Pacific/Kwajalein", "Pacific/Wallis", "Pacific/Funafuti", "Pacific/Nauru", "Kwajalein", "Pacific/Wake",
                "Pacific/Norfolk", "Pacific/Tarawa", "Asia/Kamchatka", "Etc/GMT-12", "Asia/Anadyr", "Pacific/Majuro", ],
@@ -140,6 +144,8 @@ FORMATS = {
     "ss": "%S"
 }
 
+zone_map: Final = dict()
+
 
 def floor_div(x, y):
     q = x // y
@@ -153,6 +159,34 @@ def floor_mod(x, y):
     if (x ^ y) < 0 and r != 0:
         return r + y
     return r
+
+
+def timezone_from_offset(offset_string) -> str:
+    # Parse the offset string into hours and minutes
+    sign = -1 if offset_string[0] == "-" else 1
+    if ":" in offset_string:
+        if offset_string in zone_map:
+            return zone_map[offset_string]
+        with_out_sign = offset_string[1:]
+        hours_minutes = with_out_sign.split(":")
+        hours = int(hours_minutes[0])
+        minutes = int(hours_minutes[1])
+
+        # Calculate the offset in seconds
+        total_minutes = (hours * 60 + minutes) * sign
+        offset = timedelta(minutes=total_minutes)
+
+        # Get a datetime object with the current time
+        now = datetime.now()
+        # Search for a timezone with the given offset
+        for tz_name in pytz.all_timezones:
+            tz = pytz.timezone(tz_name)
+            tz_offset = tz.utcoffset(now, is_dst=False)
+            if tz_offset == offset:
+                zone_map[offset_string] = tz_name
+                return tz_name
+    else:
+        return 'UTC' if offset_string == 'Z' else offset_string
 
 
 def get_format(str_format):
