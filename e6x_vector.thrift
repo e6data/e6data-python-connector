@@ -117,6 +117,7 @@ struct TemporalIntervalConstantData
 struct TimeConstantData
 {
     1: i64 data
+    2: optional string zoneData
 }
 
 struct VarcharConstantData
@@ -127,6 +128,7 @@ struct VarcharConstantData
 struct TimeData
 {
     1: list<i64> data
+    2: optional list<string> zoneData
 }
 
 struct Chunk
