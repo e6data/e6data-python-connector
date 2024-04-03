@@ -242,7 +242,7 @@ def get_column_from_chunk(vector: Vector) -> list:
                 zone_offset = pytz.timezone(zone)
                 date_time = datetime.fromtimestamp(epoch_seconds, zone_offset)
                 date_time = date_time + timedelta(microseconds=micros_of_the_day)
-                value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
+                value_array.append(date_time.isoformat(timespec='milliseconds'))
         elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
             for row in range(vector.size):
                 if get_null(vector, row):
