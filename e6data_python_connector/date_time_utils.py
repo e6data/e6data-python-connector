@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 from typing import Final
 import pytz
 
@@ -161,7 +160,7 @@ def floor_mod(x, y):
     return r
 
 
-def timezone_from_offset(offset_string) -> str:
+def timezone_from_offset(offset_string) -> pytz:
     # Parse the offset string into hours and minutes
     sign = -1 if offset_string[0] == "-" else 1
     if ":" in offset_string:
@@ -171,22 +170,12 @@ def timezone_from_offset(offset_string) -> str:
         hours_minutes = with_out_sign.split(":")
         hours = int(hours_minutes[0])
         minutes = int(hours_minutes[1])
-
-        # Calculate the offset in seconds
         total_minutes = (hours * 60 + minutes) * sign
-        offset = timedelta(minutes=total_minutes)
-
-        # Get a datetime object with the current time
-        now = datetime.now()
-        # Search for a timezone with the given offset
-        for tz_name in pytz.all_timezones:
-            tz = pytz.timezone(tz_name)
-            tz_offset = tz.utcoffset(now, is_dst=False)
-            if tz_offset == offset:
-                zone_map[offset_string] = tz_name
-                return tz_name
+        fixed_offset = pytz.FixedOffset(total_minutes)
+        zone_map[offset_string] = fixed_offset
+        return pytz.FixedOffset(total_minutes)
     else:
-        return 'UTC' if offset_string == 'Z' else offset_string
+        return pytz.UTC if offset_string == 'Z' else pytz.timezone(offset_string)
 
 
 def get_format(str_format):
