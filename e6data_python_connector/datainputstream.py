@@ -205,7 +205,7 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
 def get_column_from_chunk(vector: Vector) -> list:
     value_array = list()
     d_type = vector.vectorType
-    zone = 'UTC'
+    zone = pytz.UTC
     try:
         if d_type == VectorType.LONG:
             for row in range(vector.size):
@@ -222,8 +222,7 @@ def get_column_from_chunk(vector: Vector) -> list:
                 epoch_seconds = floor_div(vector.data.dateData.data[
                                               row] if not vector.isConstantVector else vector.data.dateConstantData.data,
                                           1000_000)
-                zone_offset = pytz.timezone(zone)
-                date = datetime.fromtimestamp(epoch_seconds, zone_offset)
+                date = datetime.fromtimestamp(epoch_seconds, zone)
                 value_array.append(date.strftime("%Y-%m-%d"))
         elif d_type == VectorType.DATETIME:
             for row in range(vector.size):
@@ -234,13 +233,12 @@ def get_column_from_chunk(vector: Vector) -> list:
                     row] if not vector.isConstantVector else vector.data.timeConstantData.data
                 if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
                         (not vector.isConstantVector and vector.data.timeData.zoneData is not None)):
-                    zone = vector.data.timeData.zoneData[
+                    zone_id = vector.data.timeData.zoneData[
                         row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
-                    zone = timezone_from_offset(zone)
+                    zone = timezone_from_offset(zone_id)
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                zone_offset = pytz.timezone(zone)
-                date_time = datetime.fromtimestamp(epoch_seconds, zone_offset)
+                date_time = datetime.fromtimestamp(epoch_seconds, zone)
                 date_time = date_time + timedelta(microseconds=micros_of_the_day)
                 value_array.append(date_time.isoformat(timespec='milliseconds'))
         elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
