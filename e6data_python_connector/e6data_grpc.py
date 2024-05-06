@@ -484,6 +484,8 @@ class Cursor(DBAPICursor):
         client = self.connection.client
 
         final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
+        self._engine_ip = final_identify_planner_response.plannerIp
+        self._query_id = final_identify_planner_response.existingQuery.queryId
 
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
@@ -498,8 +500,6 @@ class Cursor(DBAPICursor):
                 metadata=self.metadata
             )
 
-            self._query_id = prepare_statement_response.queryId
-            self._engine_ip = prepare_statement_response.engineIP
             execute_statement_request = e6x_engine_pb2.ExecuteStatementRequest(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
@@ -524,8 +524,6 @@ class Cursor(DBAPICursor):
                 timeout=self.connection.grpc_prepare_timeout
             )
 
-            self._query_id = prepare_statement_response.queryId
-            self._engine_ip = prepare_statement_response.engineIP
             execute_statement_request = e6x_engine_pb2.ExecuteStatementV2Request(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
@@ -674,7 +672,6 @@ class Cursor(DBAPICursor):
 
                 queue_message: e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.queueMessage
                 if (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
-                    self._engine_ip = identify_planner_response.plannerIp
                     return identify_planner_response
                 elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
                     time.sleep(0.01)  # sleep for 10 millis
