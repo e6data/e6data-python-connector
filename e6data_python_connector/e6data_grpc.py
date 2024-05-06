@@ -483,7 +483,7 @@ class Cursor(DBAPICursor):
 
         client = self.connection.client
 
-        final_identify_planner_response : e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
+        final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
 
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
@@ -669,13 +669,15 @@ class Cursor(DBAPICursor):
 
         try:
             while True:
-                identify_planner_response = client.identifyPlanner(identify_planner_request, metadata=self.metadata)
-                queue_message : e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.getQueueMessage()
-                if(queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
+                identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = client.identifyPlanner(identify_planner_request, metadata=self.metadata)
+                self._query_id = identify_planner_response.existingQuery.queryId
+
+                queue_message: e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.queueMessage
+                if (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
                     return identify_planner_response
-                elif(queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
-                    time.sleep(0.01) # sleep for 10 millis
-                elif(queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.RATE_LIMIT):
+                elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
+                    time.sleep(0.01)  # sleep for 10 millis
+                elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.RATE_LIMIT):
                     raise Exception("Too many requests to the engine")
         except Exception as e:
             raise e
