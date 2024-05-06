@@ -11,6 +11,7 @@ import datetime
 import logging
 import re
 import sys
+import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
@@ -481,11 +482,16 @@ class Cursor(DBAPICursor):
             sql = operation % _escaper.escape_args(parameters)
 
         client = self.connection.client
+
+        final_identify_planner_response : e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
+
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
-                queryString=sql
+                queryString=sql,
+                plannerIp=final_identify_planner_response.plannerIp,
+                existingQuery=final_identify_planner_response.existingQuery
             )
             prepare_statement_response = client.prepareStatement(
                 prepare_statement_request,
@@ -508,7 +514,9 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
                 catalog=self._catalog_name,
-                queryString=sql
+                queryString=sql,
+                plannerIp=final_identify_planner_response.plannerIp,
+                existingQuery=final_identify_planner_response.existingQuery
             )
             prepare_statement_response = client.prepareStatementV2(
                 prepare_statement_request,
@@ -655,6 +663,22 @@ class Cursor(DBAPICursor):
             queuing_time=explain_analyze_response.queueingTime,
             planner=explain_analyze_response.explainAnalyze,
         )
+
+    def identify_planner(self, client):
+        identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest()
+
+        try:
+            while True:
+                identify_planner_response = client.identifyPlanner(identify_planner_request, metadata=self.metadata)
+                queue_message : e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.getQueueMessage()
+                if(queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
+                    return identify_planner_response
+                elif(queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
+                    time.sleep(0.01) # sleep for 10 millis
+                elif(queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.RATE_LIMIT):
+                    raise Exception("Too many requests to the engine")
+        except Exception as e:
+            raise e
 
 
 def poll(self, get_progress_update=True):
