@@ -674,6 +674,7 @@ class Cursor(DBAPICursor):
 
                 queue_message: e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.queueMessage
                 if (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
+                    self._engine_ip = identify_planner_response.plannerIp
                     return identify_planner_response
                 elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
                     time.sleep(0.01)  # sleep for 10 millis
