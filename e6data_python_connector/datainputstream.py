@@ -283,6 +283,9 @@ def get_column_from_chunk(vector: Vector) -> list:
                     continue
                 value_array.append(vector.data.int32Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericConstantData.data)
+        elif d_type == VectorType.NULL:
+            for row in range(vector.size):
+                value_array.append(None)
         else:
             value_array.append(None)
     except Exception as e:

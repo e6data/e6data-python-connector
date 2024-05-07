@@ -15,7 +15,8 @@ enum VectorType
     TIMESTAMP,
     STRUCT,
     MAP,
-    ARRAY
+    ARRAY,
+    NULL
 }
 
 struct Vector
