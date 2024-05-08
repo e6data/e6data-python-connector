@@ -231,11 +231,6 @@ def get_column_from_chunk(vector: Vector) -> list:
                     continue
                 epoch_micros = vector.data.timeData.data[
                     row] if not vector.isConstantVector else vector.data.timeConstantData.data
-                if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
-                        (not vector.isConstantVector and vector.data.timeData.zoneData is not None)):
-                    zone_id = vector.data.timeData.zoneData[
-                        row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
-                    zone = timezone_from_offset(zone_id)
                 epoch_seconds = floor_div(epoch_micros, 1000_000)
                 micros_of_the_day = floor_mod(epoch_micros, 1000_000)
                 date_time = datetime.fromtimestamp(epoch_seconds, zone)
@@ -286,6 +281,23 @@ def get_column_from_chunk(vector: Vector) -> list:
         elif d_type == VectorType.NULL:
             for row in range(vector.size):
                 value_array.append(None)
+        elif d_type == VectorType.TIMESTAMP_TZ:
+            for row in range(vector.size):
+                if get_null(vector, row):
+                    value_array.append(None)
+                    continue
+                epoch_micros = vector.data.timeData.data[
+                    row] if not vector.isConstantVector else vector.data.timeConstantData.data
+                if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
+                        (not vector.isConstantVector and vector.data.timeData.zoneData is not None)):
+                    zone_id = vector.data.timeData.zoneData[
+                        row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
+                    zone = timezone_from_offset(zone_id)
+                epoch_seconds = floor_div(epoch_micros, 1000_000)
+                micros_of_the_day = floor_mod(epoch_micros, 1000_000)
+                date_time = datetime.fromtimestamp(epoch_seconds, zone)
+                date_time = date_time + timedelta(microseconds=micros_of_the_day)
+                value_array.append(date_time.isoformat(timespec='milliseconds'))
         else:
             value_array.append(None)
     except Exception as e:
