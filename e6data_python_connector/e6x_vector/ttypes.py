@@ -32,6 +32,7 @@ class VectorType(object):
     MAP = 12
     ARRAY = 13
     NULL = 14
+    TIMESTAMP_TZ = 15
 
     _VALUES_TO_NAMES = {
         0: "BINARY",
@@ -49,6 +50,7 @@ class VectorType(object):
         12: "MAP",
         13: "ARRAY",
         14: "NULL",
+        15: "TIMESTAMP_TZ",
     }
 
     _NAMES_TO_VALUES = {
@@ -67,6 +69,7 @@ class VectorType(object):
         "MAP": 12,
         "ARRAY": 13,
         "NULL": 14,
+        "TIMESTAMP_TZ": 15,
     }
 
 
