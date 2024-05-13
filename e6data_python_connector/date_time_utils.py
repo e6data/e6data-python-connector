@@ -1,3 +1,4 @@
+import time
 from typing import Final
 import pytz
 
@@ -188,3 +189,7 @@ def get_zone(zone):
     if zone is None or len(zone) == 0:
         return "UTC"
     return TIME_ZONES[zone][0]
+
+
+def current_time_millis():
+    return int(time.time_ns() / 1_000_000)

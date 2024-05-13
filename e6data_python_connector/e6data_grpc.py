@@ -17,6 +17,7 @@ from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
 import grpc
+import date_time_utils
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
@@ -486,6 +487,7 @@ class Cursor(DBAPICursor):
         final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
         self._engine_ip = final_identify_planner_response.plannerIp
         self._query_id = final_identify_planner_response.existingQuery.queryId
+        print("QueryId: ", self._query_id, ", PlannerIP: ", self._engine_ip)
 
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
@@ -666,15 +668,25 @@ class Cursor(DBAPICursor):
         identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest()
 
         try:
+            total_elapsed_time = 0
             while True:
-                identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = client.identifyPlanner(identify_planner_request, metadata=self.metadata)
-                self._query_id = identify_planner_response.existingQuery.queryId
+                start_time_for_iteration = date_time_utils.current_time_millis()
+                identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = client.identifyPlanner(
+                    identify_planner_request, metadata=self.metadata)
+                existing_query: e6x_engine_pb2.ExistingQuery = identify_planner_response.existingQuery
 
                 queue_message: e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.queueMessage
                 if (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
+                    total_elapsed_time += (date_time_utils.current_time_millis() - start_time_for_iteration)
+                    identify_planner_response.existingQuery.elapsedTimeMillis = total_elapsed_time
                     return identify_planner_response
                 elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
                     time.sleep(0.01)  # sleep for 10 millis
+                    total_elapsed_time += (date_time_utils.current_time_millis() - start_time_for_iteration)
+                    existing_query_to_pass_into_request: e6x_engine_pb2.ExistingQuery = e6x_engine_pb2.ExistingQuery(
+                        queryId=existing_query.queryId, elapsedTimeMillis=total_elapsed_time)
+                    identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest(
+                        existingQuery=existing_query_to_pass_into_request)
                 elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.RATE_LIMIT):
                     raise Exception("Too many requests to the engine")
         except Exception as e:
