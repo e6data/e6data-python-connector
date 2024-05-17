@@ -487,7 +487,6 @@ class Cursor(DBAPICursor):
         final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
         self._engine_ip = final_identify_planner_response.plannerIp
         self._query_id = final_identify_planner_response.existingQuery.queryId
-        print("QueryId: ", self._query_id, ", PlannerIP: ", self._engine_ip)
 
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
