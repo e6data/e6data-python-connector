@@ -1,0 +1,41 @@
+syntax = "proto3";
+option java_multiple_files = true;
+
+
+message ResumeRequest{
+  string  user = 1;
+  string  password = 2;
+}
+
+message ResumeResponse{
+  string status = 1;
+}
+
+message SuspendRequest{
+  string  user = 1;
+  string  password = 2;
+}
+
+message SuspendResponse{
+  string status = 1;
+}
+
+message ClusterStatusRequest{
+  string  user = 1;
+  string  password = 2;
+}
+
+message ClusterStatusResponse{
+  string status = 1;
+}
+
+
+service ClusterService {
+
+  rpc resume(ResumeRequest) returns (ResumeResponse);
+
+  rpc suspend(SuspendRequest) returns (SuspendResponse);
+
+  rpc status(ClusterStatusRequest) returns (ClusterStatusResponse);
+
+}

@@ -16,7 +16,9 @@ from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
 import grpc
+from grpc._channel import _InactiveRpcError
 
+from e6data_python_connector.cluster_manager import ClusterManager
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
@@ -114,6 +116,7 @@ class Connection(object):
             database: str = None,
             cluster_uuid: str = None,
             secure: bool = False,
+            auto_resume: bool = False,
             grpc_options: dict = None,
     ):
         """
@@ -137,6 +140,8 @@ class Connection(object):
                 Cluster's uuid
             secure: bool, Optional
                 Flag to use a secure channel for data transfer
+            auto_resume: bool, Optional
+                Flag to enable auto resume of the cluster before the query execution
             grpc_options: dict, Optional
                 Specify gRPC configuration
                 - keepalive_timeout_ms: This parameter defines the time, in milliseconds, that a gRPC connection should remain idle before sending a keepalive ping to check if the connection is still alive.
@@ -159,6 +164,8 @@ class Connection(object):
         self._secure_channel = secure
 
         self.catalog_name = catalog
+
+        self._auto_resume = auto_resume
 
         self._keepalive_timeout_ms = 900000
         self._max_receive_message_length = -1
@@ -208,11 +215,39 @@ class Connection(object):
                 )
                 authenticate_response = self._client.authenticate(
                     authenticate_request,
-                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
+                    metadata=_get_grpc_header(cluster=self.cluster_uuid),
+                    # timeout=3
                 )
                 self._session_id = authenticate_response.sessionId
                 if not self._session_id:
                     raise ValueError("Invalid credentials.")
+            except _InactiveRpcError as e:
+                if self._auto_resume:
+                    # if True:
+                    if e.code() == grpc.StatusCode.UNKNOWN and 'Stream removed' in e.details():
+                        status = ClusterManager(
+                            host=self._host,
+                            port=self._port,
+                            user=self.__username,
+                            password=self.__password,
+                            secure_channel=self._secure_channel
+                        ).resume()
+                        if status:
+                            authenticate_request = e6x_engine_pb2.AuthenticateRequest(
+                                user=self.__username,
+                                password=self.__password
+                            )
+                            authenticate_response = self._client.authenticate(
+                                authenticate_request,
+                                metadata=_get_grpc_header(cluster=self.cluster_uuid)
+                            )
+                            self._session_id = authenticate_response.sessionId
+                        else:
+                            raise e
+                    else:
+                        raise e
+                else:
+                    raise e
             except Exception as e:
                 self._channel.close()
                 raise e
