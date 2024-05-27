@@ -17,7 +17,7 @@ from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
 import grpc
-import date_time_utils
+from e6data_python_connector import date_time_utils
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
