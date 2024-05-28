@@ -223,7 +223,6 @@ class Connection(object):
                     raise ValueError("Invalid credentials.")
             except _InactiveRpcError as e:
                 if self._auto_resume:
-                    # if True:
                     if e.code() == grpc.StatusCode.UNKNOWN and 'Stream removed' in e.details():
                         status = ClusterManager(
                             host=self._host,
