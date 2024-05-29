@@ -484,7 +484,7 @@ class Cursor(DBAPICursor):
 
         client = self.connection.client
 
-        final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client)
+        final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client, sql)
         self._engine_ip = final_identify_planner_response.plannerIp
         self._query_id = final_identify_planner_response.existingQuery.queryId
 
@@ -663,8 +663,11 @@ class Cursor(DBAPICursor):
             planner=explain_analyze_response.explainAnalyze,
         )
 
-    def identify_planner(self, client):
-        identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest()
+    def identify_planner(self, client, sql):
+        first_time_request_payload: e6x_engine_pb2.IdentifyPlannerRequest.FirstTimeRequestPayload = e6x_engine_pb2.IdentifyPlannerRequest.FirstTimeRequestPayload(
+            schema=self._database, catalog=self._catalog_name, queryString=sql)
+        identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest(sessionId=self.connection.get_session_id,
+                                                                         firstTimeRequestPayload=first_time_request_payload)
 
         try:
             total_elapsed_time = 0
@@ -685,7 +688,7 @@ class Cursor(DBAPICursor):
                     existing_query_to_pass_into_request: e6x_engine_pb2.ExistingQuery = e6x_engine_pb2.ExistingQuery(
                         queryId=existing_query.queryId, elapsedTimeMillis=total_elapsed_time)
                     identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest(
-                        existingQuery=existing_query_to_pass_into_request)
+                        sessionId=self.connection.get_session_id, existingQuery=existing_query_to_pass_into_request)
                 elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.RATE_LIMIT):
                     raise Exception("Too many requests to the engine")
         except Exception as e:

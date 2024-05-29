@@ -14,15 +14,15 @@ class QueryEngineServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.identifyPlanner = channel.unary_unary(
-                '/QueryEngineService/identifyPlanner',
-                request_serializer=e6x__engine__pb2.IdentifyPlannerRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.IdentifyPlannerResponse.FromString,
-                )
         self.authenticate = channel.unary_unary(
                 '/QueryEngineService/authenticate',
                 request_serializer=e6x__engine__pb2.AuthenticateRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.AuthenticateResponse.FromString,
+                )
+        self.identifyPlanner = channel.unary_unary(
+                '/QueryEngineService/identifyPlanner',
+                request_serializer=e6x__engine__pb2.IdentifyPlannerRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.IdentifyPlannerResponse.FromString,
                 )
         self.prepareStatement = channel.unary_unary(
                 '/QueryEngineService/prepareStatement',
@@ -164,17 +164,17 @@ class QueryEngineServiceStub(object):
 class QueryEngineServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def identifyPlanner(self, request, context):
+    def authenticate(self, request, context):
         """Client sided API
 
-        This is a stateless call
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def authenticate(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def identifyPlanner(self, request, context):
+        """This is a stateless call
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -349,15 +349,15 @@ class QueryEngineServiceServicer(object):
 
 def add_QueryEngineServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'identifyPlanner': grpc.unary_unary_rpc_method_handler(
-                    servicer.identifyPlanner,
-                    request_deserializer=e6x__engine__pb2.IdentifyPlannerRequest.FromString,
-                    response_serializer=e6x__engine__pb2.IdentifyPlannerResponse.SerializeToString,
-            ),
             'authenticate': grpc.unary_unary_rpc_method_handler(
                     servicer.authenticate,
                     request_deserializer=e6x__engine__pb2.AuthenticateRequest.FromString,
                     response_serializer=e6x__engine__pb2.AuthenticateResponse.SerializeToString,
+            ),
+            'identifyPlanner': grpc.unary_unary_rpc_method_handler(
+                    servicer.identifyPlanner,
+                    request_deserializer=e6x__engine__pb2.IdentifyPlannerRequest.FromString,
+                    response_serializer=e6x__engine__pb2.IdentifyPlannerResponse.SerializeToString,
             ),
             'prepareStatement': grpc.unary_unary_rpc_method_handler(
                     servicer.prepareStatement,
@@ -505,23 +505,6 @@ class QueryEngineService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def identifyPlanner(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/QueryEngineService/identifyPlanner',
-            e6x__engine__pb2.IdentifyPlannerRequest.SerializeToString,
-            e6x__engine__pb2.IdentifyPlannerResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-    @staticmethod
     def authenticate(request,
             target,
             options=(),
@@ -535,6 +518,23 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(request, target, '/QueryEngineService/authenticate',
             e6x__engine__pb2.AuthenticateRequest.SerializeToString,
             e6x__engine__pb2.AuthenticateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def identifyPlanner(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/QueryEngineService/identifyPlanner',
+            e6x__engine__pb2.IdentifyPlannerRequest.SerializeToString,
+            e6x__engine__pb2.IdentifyPlannerResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

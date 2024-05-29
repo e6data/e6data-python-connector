@@ -4,9 +4,30 @@ option py_generic_services = true;
 
 // REQUESTS AND RESPONSES //
 
+message AuthenticateRequest
+{
+  string  user = 1;
+  string  password = 2;
+  optional string  userNameForImpersonation = 3;
+}
+
+message AuthenticateResponse
+{
+  string  sessionId = 1;
+}
+
 message IdentifyPlannerRequest
 {
-  optional ExistingQuery existingQuery = 1;
+  string sessionId = 1;
+  optional FirstTimeRequestPayload firstTimeRequestPayload = 2;
+  optional ExistingQuery existingQuery = 3;
+
+  message FirstTimeRequestPayload
+  {
+    string schema = 1;
+    string catalog = 2;
+    string queryString = 3;
+  }
 }
 
 // This is exactly the same format as that of the thrift counter part
@@ -22,18 +43,6 @@ message IdentifyPlannerResponse
   ExistingQuery existingQuery = 1;
   optional string plannerIp = 2;
   QueueMessage queueMessage = 3;
-}
-
-message AuthenticateRequest
-{
-  string  user = 1;
-  string  password = 2;
-  optional string  userNameForImpersonation = 3;
-}
-
-message AuthenticateResponse
-{
-  string  sessionId = 1;
 }
 
 message PrepareStatementRequest
@@ -366,9 +375,9 @@ service QueryEngineService
 
   // Client sided API
 
-  rpc identifyPlanner(IdentifyPlannerRequest) returns (IdentifyPlannerResponse); // This is a stateless call
-
   rpc authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+
+  rpc identifyPlanner(IdentifyPlannerRequest) returns (IdentifyPlannerResponse); // This is a stateless call
 
   rpc prepareStatement(PrepareStatementRequest) returns (PrepareStatementResponse);
 

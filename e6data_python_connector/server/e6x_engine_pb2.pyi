@@ -7,11 +7,40 @@ from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Map
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class AuthenticateRequest(_message.Message):
+    __slots__ = ["user", "password", "userNameForImpersonation"]
+    USER_FIELD_NUMBER: _ClassVar[int]
+    PASSWORD_FIELD_NUMBER: _ClassVar[int]
+    USERNAMEFORIMPERSONATION_FIELD_NUMBER: _ClassVar[int]
+    user: str
+    password: str
+    userNameForImpersonation: str
+    def __init__(self, user: _Optional[str] = ..., password: _Optional[str] = ..., userNameForImpersonation: _Optional[str] = ...) -> None: ...
+
+class AuthenticateResponse(_message.Message):
+    __slots__ = ["sessionId"]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    sessionId: str
+    def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
+
 class IdentifyPlannerRequest(_message.Message):
-    __slots__ = ["existingQuery"]
+    __slots__ = ["sessionId", "firstTimeRequestPayload", "existingQuery"]
+    class FirstTimeRequestPayload(_message.Message):
+        __slots__ = ["schema", "catalog", "queryString"]
+        SCHEMA_FIELD_NUMBER: _ClassVar[int]
+        CATALOG_FIELD_NUMBER: _ClassVar[int]
+        QUERYSTRING_FIELD_NUMBER: _ClassVar[int]
+        schema: str
+        catalog: str
+        queryString: str
+        def __init__(self, schema: _Optional[str] = ..., catalog: _Optional[str] = ..., queryString: _Optional[str] = ...) -> None: ...
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    FIRSTTIMEREQUESTPAYLOAD_FIELD_NUMBER: _ClassVar[int]
     EXISTINGQUERY_FIELD_NUMBER: _ClassVar[int]
+    sessionId: str
+    firstTimeRequestPayload: IdentifyPlannerRequest.FirstTimeRequestPayload
     existingQuery: ExistingQuery
-    def __init__(self, existingQuery: _Optional[_Union[ExistingQuery, _Mapping]] = ...) -> None: ...
+    def __init__(self, sessionId: _Optional[str] = ..., firstTimeRequestPayload: _Optional[_Union[IdentifyPlannerRequest.FirstTimeRequestPayload, _Mapping]] = ..., existingQuery: _Optional[_Union[ExistingQuery, _Mapping]] = ...) -> None: ...
 
 class IdentifyPlannerResponse(_message.Message):
     __slots__ = ["existingQuery", "plannerIp", "queueMessage"]
@@ -30,22 +59,6 @@ class IdentifyPlannerResponse(_message.Message):
     plannerIp: str
     queueMessage: IdentifyPlannerResponse.QueueMessage
     def __init__(self, existingQuery: _Optional[_Union[ExistingQuery, _Mapping]] = ..., plannerIp: _Optional[str] = ..., queueMessage: _Optional[_Union[IdentifyPlannerResponse.QueueMessage, str]] = ...) -> None: ...
-
-class AuthenticateRequest(_message.Message):
-    __slots__ = ["user", "password", "userNameForImpersonation"]
-    USER_FIELD_NUMBER: _ClassVar[int]
-    PASSWORD_FIELD_NUMBER: _ClassVar[int]
-    USERNAMEFORIMPERSONATION_FIELD_NUMBER: _ClassVar[int]
-    user: str
-    password: str
-    userNameForImpersonation: str
-    def __init__(self, user: _Optional[str] = ..., password: _Optional[str] = ..., userNameForImpersonation: _Optional[str] = ...) -> None: ...
-
-class AuthenticateResponse(_message.Message):
-    __slots__ = ["sessionId"]
-    SESSIONID_FIELD_NUMBER: _ClassVar[int]
-    sessionId: str
-    def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
 
 class PrepareStatementRequest(_message.Message):
     __slots__ = ["sessionId", "schema", "queryString", "quoting", "plannerIp", "existingQuery"]
