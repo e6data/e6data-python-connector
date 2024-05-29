@@ -10,7 +10,7 @@ import multiprocessing
 class _StatusLock:
     def __init__(self):
         self._status_thread_lock = threading.Lock()
-        self._status_multiprocessing_lock = multiprocessing.Semaphore(1)
+        self._status_multiprocessing_lock = multiprocessing.Semaphore()
         self._is_active = False
 
     @property
