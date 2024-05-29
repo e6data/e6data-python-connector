@@ -11,11 +11,13 @@ import datetime
 import logging
 import re
 import sys
+import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 
 import grpc
+from e6data_python_connector import date_time_utils
 
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
@@ -481,19 +483,24 @@ class Cursor(DBAPICursor):
             sql = operation % _escaper.escape_args(parameters)
 
         client = self.connection.client
+
+        final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client, sql)
+        self._engine_ip = final_identify_planner_response.plannerIp
+        self._query_id = final_identify_planner_response.existingQuery.queryId
+
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
-                queryString=sql
+                queryString=sql,
+                plannerIp=final_identify_planner_response.plannerIp,
+                existingQuery=final_identify_planner_response.existingQuery
             )
             prepare_statement_response = client.prepareStatement(
                 prepare_statement_request,
                 metadata=self.metadata
             )
 
-            self._query_id = prepare_statement_response.queryId
-            self._engine_ip = prepare_statement_response.engineIP
             execute_statement_request = e6x_engine_pb2.ExecuteStatementRequest(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
@@ -508,7 +515,9 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
                 catalog=self._catalog_name,
-                queryString=sql
+                queryString=sql,
+                plannerIp=final_identify_planner_response.plannerIp,
+                existingQuery=final_identify_planner_response.existingQuery
             )
             prepare_statement_response = client.prepareStatementV2(
                 prepare_statement_request,
@@ -516,8 +525,6 @@ class Cursor(DBAPICursor):
                 timeout=self.connection.grpc_prepare_timeout
             )
 
-            self._query_id = prepare_statement_response.queryId
-            self._engine_ip = prepare_statement_response.engineIP
             execute_statement_request = e6x_engine_pb2.ExecuteStatementV2Request(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
@@ -655,6 +662,37 @@ class Cursor(DBAPICursor):
             queuing_time=explain_analyze_response.queueingTime,
             planner=explain_analyze_response.explainAnalyze,
         )
+
+    def identify_planner(self, client, sql):
+        first_time_request_payload: e6x_engine_pb2.IdentifyPlannerRequest.FirstTimeRequestPayload = e6x_engine_pb2.IdentifyPlannerRequest.FirstTimeRequestPayload(
+            schema=self._database, catalog=self._catalog_name, queryString=sql)
+        identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest(sessionId=self.connection.get_session_id,
+                                                                         firstTimeRequestPayload=first_time_request_payload)
+
+        try:
+            total_elapsed_time = 0
+            while True:
+                start_time_for_iteration = date_time_utils.current_time_millis()
+                identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = client.identifyPlanner(
+                    identify_planner_request, metadata=self.metadata)
+                existing_query: e6x_engine_pb2.ExistingQuery = identify_planner_response.existingQuery
+
+                queue_message: e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage = identify_planner_response.queueMessage
+                if (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.GO_AHEAD):
+                    total_elapsed_time += (date_time_utils.current_time_millis() - start_time_for_iteration)
+                    identify_planner_response.existingQuery.elapsedTimeMillis = total_elapsed_time
+                    return identify_planner_response
+                elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.WAITING_ON_PLANNER_SCALEUP):
+                    time.sleep(0.01)  # sleep for 10 millis
+                    total_elapsed_time += (date_time_utils.current_time_millis() - start_time_for_iteration)
+                    existing_query_to_pass_into_request: e6x_engine_pb2.ExistingQuery = e6x_engine_pb2.ExistingQuery(
+                        queryId=existing_query.queryId, elapsedTimeMillis=total_elapsed_time)
+                    identify_planner_request = e6x_engine_pb2.IdentifyPlannerRequest(
+                        sessionId=self.connection.get_session_id, existingQuery=existing_query_to_pass_into_request)
+                elif (queue_message is e6x_engine_pb2.IdentifyPlannerResponse.QueueMessage.RATE_LIMIT):
+                    raise Exception("Too many requests to the engine")
+        except Exception as e:
+            raise e
 
 
 def poll(self, get_progress_update=True):
