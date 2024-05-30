@@ -8,6 +8,8 @@ import multiprocessing
 
 
 class _StatusLock:
+    _LOCK_TIMEOUT = 500
+
     def __init__(self):
         self._status_thread_lock = threading.Lock()
         self._status_multiprocessing_lock = multiprocessing.Semaphore()
@@ -21,8 +23,8 @@ class _StatusLock:
         self._is_active = True
 
     def __enter__(self):
-        self._status_thread_lock.acquire()
-        self._status_multiprocessing_lock.acquire()
+        self._status_thread_lock.acquire(timeout=self._LOCK_TIMEOUT)
+        self._status_multiprocessing_lock.acquire(timeout=self._LOCK_TIMEOUT)
         print('Locked threads and processes.')
         return self
 
@@ -78,6 +80,9 @@ class ClusterManager:
                 )
                 response = self._get_connection.resume(payload)
                 print('resuming response', response.status)
+            elif current_status.status == 'active':
+                print('Cluster is already active.')
+                return True
             elif current_status.status != 'resuming':
                 """
                 If cluster is in resuming state already, start watching for the status.
@@ -93,7 +98,6 @@ class ClusterManager:
                     )
                     response = self._get_connection.status(status_payload)
                     print(response)
-                    # break
                     if response.status == 'active':
                         lock.set_active()
                         print('Breaking because of status:', response.status)
@@ -106,8 +110,7 @@ class ClusterManager:
                         return False
                 except _InactiveRpcError as e:
                     print('On resume error', e)
-                    if not e.code() == grpc.StatusCode.UNAVAILABLE and 'UNAVAILABLE' not in e.details():
-                        raise e
+                    print('Retrying')
                 time.sleep(5)
 
     def suspend(self):
