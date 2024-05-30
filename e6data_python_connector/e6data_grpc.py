@@ -484,9 +484,14 @@ class Cursor(DBAPICursor):
 
         client = self.connection.client
 
-        final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client, sql)
-        self._engine_ip = final_identify_planner_response.plannerIp
-        self._query_id = final_identify_planner_response.existingQuery.queryId
+        try:
+            final_identify_planner_response: e6x_engine_pb2.IdentifyPlannerResponse = self.identify_planner(client, sql)
+            self._engine_ip = final_identify_planner_response.plannerIp
+            self._query_id = final_identify_planner_response.existingQuery.queryId
+        except Exception as e:
+            _logger.info(
+                "Timestamp: {}, Failed at IdentifyPlanner() call, sql: {}, error: {}".format(datetime.datetime.now(),
+                                                                                             sql, e))
 
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
