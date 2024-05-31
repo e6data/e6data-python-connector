@@ -231,7 +231,7 @@ class E6dataDialect(default.DefaultDialect):
         self.catalog_name = url.query.get("catalog")
         self.cluster_uuid = url.query.get("cluster-uuid")
         self.secure = url.query.get("secure") == 'true'
-        self.auto_resume = url.query.get("auto_resume") == 'true'
+        self.auto_resume = url.query.get("auto-resume") == 'true'
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
 
