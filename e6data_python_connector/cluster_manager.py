@@ -25,13 +25,11 @@ class _StatusLock:
     def __enter__(self):
         self._status_thread_lock.acquire(timeout=self._LOCK_TIMEOUT)
         self._status_multiprocessing_lock.acquire(timeout=self._LOCK_TIMEOUT)
-        print('Locked threads and processes.')
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._status_thread_lock.release()
         self._status_multiprocessing_lock.release()
-        print('Released threads and processes.')
 
 
 status_lock = _StatusLock()
@@ -65,30 +63,25 @@ class ClusterManager:
         """
         with status_lock as lock:
             if lock.is_active:
-                print('Cluster is already active')
                 return True
             status_payload = cluster_pb2.ClusterStatusRequest(
                 user=self._user,
                 password=self._password
             )
             current_status = self._get_connection.status(status_payload)
-            print('Current status', current_status)
             if current_status.status == 'suspended':
                 payload = cluster_pb2.ResumeRequest(
                     user=self._user,
                     password=self._password
                 )
                 response = self._get_connection.resume(payload)
-                print('resuming response', response.status)
             elif current_status.status == 'active':
-                print('Cluster is already active.')
                 return True
             elif current_status.status != 'resuming':
                 """
                 If cluster is in resuming state already, start watching for the status.
                 Cluster is in different state, cannot resume.
                 """
-                print('Cluster is in different state, cannot resume.')
                 return False
             while True:
                 try:
@@ -97,20 +90,15 @@ class ClusterManager:
                         password=self._password
                     )
                     response = self._get_connection.status(status_payload)
-                    print(response)
                     if response.status == 'active':
                         lock.set_active()
-                        print('Breaking because of status:', response.status)
                         return True
                     if response.status in ['suspended', 'failed']:
-                        print('Breaking because of status:', response.status)
                         return False
                     if time.time() > self._timeout:
-                        print('Breaking because of timeout')
                         return False
                 except _InactiveRpcError as e:
-                    print('On resume error', e)
-                    print('Retrying')
+                    pass
                 time.sleep(5)
 
     def suspend(self):
