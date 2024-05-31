@@ -215,6 +215,7 @@ class E6dataDialect(default.DefaultDialect):
     catalog_name = None
     cluster_uuid = None
     secure = False
+    auto_resume = False
 
     def _dialect_specific_select_one(self):
         return "NOOP"
@@ -230,6 +231,7 @@ class E6dataDialect(default.DefaultDialect):
         self.catalog_name = url.query.get("catalog")
         self.cluster_uuid = url.query.get("cluster-uuid")
         self.secure = url.query.get("secure") == 'true'
+        self.auto_resume = url.query.get("auto-resume") == 'true'
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
 
@@ -242,7 +244,8 @@ class E6dataDialect(default.DefaultDialect):
             "database": database,
             "catalog": self.catalog_name,
             "cluster_uuid": self.cluster_uuid,
-            'secure': self.secure
+            'secure': self.secure,
+            'auto_resume': self.auto_resume
         }
         return [], kwargs
 
