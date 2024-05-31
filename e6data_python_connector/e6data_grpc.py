@@ -215,8 +215,7 @@ class Connection(object):
                 )
                 authenticate_response = self._client.authenticate(
                     authenticate_request,
-                    metadata=_get_grpc_header(cluster=self.cluster_uuid),
-                    # timeout=3
+                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
                 )
                 self._session_id = authenticate_response.sessionId
                 if not self._session_id:
