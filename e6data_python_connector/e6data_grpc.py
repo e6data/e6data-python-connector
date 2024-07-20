@@ -24,6 +24,7 @@ from e6data_python_connector.constants import *
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
+from abc import ABC
 
 apilevel = '2.0'
 threadsafety = 2  # Threads may share the e6xdb and connections.
@@ -38,6 +39,23 @@ ssl_cert_parameter_map = {
     "optional": CERT_OPTIONAL,
     "required": CERT_REQUIRED,
 }
+MAX_RETRY = 1
+
+
+def _retry(obj, func_name, retry_counter=0, *args):
+    try:
+        return getattr(obj, func_name)(*args)
+    except _InactiveRpcError as e:
+        if (e.code() == grpc.StatusCode.INTERNAL and 'Access denied. Invalid session' in e.details() and
+                retry_counter < MAX_RETRY):
+            getattr(obj, "reset_connection")()
+            return _retry(obj, func_name, retry_counter + 1, *args)
+
+
+class RetryableConnection(ABC):
+
+    def reset_session(self):
+        raise NotImplementedError()
 
 
 def _parse_timestamp(value):
@@ -102,7 +120,7 @@ def connect(*args, **kwargs):
     return Connection(*args, **kwargs)
 
 
-class Connection(object):
+class Connection(object, RetryableConnection):
     """Create connection to e6data """
 
     def __init__(
@@ -179,6 +197,9 @@ class Connection(object):
             self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
             self.grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self.grpc_prepare_timeout
         self._create_client()
+
+    def reset_session(self):
+        self._session_id = None
 
     def _create_client(self):
         if self._secure_channel:
@@ -260,7 +281,8 @@ class Connection(object):
         :param prop_map: To set engine props
         """
         set_props_request = e6x_engine_pb2.SetPropsRequest(sessionId=self.get_session_id, props=prop_map)
-        self._client.setProps(set_props_request)
+        _retry(self._client, "setProps", 0, set_props_request)
+
 
     def __enter__(self):
         """Transport should already be opened by __init__"""
@@ -369,7 +391,7 @@ class Connection(object):
         return self._client
 
 
-class Cursor(DBAPICursor):
+class Cursor(DBAPICursor, RetryableConnection):
     """These objects represent a database cursor, which is used to manage the context of a fetch
     operation.
     Cursors are not isolated, i.e., any changes done to the database by a cursor are immediately
@@ -390,6 +412,9 @@ class Cursor(DBAPICursor):
         self._rowcount = 0
         self._database = self.connection.database if database is None else database
         self._catalog_name = catalog_name if catalog_name else self.connection.catalog_name
+
+    def reset_session(self):
+        self.connection.reset_session()
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
