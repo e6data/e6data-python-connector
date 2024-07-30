@@ -35,14 +35,13 @@ setuptools.setup(
     include_package_data=True,
     install_requires=[
         'sqlalchemy>=1.0.0',
-        'future',
-        'python-dateutil',
-        'pycryptodome',
-        'pytz',
-        'thrift',
-        'grpcio>=1.62.0',
-        'grpcio-tools>=1.62.0',
-        'sqlalchemy'
+        'future==1.0.0',
+        'python-dateutil==2.9.0.post0',
+        'pycryptodome==3.19.1',
+        'pytz==2024.1',
+        'thrift==0.20.0',
+        'grpcio==1.65.1',
+        'grpcio-tools==1.65.1',
     ],
     classifiers=[
         "Operating System :: POSIX :: Linux",
