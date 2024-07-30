@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = [2, 2, 1]
+VERSION = [2, 2, 1, 'rc3']
 
 
 def get_long_desc():
@@ -41,7 +41,7 @@ setuptools.setup(
         'pytz==2024.1',
         'thrift==0.20.0',
         'grpcio==1.65.1',
-        'grpcio-tools==1.65.1',
+        'grpcio-tools',
     ],
     classifiers=[
         "Operating System :: POSIX :: Linux",
