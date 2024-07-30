@@ -5,8 +5,8 @@ commonmark==0.9.1
 docutils==0.20.1
 future==0.18.3
 greenlet==2.0.2
-grpcio==1.56.2
-grpcio-tools==1.56.2
+grpcio==1.65.1
+grpcio-tools==1.65.1
 importlib-metadata==6.8.0
 keyring==24.2.0
 pkginfo==1.9.6

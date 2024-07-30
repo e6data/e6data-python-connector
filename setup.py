@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = [2, 2, 0]
+VERSION = [2, 2, 1]
 
 
 def get_long_desc():
@@ -40,8 +40,8 @@ setuptools.setup(
         'pycryptodome',
         'pytz',
         'thrift',
-        'grpcio',
-        'grpcio-tools',
+        'grpcio>=1.62.0',
+        'grpcio-tools>=1.62.0',
         'sqlalchemy'
     ],
     classifiers=[
@@ -51,7 +51,10 @@ setuptools.setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9'
+        'Programming Language :: Python :: 3.9',
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
     entry_points={
         'sqlalchemy.dialects': [
