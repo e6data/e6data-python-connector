@@ -222,7 +222,6 @@ class Connection(object):
                     raise ValueError("Invalid credentials.")
             except _InactiveRpcError as e:
                 if self._auto_resume:
-                    print(e.code(), e.details())
                     if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
                         status = ClusterManager(
                             host=self._host,
