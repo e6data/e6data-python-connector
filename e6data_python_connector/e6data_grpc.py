@@ -53,14 +53,31 @@ def _parse_timestamp(value):
             value = datetime.datetime.strptime(value, format)
         else:
             raise Exception(
-                'Cannot convert "{}" into a datetime'.format(value))
+                'Cannot convert "{}" into a datetime'.format(value)
+            )
     else:
         value = None
     return value
 
 
-TYPES_CONVERTER = {"DECIMAL_TYPE": Decimal,
-                   "TIMESTAMP_TYPE": _parse_timestamp}
+TYPES_CONVERTER = {
+    "DECIMAL_TYPE": Decimal,
+    "TIMESTAMP_TYPE": _parse_timestamp
+}
+
+
+def re_auth(func):
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except _InactiveRpcError as e:
+            if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
+                self.connection.get_re_authenticate_session_id()
+                return func(self, *args, **kwargs)
+            else:
+                raise e
+
+    return wrapper
 
 
 class HiveParamEscaper(ParamEscaper):
@@ -201,6 +218,10 @@ class Connection(object):
                 ]
             )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
+
+    def get_re_authenticate_session_id(self):
+        self._session_id = None
+        return self.get_session_id
 
     @property
     def get_session_id(self):
@@ -496,6 +517,7 @@ class Cursor(DBAPICursor):
         )
         return self.connection.client.status(status_request, metadata=self.metadata)
 
+    @re_auth
     def execute(self, operation, parameters=None, **kwargs):
         """Prepare and execute a database operation (query or command).
         Return values are not defined.
@@ -551,6 +573,7 @@ class Cursor(DBAPICursor):
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
+
             execute_statement_request = e6x_engine_pb2.ExecuteStatementV2Request(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
@@ -635,7 +658,6 @@ class Cursor(DBAPICursor):
         return self._fetch_all()
 
     def fetchmany(self, size: int = None):
-        # _logger.info("fetching all from overriden method")
         if size is None:
             size = self.arraysize
         if self._data is None:
