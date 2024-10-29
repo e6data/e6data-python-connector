@@ -466,3 +466,29 @@ class ClearOrCancelQueryRequest(_message.Message):
 class ClearOrCancelQueryResponse(_message.Message):
     __slots__ = []
     def __init__(self) -> None: ...
+
+class DataFrameRequest(_message.Message):
+    __slots__ = ["parquetFilePath", "catalog", "schema"]
+    PARQUETFILEPATH_FIELD_NUMBER: _ClassVar[int]
+    CATALOG_FIELD_NUMBER: _ClassVar[int]
+    SCHEMA_FIELD_NUMBER: _ClassVar[int]
+    parquetFilePath: str
+    catalog: str
+    schema: str
+    def __init__(self, parquetFilePath: _Optional[str] = ..., catalog: _Optional[str] = ..., schema: _Optional[str] = ...) -> None: ...
+
+class DataFrameResponse(_message.Message):
+    __slots__ = ["queryId"]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    queryId: str
+    def __init__(self, queryId: _Optional[str] = ...) -> None: ...
+
+class ExecuteDataFrameRequest(_message.Message):
+    __slots__ = ["queryId"]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    queryId: str
+    def __init__(self, queryId: _Optional[str] = ...) -> None: ...
+
+class ExecuteDataFrameResponse(_message.Message):
+    __slots__ = []
+    def __init__(self) -> None: ...
