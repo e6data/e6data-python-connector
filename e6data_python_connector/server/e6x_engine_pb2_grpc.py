@@ -159,6 +159,16 @@ class QueryEngineServiceStub(object):
                 request_serializer=e6x__engine__pb2.RefreshCatalogsRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.RefreshCatalogsResponse.FromString,
                 )
+        self.createDataFrame = channel.unary_unary(
+                '/QueryEngineService/createDataFrame',
+                request_serializer=e6x__engine__pb2.DataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.DataFrameResponse.FromString,
+                )
+        self.executeDataFrame = channel.unary_unary(
+                '/QueryEngineService/executeDataFrame',
+                request_serializer=e6x__engine__pb2.ExecuteDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ExecuteDataFrameResponse.FromString,
+                )
 
 
 class QueryEngineServiceServicer(object):
@@ -339,6 +349,18 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def createDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def executeDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_QueryEngineServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -486,6 +508,16 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     servicer.refreshCatalogs,
                     request_deserializer=e6x__engine__pb2.RefreshCatalogsRequest.FromString,
                     response_serializer=e6x__engine__pb2.RefreshCatalogsResponse.SerializeToString,
+            ),
+            'createDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.createDataFrame,
+                    request_deserializer=e6x__engine__pb2.DataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.DataFrameResponse.SerializeToString,
+            ),
+            'executeDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.executeDataFrame,
+                    request_deserializer=e6x__engine__pb2.ExecuteDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ExecuteDataFrameResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -987,5 +1019,39 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(request, target, '/QueryEngineService/refreshCatalogs',
             e6x__engine__pb2.RefreshCatalogsRequest.SerializeToString,
             e6x__engine__pb2.RefreshCatalogsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def createDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/QueryEngineService/createDataFrame',
+            e6x__engine__pb2.DataFrameRequest.SerializeToString,
+            e6x__engine__pb2.DataFrameResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def executeDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/QueryEngineService/executeDataFrame',
+            e6x__engine__pb2.ExecuteDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.ExecuteDataFrameResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

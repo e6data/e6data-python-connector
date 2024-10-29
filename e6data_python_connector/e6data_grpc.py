@@ -533,6 +533,9 @@ class Connection(object):
         """
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
+    def dataframe(self, parquet_path):
+        return DataFrame(self, file_path=parquet_path)
+
     def rollback(self):
         """
         Rolls back the current transaction.
@@ -1030,6 +1033,89 @@ class Cursor(DBAPICursor):
             queuing_time=explain_analyze_response.queueingTime,
             planner=explain_analyze_response.explainAnalyze,
         )
+
+
+class DataFrame:
+
+    def __init__(self, connection: Connection, file_path):
+        self.connection = connection
+        self._file_path = file_path
+        self._engine_ip = '127.0.0.1'
+        self._sessionId = 'abc'
+        self._is_metadata_updated = False
+        self._query_id = None
+        self._data = None
+        self._batch = None
+        self.create_dataframe()
+
+    def create_dataframe(self):
+        client = self.connection.client
+
+        create_dataframe_request = e6x_engine_pb2.DataFrameRequest(
+            parquetFilePath=self._file_path,
+            catalog=self.connection.catalog_name,
+            schema=self.connection.database
+        )
+
+        create_dataframe_response = client.createDataFrame(
+            create_dataframe_request
+        )
+        self._query_id = create_dataframe_response.queryId
+
+    def show(self):
+        self._execute()
+        return self._fetchall()
+
+    def _execute(self):
+        client = self.connection.client
+        execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
+            queryId=self._query_id
+        )
+        execute_dataframe_response = client.executeDataFrame(
+            execute_dataframe_request
+        )
+
+    def _update_meta_data(self):
+        result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
+            engineIP=self._engine_ip,
+            sessionId=self._sessionId,
+            queryId=self._query_id
+        )
+        get_result_metadata_response = self.connection.client.getResultMetadata(
+            result_meta_data_request,
+        )
+        buffer = BytesIO(get_result_metadata_response.resultMetaData)
+        self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
+        self._is_metadata_updated = True
+
+    def _fetch_batch(self):
+        client = self.connection.client
+        get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
+            engineIP=self._engine_ip,
+            sessionId=self._sessionId,
+            queryId=self._query_id
+        )
+        get_next_result_batch_response = client.getNextResultBatch(
+            get_next_result_batch_request,
+        )
+        buffer = get_next_result_batch_response.resultBatch
+        if not self._is_metadata_updated:
+            self._update_meta_data()
+        if not buffer or len(buffer) == 0:
+            return None
+        # one batch retrieves the predefined set of rows
+        return read_rows_from_chunk(self._query_columns_description, buffer)
+
+    def _fetchall(self):
+        self._data = list()
+        while True:
+            rows = self._fetch_batch()
+            if rows is None:
+                break
+            self._data = self._data + rows
+        rows = self._data
+        self._data = None
+        return rows
 
 
 def poll(self, get_progress_update=True):
