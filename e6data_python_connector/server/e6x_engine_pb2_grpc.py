@@ -161,8 +161,13 @@ class QueryEngineServiceStub(object):
                 )
         self.createDataFrame = channel.unary_unary(
                 '/QueryEngineService/createDataFrame',
-                request_serializer=e6x__engine__pb2.DataFrameRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.DataFrameResponse.FromString,
+                request_serializer=e6x__engine__pb2.CreateDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.CreateDataFrameResponse.FromString,
+                )
+        self.projectionOnDataFrame = channel.unary_unary(
+                '/QueryEngineService/projectionOnDataFrame',
+                request_serializer=e6x__engine__pb2.ProjectionOnDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ProjectionOnDataFrameResponse.FromString,
                 )
         self.executeDataFrame = channel.unary_unary(
                 '/QueryEngineService/executeDataFrame',
@@ -355,6 +360,12 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def projectionOnDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def executeDataFrame(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -511,8 +522,13 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
             ),
             'createDataFrame': grpc.unary_unary_rpc_method_handler(
                     servicer.createDataFrame,
-                    request_deserializer=e6x__engine__pb2.DataFrameRequest.FromString,
-                    response_serializer=e6x__engine__pb2.DataFrameResponse.SerializeToString,
+                    request_deserializer=e6x__engine__pb2.CreateDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.CreateDataFrameResponse.SerializeToString,
+            ),
+            'projectionOnDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.projectionOnDataFrame,
+                    request_deserializer=e6x__engine__pb2.ProjectionOnDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ProjectionOnDataFrameResponse.SerializeToString,
             ),
             'executeDataFrame': grpc.unary_unary_rpc_method_handler(
                     servicer.executeDataFrame,
@@ -1034,8 +1050,25 @@ class QueryEngineService(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/QueryEngineService/createDataFrame',
-            e6x__engine__pb2.DataFrameRequest.SerializeToString,
-            e6x__engine__pb2.DataFrameResponse.FromString,
+            e6x__engine__pb2.CreateDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.CreateDataFrameResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def projectionOnDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/QueryEngineService/projectionOnDataFrame',
+            e6x__engine__pb2.ProjectionOnDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.ProjectionOnDataFrameResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

@@ -526,7 +526,7 @@ class Connection(object):
         """
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
-    def dataframe(self, parquet_path):
+    def load_parquet(self, parquet_path):
         return DataFrame(self, file_path=parquet_path)
 
     def rollback(self):
@@ -547,6 +547,10 @@ class Connection(object):
             e6x_engine_pb2_grpc.QueryEngineServiceStub: The gRPC client stub.
         """
         return self._client
+
+    @property
+    def host(self):
+        return self._host
 
 
 class Cursor(DBAPICursor):
@@ -1033,21 +1037,23 @@ class DataFrame:
     def __init__(self, connection: Connection, file_path):
         self.connection = connection
         self._file_path = file_path
-        self._engine_ip = '127.0.0.1'
-        self._sessionId = 'abc'
+        self._engine_ip = connection.host
+        self._sessionId = connection.get_session_id
         self._is_metadata_updated = False
         self._query_id = None
         self._data = None
         self._batch = None
-        self.create_dataframe()
+        self._create_dataframe()
 
-    def create_dataframe(self):
+    def _create_dataframe(self):
         client = self.connection.client
 
-        create_dataframe_request = e6x_engine_pb2.DataFrameRequest(
+        create_dataframe_request = e6x_engine_pb2.CreateDataFrameRequest(
             parquetFilePath=self._file_path,
             catalog=self.connection.catalog_name,
-            schema=self.connection.database
+            schema=self.connection.database,
+            sessionId=self._sessionId,
+            engineIP=self._engine_ip
         )
 
         create_dataframe_response = client.createDataFrame(
@@ -1055,14 +1061,33 @@ class DataFrame:
         )
         self._query_id = create_dataframe_response.queryId
 
-    def show(self):
-        self._execute()
-        return self._fetchall()
+    def select(self, *fields):
+        projection_fields = []
+        for field in fields:
+            projection_fields.append(field)
 
-    def _execute(self):
+        client = self.connection.client
+        projection_on_dataframe_request = e6x_engine_pb2.ProjectionOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=projection_fields
+        )
+
+        projection_on_dataframe_response = client.projectionOnDataFrame(
+            projection_on_dataframe_request
+        )
+
+        return self
+
+    def show(self):
+        self.execute()
+        return self.fetchall()
+
+    def execute(self):
         client = self.connection.client
         execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
-            queryId=self._query_id
+            queryId=self._query_id,
+            sessionId=self._sessionId
         )
         execute_dataframe_response = client.executeDataFrame(
             execute_dataframe_request
@@ -1099,7 +1124,7 @@ class DataFrame:
         # one batch retrieves the predefined set of rows
         return read_rows_from_chunk(self._query_columns_description, buffer)
 
-    def _fetchall(self):
+    def fetchall(self):
         self._data = list()
         while True:
             rows = self._fetch_batch()
