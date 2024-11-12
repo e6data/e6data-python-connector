@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 class TestDataFrame(TestCase):
     def setUp(self) -> None:
-        self._host = "127.0.0.1"
+        self._host = "localhost"
         self._catalog = "demogluecatalog"
         self._database = "tpcds_1000_delta"
         logging.debug('Trying to connect to engine')
@@ -30,7 +30,11 @@ class TestDataFrame(TestCase):
         self.disconnect()
 
     def test_table_creation(self):
-        self._dataframe = self.e6x_connection.dataframe('<parquet_file_path>')
+        self._dataframe = self.e6x_connection.load_parquet('<parquet_file_path>')
+        self._dataframe.select('col1','col1','colN')
+
         rows = self._dataframe.show()
-        print(rows)
+
+        for row in rows:
+            print(row)
 

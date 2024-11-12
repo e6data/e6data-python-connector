@@ -299,21 +299,33 @@ message ClearOrCancelQueryResponse{
 
 // DataFrame
 
-message DataFrameRequest
+message CreateDataFrameRequest
 {
     string parquetFilePath = 1;
     string catalog = 2;
     string schema = 3;
+    string sessionId = 4;
+    string engineIP = 5;
 }
 
-message DataFrameResponse
+message CreateDataFrameResponse
 {
     string queryId = 1;
 }
+
+message ProjectionOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    repeated string field = 3;
+}
+
+message ProjectionOnDataFrameResponse {}
 
 message ExecuteDataFrameRequest
 {
     string queryId = 1;
+    string sessionId = 2;
 }
 
 message ExecuteDataFrameResponse {}
@@ -377,7 +389,9 @@ service QueryEngineService {
 
   rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
 
-  rpc createDataFrame(DataFrameRequest) returns (DataFrameResponse);
+  rpc createDataFrame(CreateDataFrameRequest) returns (CreateDataFrameResponse);
+
+  rpc projectionOnDataFrame(ProjectionOnDataFrameRequest) returns (ProjectionOnDataFrameResponse);
 
   rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
 }
