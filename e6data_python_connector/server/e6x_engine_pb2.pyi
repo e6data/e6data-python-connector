@@ -467,27 +467,47 @@ class ClearOrCancelQueryResponse(_message.Message):
     __slots__ = []
     def __init__(self) -> None: ...
 
-class DataFrameRequest(_message.Message):
-    __slots__ = ["parquetFilePath", "catalog", "schema"]
+class CreateDataFrameRequest(_message.Message):
+    __slots__ = ["parquetFilePath", "catalog", "schema", "sessionId", "engineIP"]
     PARQUETFILEPATH_FIELD_NUMBER: _ClassVar[int]
     CATALOG_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     parquetFilePath: str
     catalog: str
     schema: str
-    def __init__(self, parquetFilePath: _Optional[str] = ..., catalog: _Optional[str] = ..., schema: _Optional[str] = ...) -> None: ...
+    sessionId: str
+    engineIP: str
+    def __init__(self, parquetFilePath: _Optional[str] = ..., catalog: _Optional[str] = ..., schema: _Optional[str] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ...) -> None: ...
 
-class DataFrameResponse(_message.Message):
+class CreateDataFrameResponse(_message.Message):
     __slots__ = ["queryId"]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     def __init__(self, queryId: _Optional[str] = ...) -> None: ...
+
+class ProjectionOnDataFrameRequest(_message.Message):
+    __slots__ = ["queryId", "sessionId", "field"]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    FIELD_FIELD_NUMBER: _ClassVar[int]
+    queryId: str
+    sessionId: str
+    field: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ProjectionOnDataFrameResponse(_message.Message):
+    __slots__ = []
+    def __init__(self) -> None: ...
 
 class ExecuteDataFrameRequest(_message.Message):
-    __slots__ = ["queryId"]
+    __slots__ = ["queryId", "sessionId"]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
     queryId: str
-    def __init__(self, queryId: _Optional[str] = ...) -> None: ...
+    sessionId: str
+    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ...) -> None: ...
 
 class ExecuteDataFrameResponse(_message.Message):
     __slots__ = []
