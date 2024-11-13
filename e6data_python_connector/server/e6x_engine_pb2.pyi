@@ -1,9 +1,17 @@
 from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
+
+class SortDirection(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = []
+    ASC: _ClassVar[SortDirection]
+    DESC: _ClassVar[SortDirection]
+ASC: SortDirection
+DESC: SortDirection
 
 class GFieldInfo(_message.Message):
     __slots__ = ["fieldName", "fieldType"]
@@ -498,6 +506,50 @@ class ProjectionOnDataFrameRequest(_message.Message):
     def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ProjectionOnDataFrameResponse(_message.Message):
+    __slots__ = []
+    def __init__(self) -> None: ...
+
+class FilterOnDataFrameRequest(_message.Message):
+    __slots__ = ["queryId", "sessionId", "whereClause"]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    WHERECLAUSE_FIELD_NUMBER: _ClassVar[int]
+    queryId: str
+    sessionId: str
+    whereClause: str
+    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., whereClause: _Optional[str] = ...) -> None: ...
+
+class FilterOnDataFrameResponse(_message.Message):
+    __slots__ = []
+    def __init__(self) -> None: ...
+
+class OrderByOnDataFrameRequest(_message.Message):
+    __slots__ = ["queryId", "sessionId", "field", "sortDirection"]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    FIELD_FIELD_NUMBER: _ClassVar[int]
+    SORTDIRECTION_FIELD_NUMBER: _ClassVar[int]
+    queryId: str
+    sessionId: str
+    field: _containers.RepeatedScalarFieldContainer[str]
+    sortDirection: SortDirection
+    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ..., sortDirection: _Optional[_Union[SortDirection, str]] = ...) -> None: ...
+
+class OrderByOnDataFrameResponse(_message.Message):
+    __slots__ = []
+    def __init__(self) -> None: ...
+
+class LimitOnDataFrameRequest(_message.Message):
+    __slots__ = ["queryId", "sessionId", "fetchLimit"]
+    QUERYID_FIELD_NUMBER: _ClassVar[int]
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    FETCHLIMIT_FIELD_NUMBER: _ClassVar[int]
+    queryId: str
+    sessionId: str
+    fetchLimit: int
+    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., fetchLimit: _Optional[int] = ...) -> None: ...
+
+class LimitOnDataFrameResponse(_message.Message):
     __slots__ = []
     def __init__(self) -> None: ...
 

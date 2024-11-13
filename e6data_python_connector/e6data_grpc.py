@@ -1079,6 +1079,41 @@ class DataFrame:
 
         return self
 
+    def order_by(self, *fields, sort_direction = None):
+        sort_direction = str(sort_direction)
+        orderby_fields = []
+        sort_direction_request = None
+        for field in fields:
+            orderby_fields.append(field)
+
+        if sort_direction is not None:
+            direction = sort_direction.capitalize()
+            if direction == 'ASC':
+                sort_direction_request = e6x_engine_pb2.SortDirection.ASC
+            elif direction == 'DESC':
+                sort_direction_request = e6x_engine_pb2.SortDirection.DESC
+
+        client = self.connection.client
+
+        if sort_direction_request is None:
+            orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+                queryId=self._query_id,
+                sessionId=self._sessionId,
+                field=orderby_fields
+            )
+        else:
+            orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+                queryId=self._query_id,
+                sessionId=self._sessionId,
+                field=orderby_fields,
+                sortDirection=sort_direction_request
+            )
+
+        orderby_on_dataframe_response = client.orderByOnDataFrame(
+            orderby_on_dataframe_request
+        )
+        return self
+
     def show(self):
         self.execute()
         return self.fetchall()

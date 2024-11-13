@@ -322,6 +322,40 @@ message ProjectionOnDataFrameRequest
 
 message ProjectionOnDataFrameResponse {}
 
+message FilterOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    string whereClause = 3;
+}
+
+message FilterOnDataFrameResponse {}
+
+enum SortDirection
+{
+    ASC = 0;
+    DESC = 1;
+}
+
+message OrderByOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    repeated string field = 3;
+    optional SortDirection sortDirection = 4;
+}
+
+message OrderByOnDataFrameResponse {}
+
+message LimitOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    int32 fetchLimit = 3;
+}
+
+message LimitOnDataFrameResponse {}
+
 message ExecuteDataFrameRequest
 {
     string queryId = 1;
@@ -389,9 +423,17 @@ service QueryEngineService {
 
   rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
 
+  // dataframe
+
   rpc createDataFrame(CreateDataFrameRequest) returns (CreateDataFrameResponse);
 
   rpc projectionOnDataFrame(ProjectionOnDataFrameRequest) returns (ProjectionOnDataFrameResponse);
+
+  rpc filterOnDataFrame(FilterOnDataFrameRequest) returns (FilterOnDataFrameResponse);
+
+  rpc orderByOnDataFrame(OrderByOnDataFrameRequest) returns (OrderByOnDataFrameResponse);
+
+  rpc limitOnDataFrame(LimitOnDataFrameRequest) returns (LimitOnDataFrameResponse);
 
   rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
 }
