@@ -30,12 +30,11 @@ class TestDataFrame(TestCase):
         self.disconnect()
 
     def test_table_creation(self):
-        self._dataframe = self.e6x_connection.load_parquet('s3://tpcds-datagen/tpcds-1-delta/call_center/part-00000-520f2f6b-5a6f-45b1-bcf8-a8d5497d3c9b.c000.snappy.parquet')
-        self._dataframe.select('cc_call_center_id')
-        self._dataframe.order_by('cc_call_center_id')
+        self._dataframe = self.e6x_connection.load_parquet('<file_path>')
+        self._dataframe.select('col1','col2')
 
-        # rows = self._dataframe.show()
-        #
-        # for row in rows:
-        #     print(row)
+        rows = self._dataframe.show()
+
+        for row in rows:
+            print(row)
 

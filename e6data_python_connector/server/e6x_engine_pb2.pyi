@@ -10,8 +10,15 @@ class SortDirection(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = []
     ASC: _ClassVar[SortDirection]
     DESC: _ClassVar[SortDirection]
+
+class NullDirection(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = []
+    FIRST: _ClassVar[NullDirection]
+    LAST: _ClassVar[NullDirection]
 ASC: SortDirection
 DESC: SortDirection
+FIRST: NullDirection
+LAST: NullDirection
 
 class GFieldInfo(_message.Message):
     __slots__ = ["fieldName", "fieldType"]
@@ -524,16 +531,18 @@ class FilterOnDataFrameResponse(_message.Message):
     def __init__(self) -> None: ...
 
 class OrderByOnDataFrameRequest(_message.Message):
-    __slots__ = ["queryId", "sessionId", "field", "sortDirection"]
+    __slots__ = ["queryId", "sessionId", "field", "sortDirection", "nullsDirection"]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     FIELD_FIELD_NUMBER: _ClassVar[int]
     SORTDIRECTION_FIELD_NUMBER: _ClassVar[int]
+    NULLSDIRECTION_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     sessionId: str
     field: _containers.RepeatedScalarFieldContainer[str]
-    sortDirection: SortDirection
-    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ..., sortDirection: _Optional[_Union[SortDirection, str]] = ...) -> None: ...
+    sortDirection: _containers.RepeatedScalarFieldContainer[SortDirection]
+    nullsDirection: _containers.RepeatedScalarFieldContainer[NullDirection]
+    def __init__(self, queryId: _Optional[str] = ..., sessionId: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ..., sortDirection: _Optional[_Iterable[_Union[SortDirection, str]]] = ..., nullsDirection: _Optional[_Iterable[_Union[NullDirection, str]]] = ...) -> None: ...
 
 class OrderByOnDataFrameResponse(_message.Message):
     __slots__ = []
