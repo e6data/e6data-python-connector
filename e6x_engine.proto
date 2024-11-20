@@ -337,12 +337,19 @@ enum SortDirection
     DESC = 1;
 }
 
+enum NullDirection
+{
+    FIRST = 0;
+    LAST = 1;
+}
+
 message OrderByOnDataFrameRequest
 {
     string queryId = 1;
     string sessionId = 2;
     repeated string field = 3;
-    optional SortDirection sortDirection = 4;
+    repeated SortDirection sortDirection = 4;
+    repeated NullDirection nullsDirection = 5;
 }
 
 message OrderByOnDataFrameResponse {}

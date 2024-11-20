@@ -1079,40 +1079,69 @@ class DataFrame:
 
         return self
 
-    def order_by(self, *fields, sort_direction = None):
-        sort_direction = str(sort_direction)
+    def where(self, where_clause : str):
+        client = self.connection.client
+        filter_on_dataframe_request = e6x_engine_pb2.FilterOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            whereClause=where_clause
+        )
+
+        filter_on_dataframe_response = client.filterOnDataFrame(
+            filter_on_dataframe_request
+        )
+
+    def order_by(self, fields_list : list, sort_direction_list = None, null_direction_list = None):
         orderby_fields = []
-        sort_direction_request = None
-        for field in fields:
+        sort_direction_request = []
+        null_direction_request = []
+        for field in fields_list:
             orderby_fields.append(field)
 
-        if sort_direction is not None:
-            direction = sort_direction.capitalize()
+        for direction in sort_direction_list:
+            direction = str(direction).upper()
             if direction == 'ASC':
-                sort_direction_request = e6x_engine_pb2.SortDirection.ASC
+                sort_direction_request.append(e6x_engine_pb2.SortDirection.ASC)
             elif direction == 'DESC':
-                sort_direction_request = e6x_engine_pb2.SortDirection.DESC
+                sort_direction_request.append(e6x_engine_pb2.SortDirection.DESC)
+            else:
+                sort_direction_request.append(None)
+
+        for direction in null_direction_list:
+            direction = str(direction).upper()
+            if direction == 'NULLS_FIRST':
+                null_direction_request.append(e6x_engine_pb2.NullDirection.FIRST)
+            elif direction == 'NULLS_LAST':
+                null_direction_request.append(e6x_engine_pb2.NullDirection.LAST)
+            else:
+                null_direction_request.append(None)
 
         client = self.connection.client
 
-        if sort_direction_request is None:
-            orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
-                queryId=self._query_id,
-                sessionId=self._sessionId,
-                field=orderby_fields
-            )
-        else:
-            orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
-                queryId=self._query_id,
-                sessionId=self._sessionId,
-                field=orderby_fields,
-                sortDirection=sort_direction_request
-            )
+        orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=orderby_fields,
+            sortDirection=sort_direction_request,
+            nullsDirection=null_direction_request
+        )
 
         orderby_on_dataframe_response = client.orderByOnDataFrame(
             orderby_on_dataframe_request
         )
         return self
+
+    def limit(self, fetch_limit : int):
+        client = self.connection.client
+        limit_on_dataframe_request = e6x_engine_pb2.LimitOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            fetchLimit=fetch_limit
+        )
+
+        limit_on_dataframe_response = client.limitOnDataFrame(
+            limit_on_dataframe_request
+        )
 
     def show(self):
         self.execute()
