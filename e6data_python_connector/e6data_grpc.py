@@ -15,6 +15,7 @@ import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
+from typing import overload
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -1052,6 +1053,12 @@ class DataFrame:
         self._batch = None
         self._create_dataframe()
 
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
     def _create_dataframe(self):
         client = self.connection.client
 
@@ -1068,7 +1075,7 @@ class DataFrame:
         )
         self._query_id = create_dataframe_response.queryId
 
-    def select(self, *fields):
+    def select(self, *fields) -> "DataFrame":
         projection_fields = []
         for field in fields:
             projection_fields.append(field)
@@ -1086,7 +1093,7 @@ class DataFrame:
 
         return self
 
-    def where(self, where_clause : str):
+    def where(self, where_clause : str) -> "DataFrame":
         client = self.connection.client
         filter_on_dataframe_request = e6x_engine_pb2.FilterOnDataFrameRequest(
             queryId=self._query_id,
@@ -1098,11 +1105,14 @@ class DataFrame:
             filter_on_dataframe_request
         )
 
-    def order_by(self, fields_list : list, sort_direction_list = None, null_direction_list = None):
+        return self
+
+    @overload
+    def order_by(self, field_list : list, sort_direction_list = None, null_direction_list = None) -> "DataFrame":
         orderby_fields = []
         sort_direction_request = []
         null_direction_request = []
-        for field in fields_list:
+        for field in field_list:
             orderby_fields.append(field)
 
         for direction in sort_direction_list:
@@ -1138,7 +1148,29 @@ class DataFrame:
         )
         return self
 
-    def limit(self, fetch_limit : int):
+    def order_by(self, *field_list) -> "DataFrame":
+        orderby_fields = []
+        sort_direction_request = []
+        null_direction_request = []
+        for field in field_list:
+            orderby_fields.append(field)
+
+        client = self.connection.client
+
+        orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=orderby_fields,
+            sortDirection=sort_direction_request,
+            nullsDirection=null_direction_request
+        )
+
+        orderby_on_dataframe_response = client.orderByOnDataFrame(
+            orderby_on_dataframe_request
+        )
+        return self
+
+    def limit(self, fetch_limit : int) -> "DataFrame":
         client = self.connection.client
         limit_on_dataframe_request = e6x_engine_pb2.LimitOnDataFrameRequest(
             queryId=self._query_id,
@@ -1149,6 +1181,8 @@ class DataFrame:
         limit_on_dataframe_response = client.limitOnDataFrame(
             limit_on_dataframe_request
         )
+
+        return self
 
     def show(self):
         self.execute()
