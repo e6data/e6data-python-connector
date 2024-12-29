@@ -399,7 +399,6 @@ message ExecuteMLPipelineResponse {
   string result = 2;      // Serialized result (e.g., predictions or output)
 }
 
->>>>>>> Stashed changes
 service QueryEngineService {
   rpc clear(ClearRequest) returns (ClearResponse);
 
@@ -476,5 +475,5 @@ service QueryEngineService {
   rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
 
   rpc executeMLPipeline(ExecuteMLPipelineRequest) returns (ExecuteMLPipelineResponse);
->>>>>>> Stashed changes
+
 }

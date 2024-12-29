@@ -383,15 +383,12 @@ class Connection(object, RetryableConnection):
         """Return a new :py:class:`Cursor` object using the connection."""
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
-<<<<<<< Updated upstream
-=======
     def load_parquet(self, parquet_path):
         return DataFrame(self, file_path=parquet_path)
 
     def createMLPipeline(self):
         return MLPipeline(self)
 
->>>>>>> Stashed changes
     def rollback(self):
         raise Exception("e6xdb does not support transactions")  # pragma: no cover
 
