@@ -383,6 +383,15 @@ class Connection(object, RetryableConnection):
         """Return a new :py:class:`Cursor` object using the connection."""
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
+<<<<<<< Updated upstream
+=======
+    def load_parquet(self, parquet_path):
+        return DataFrame(self, file_path=parquet_path)
+
+    def createMLPipeline(self):
+        return MLPipeline(self)
+
+>>>>>>> Stashed changes
     def rollback(self):
         raise Exception("e6xdb does not support transactions")  # pragma: no cover
 
@@ -714,6 +723,35 @@ class Cursor(DBAPICursor, RetryableConnection):
             planner=explain_analyze_response.explainAnalyze,
         )
 
+class MLPipeline:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+        self._engine_ip = connection.host
+        self._sessionId = connection.get_session_id
+        self._database = self.connection.database
+        self._catalog_name = self.connection.catalog_name
+
+
+        self.tasks = []
+
+    def __enter__(self):
+        pass
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def train_linear_model(self, sql_query):
+        self.tasks.append({
+            "type": "train",
+            "sql_query": sql_query
+        })
+        return self
+
+    def predict_linear_model(self, sql_query):
+        self.tasks.append({
+            "type": "predict",
+            "sql_query": sql_query
+        })
+        return self
 
 def poll(self, get_progress_update=True):
     """Poll for and return the raw status data provided by the Hive Thrift REST API.
