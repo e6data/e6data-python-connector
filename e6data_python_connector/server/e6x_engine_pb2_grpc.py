@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import e6x_engine_pb2 as e6x__engine__pb2
+from . import e6x_engine_pb2 as e6x__engine__pb2
 
 GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
@@ -213,6 +213,11 @@ class QueryEngineServiceStub(object):
                 '/QueryEngineService/executeMLPipeline',
                 request_serializer=e6x__engine__pb2.ExecuteMLPipelineRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.ExecuteMLPipelineResponse.FromString,
+                _registered_method=True)
+        self.ComputeMatrix = channel.unary_unary(
+                '/QueryEngineService/ComputeMatrix',
+                request_serializer=e6x__engine__pb2.MatrixRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.MatrixResponse.FromString,
                 _registered_method=True)
 
 
@@ -438,6 +443,12 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ComputeMatrix(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_QueryEngineServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -620,6 +631,11 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     servicer.executeMLPipeline,
                     request_deserializer=e6x__engine__pb2.ExecuteMLPipelineRequest.FromString,
                     response_serializer=e6x__engine__pb2.ExecuteMLPipelineResponse.SerializeToString,
+            ),
+            'ComputeMatrix': grpc.unary_unary_rpc_method_handler(
+                    servicer.ComputeMatrix,
+                    request_deserializer=e6x__engine__pb2.MatrixRequest.FromString,
+                    response_serializer=e6x__engine__pb2.MatrixResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1594,6 +1610,33 @@ class QueryEngineService(object):
             '/QueryEngineService/executeMLPipeline',
             e6x__engine__pb2.ExecuteMLPipelineRequest.SerializeToString,
             e6x__engine__pb2.ExecuteMLPipelineResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ComputeMatrix(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/ComputeMatrix',
+            e6x__engine__pb2.MatrixRequest.SerializeToString,
+            e6x__engine__pb2.MatrixResponse.FromString,
             options,
             channel_credentials,
             insecure,

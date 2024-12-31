@@ -406,6 +406,25 @@ message ExecuteMLPipelineResponse {
   DoubleMatrix result = 2;      // Serialized result (e.g., predictions or output)
 }
 
+// Matrix request message
+message MatrixRequest {
+  string operation = 1;        // Operation type: "add", "multiply", etc.
+  repeated double matrix1 = 2;  // Flattened row-major matrix1
+  int32 rows1 = 3;             // Number of rows in matrix1
+  int32 cols1 = 4;             // Number of columns in matrix1
+  repeated double matrix2 = 5;  // Flattened row-major matrix2
+  optional int32 rows2 = 6;             // Number of rows in matrix2
+  optional int32 cols2 = 7;             // Number of columns in matrix2
+}
+
+// Matrix response message
+message MatrixResponse {
+  repeated double result = 1;  // Flattened row-major result matrix
+  int32 rows = 2;             // Number of rows in result matrix
+  int32 cols = 3;             // Number of columns in result matrix
+  string status = 4;          // Status message (e.g., "success")
+}
+
 service QueryEngineService {
   rpc clear(ClearRequest) returns (ClearResponse);
 
@@ -480,5 +499,7 @@ service QueryEngineService {
   rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
 
   rpc executeMLPipeline(ExecuteMLPipelineRequest) returns (ExecuteMLPipelineResponse);
+
+  rpc ComputeMatrix (MatrixRequest) returns (MatrixResponse);
 
 }

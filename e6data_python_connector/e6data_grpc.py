@@ -14,6 +14,7 @@ import sys
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
+import numpy as np
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -120,7 +121,7 @@ def connect(*args, **kwargs):
     return Connection(*args, **kwargs)
 
 
-class Connection(object, RetryableConnection):
+class Connection(RetryableConnection):
     """Create connection to e6data """
 
     def __init__(
@@ -878,6 +879,85 @@ class Cursor(DBAPICursor, RetryableConnection):
             planner=explain_analyze_response.explainAnalyze,
         )
 
+class Matrix:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+
+    def __enter__(self):
+        pass
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def flatten_2d_array(self, matrix):
+        return [value for row in matrix for value in row]
+
+    def reshape_1d_to_2d(self, flattened, rows, cols):
+        return [flattened[i * cols:(i + 1) * cols] for i in range(rows)]
+
+    def matmul(self, matrixA, matrixB):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="multiply",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]),
+            matrix2=self.flatten_2d_array(matrixB),
+            rows2=len(matrixB),
+            cols2=len(matrixB[0])
+        )
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        print("Resultant Matrix:")
+        print(result_matrix)
+
+    def add(self, matrixA, matrixB):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="add",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]),
+            matrix2=self.flatten_2d_array(matrixB),
+            rows2=len(matrixB),
+            cols2=len(matrixB[0])
+        )
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        #print("Resultant Matrix:")
+        print(result_matrix)
+    def transpose(self, matrixA):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="transpose",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]))
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        print("Resultant Matrix:")
+        print(result_matrix)
+
+    def inverse(self, matrixA):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="inverse",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]))
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        print("Resultant Matrix:")
+        print(result_matrix)
+
+
 class MLPipeline:
     def __init__(self, connection: Connection):
         self.connection = connection
@@ -885,9 +965,6 @@ class MLPipeline:
         self._sessionId = connection.get_session_id
         self._database = self.connection.database
         self._catalog_name = self.connection.catalog_name
-
-
-        self.tasks = []
 
     def __enter__(self):
         pass

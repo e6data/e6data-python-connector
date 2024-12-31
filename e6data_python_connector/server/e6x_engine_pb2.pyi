@@ -621,3 +621,33 @@ class ExecuteMLPipelineResponse(_message.Message):
     status: str
     result: DoubleMatrix
     def __init__(self, status: _Optional[str] = ..., result: _Optional[_Union[DoubleMatrix, _Mapping]] = ...) -> None: ...
+
+class MatrixRequest(_message.Message):
+    __slots__ = ("operation", "matrix1", "rows1", "cols1", "matrix2", "rows2", "cols2")
+    OPERATION_FIELD_NUMBER: _ClassVar[int]
+    MATRIX1_FIELD_NUMBER: _ClassVar[int]
+    ROWS1_FIELD_NUMBER: _ClassVar[int]
+    COLS1_FIELD_NUMBER: _ClassVar[int]
+    MATRIX2_FIELD_NUMBER: _ClassVar[int]
+    ROWS2_FIELD_NUMBER: _ClassVar[int]
+    COLS2_FIELD_NUMBER: _ClassVar[int]
+    operation: str
+    matrix1: _containers.RepeatedScalarFieldContainer[float]
+    rows1: int
+    cols1: int
+    matrix2: _containers.RepeatedScalarFieldContainer[float]
+    rows2: int
+    cols2: int
+    def __init__(self, operation: _Optional[str] = ..., matrix1: _Optional[_Iterable[float]] = ..., rows1: _Optional[int] = ..., cols1: _Optional[int] = ..., matrix2: _Optional[_Iterable[float]] = ..., rows2: _Optional[int] = ..., cols2: _Optional[int] = ...) -> None: ...
+
+class MatrixResponse(_message.Message):
+    __slots__ = ("result", "rows", "cols", "status")
+    RESULT_FIELD_NUMBER: _ClassVar[int]
+    ROWS_FIELD_NUMBER: _ClassVar[int]
+    COLS_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    result: _containers.RepeatedScalarFieldContainer[float]
+    rows: int
+    cols: int
+    status: str
+    def __init__(self, result: _Optional[_Iterable[float]] = ..., rows: _Optional[int] = ..., cols: _Optional[int] = ..., status: _Optional[str] = ...) -> None: ...
