@@ -297,10 +297,7 @@ message ClearOrCancelQueryRequest{
 message ClearOrCancelQueryResponse{
 }
 
-<<<<<<< Updated upstream
-=======
 // DataFrame
-
 message CreateDataFrameRequest
 {
     string parquetFilePath = 1;
@@ -373,6 +370,16 @@ message ExecuteDataFrameRequest
 
 message ExecuteDataFrameResponse {}
 
+// Define a row of doubles
+message DoubleRow {
+  repeated double values = 1; // Represents a row in the 2D array
+}
+
+// Define a 2D array of doubles
+message DoubleMatrix {
+  repeated DoubleRow rows = 1; // Represents all rows in the 2D array
+}
+
 // Represents an individual task in the DAG
 message Task {
   string type = 1;        // Task type: "train", "predict"
@@ -396,7 +403,7 @@ message ExecuteMLPipelineRequest {
 // Response after DAG execution
 message ExecuteMLPipelineResponse {
   string status = 1;      // Status of execution
-  string result = 2;      // Serialized result (e.g., predictions or output)
+  DoubleMatrix result = 2;      // Serialized result (e.g., predictions or output)
 }
 
 service QueryEngineService {
@@ -457,8 +464,6 @@ service QueryEngineService {
   rpc getNextRemoteCachedChunk(RemoteChunkRequest) returns (RemoteChunkResponse);
 
   rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
-<<<<<<< Updated upstream
-=======
 
   // dataframe
 

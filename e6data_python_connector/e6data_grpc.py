@@ -396,6 +396,164 @@ class Connection(object, RetryableConnection):
     def client(self):
         return self._client
 
+class DataFrame:
+
+    def __init__(self, connection: Connection, file_path):
+        self.connection = connection
+        self._file_path = file_path
+        self._engine_ip = connection.host
+        self._sessionId = connection.get_session_id
+        self._is_metadata_updated = False
+        self._query_id = None
+        self._data = None
+        self._batch = None
+        self._create_dataframe()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def _create_dataframe(self):
+        client = self.connection.client
+
+        create_dataframe_request = e6x_engine_pb2.CreateDataFrameRequest(
+            parquetFilePath=self._file_path,
+            catalog=self.connection.catalog_name,
+            schema=self.connection.database,
+            sessionId=self._sessionId,
+            engineIP=self._engine_ip
+        )
+
+        create_dataframe_response = client.createDataFrame(
+            create_dataframe_request
+        )
+        self._query_id = create_dataframe_response.queryId
+
+    def select(self, *fields) -> "DataFrame":
+        projection_fields = []
+        for field in fields:
+            projection_fields.append(field)
+
+        client = self.connection.client
+        projection_on_dataframe_request = e6x_engine_pb2.ProjectionOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=projection_fields
+        )
+
+        projection_on_dataframe_response = client.projectionOnDataFrame(
+            projection_on_dataframe_request
+        )
+
+        return self
+
+    def where(self, where_clause : str) -> "DataFrame":
+        client = self.connection.client
+        filter_on_dataframe_request = e6x_engine_pb2.FilterOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            whereClause=where_clause
+        )
+
+        filter_on_dataframe_response = client.filterOnDataFrame(
+            filter_on_dataframe_request
+        )
+
+        return self
+
+    def order_by(self, *field_list) -> "DataFrame":
+        orderby_fields = []
+        sort_direction_request = []
+        null_direction_request = []
+        for field in field_list:
+            orderby_fields.append(field)
+
+        client = self.connection.client
+
+        orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=orderby_fields,
+            sortDirection=sort_direction_request,
+            nullsDirection=null_direction_request
+        )
+
+        orderby_on_dataframe_response = client.orderByOnDataFrame(
+            orderby_on_dataframe_request
+        )
+        return self
+
+    def limit(self, fetch_limit : int) -> "DataFrame":
+        client = self.connection.client
+        limit_on_dataframe_request = e6x_engine_pb2.LimitOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            fetchLimit=fetch_limit
+        )
+
+        limit_on_dataframe_response = client.limitOnDataFrame(
+            limit_on_dataframe_request
+        )
+
+        return self
+
+    def show(self):
+        self.execute()
+        return self.fetchall()
+
+    def execute(self):
+        client = self.connection.client
+        execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId
+        )
+        execute_dataframe_response = client.executeDataFrame(
+            execute_dataframe_request
+        )
+
+    def _update_meta_data(self):
+        result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
+            engineIP=self._engine_ip,
+            sessionId=self._sessionId,
+            queryId=self._query_id
+        )
+        get_result_metadata_response = self.connection.client.getResultMetadata(
+            result_meta_data_request,
+        )
+        buffer = BytesIO(get_result_metadata_response.resultMetaData)
+        self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
+        self._is_metadata_updated = True
+
+    def _fetch_batch(self):
+        client = self.connection.client
+        get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
+            engineIP=self._engine_ip,
+            sessionId=self._sessionId,
+            queryId=self._query_id
+        )
+        get_next_result_batch_response = client.getNextResultBatch(
+            get_next_result_batch_request,
+        )
+        buffer = get_next_result_batch_response.resultBatch
+        if not self._is_metadata_updated:
+            self._update_meta_data()
+        if not buffer or len(buffer) == 0:
+            return None
+        # one batch retrieves the predefined set of rows
+        return read_rows_from_chunk(self._query_columns_description, buffer)
+
+    def fetchall(self):
+        self._data = list()
+        while True:
+            rows = self._fetch_batch()
+            if rows is None:
+                break
+            self._data = self._data + rows
+        rows = self._data
+        self._data = None
+        return rows
 
 class Cursor(DBAPICursor, RetryableConnection):
     """These objects represent a database cursor, which is used to manage the context of a fetch
@@ -749,6 +907,25 @@ class MLPipeline:
             "sql_query": sql_query
         })
         return self
+
+    def execute(self):
+        client = self.connection.client
+        execute_mlpipeline_request = e6x_engine_pb2.executeMLPipeline(
+            queryId=self._query_id,
+            sessionId=self._sessionId
+        )
+        execute_mlpipeline_response = client.executeMLPipeline(execute_mlpipeline_request)
+
+        # Step 4: Extract the DoubleMatrix from the response
+        double_matrix = execute_mlpipeline_response.result  # Assuming `result` is the DoubleMatrix field
+
+        # Step 5: Convert DoubleMatrix to a Python 2D list
+        matrix = [[value for value in row.values] for row in double_matrix.rows]
+
+        # Step 6: Process or print the matrix
+        print("Received matrix:")
+        for row in matrix:
+            print(row)
 
 def poll(self, get_progress_update=True):
     """Poll for and return the raw status data provided by the Hive Thrift REST API.
