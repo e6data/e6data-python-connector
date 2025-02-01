@@ -189,6 +189,11 @@ class QueryEngineServiceStub(object):
                 request_serializer=e6x__engine__pb2.ExecuteDataFrameRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.ExecuteDataFrameResponse.FromString,
                 )
+        self.dropUserContext = channel.unary_unary(
+                '/QueryEngineService/dropUserContext',
+                request_serializer=e6x__engine__pb2.DropUserContextRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.DropUserContextResponse.FromString,
+                )
 
 
 class QueryEngineServiceServicer(object):
@@ -407,6 +412,12 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def dropUserContext(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_QueryEngineServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -584,6 +595,11 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     servicer.executeDataFrame,
                     request_deserializer=e6x__engine__pb2.ExecuteDataFrameRequest.FromString,
                     response_serializer=e6x__engine__pb2.ExecuteDataFrameResponse.SerializeToString,
+            ),
+            'dropUserContext': grpc.unary_unary_rpc_method_handler(
+                    servicer.dropUserContext,
+                    request_deserializer=e6x__engine__pb2.DropUserContextRequest.FromString,
+                    response_serializer=e6x__engine__pb2.DropUserContextResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1187,5 +1203,22 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(request, target, '/QueryEngineService/executeDataFrame',
             e6x__engine__pb2.ExecuteDataFrameRequest.SerializeToString,
             e6x__engine__pb2.ExecuteDataFrameResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def dropUserContext(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/QueryEngineService/dropUserContext',
+            e6x__engine__pb2.DropUserContextRequest.SerializeToString,
+            e6x__engine__pb2.DropUserContextResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
