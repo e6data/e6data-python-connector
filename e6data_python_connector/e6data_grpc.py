@@ -16,6 +16,7 @@ from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 from typing import overload
+import uuid
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -207,6 +208,9 @@ class Connection(object):
             self.grpc_auto_resume_timeout_seconds = self._grpc_options.pop('grpc_auto_resume_timeout_seconds')
         self._create_client()
 
+        # initialize session for dataframe
+        self._dataframe_session = DataFrameSession(self)
+
     @property
     def _get_grpc_options(self):
         """
@@ -358,6 +362,7 @@ class Connection(object):
             exc_val (BaseException): The exception instance raised (if any).
             exc_tb (Traceback): The traceback object of the exception (if any).
         """
+        self._dataframe_session.terminate()
         self.close()
 
     def close(self):
@@ -370,6 +375,7 @@ class Connection(object):
             self._channel.close()
             self._channel = None
         self._session_id = None
+        self._dataframe_session.terminate()
 
     def check_connection(self):
         """
@@ -534,8 +540,15 @@ class Connection(object):
         """
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
-    def load_parquet(self, parquet_path):
-        return DataFrame(self, file_path=parquet_path)
+    def load_parquet(self, parquet_path) -> "DataFrame":
+        dataframe = DataFrame(
+            self,
+            file_path=parquet_path,
+            user_uuid=self._dataframe_session.get_user_uuid,
+            dataframe_number=self._dataframe_session.get_dataframe_number)
+
+        self._dataframe_session.update_dataframe_map(dataframe=dataframe)
+        return dataframe
 
     def rollback(self):
         """
@@ -1042,8 +1055,10 @@ class Cursor(DBAPICursor):
 
 class DataFrame:
 
-    def __init__(self, connection: Connection, file_path):
-        self.connection = connection
+    def __init__(self, connection: Connection, file_path, user_uuid, dataframe_number):
+        self._user_uuid = user_uuid
+        self._dataframe_number = dataframe_number
+        self._connection = connection
         self._file_path = file_path
         self._engine_ip = connection.host
         self._sessionId = connection.get_session_id
@@ -1053,21 +1068,17 @@ class DataFrame:
         self._batch = None
         self._create_dataframe()
 
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-
     def _create_dataframe(self):
-        client = self.connection.client
+        client = self._connection.client
 
         create_dataframe_request = e6x_engine_pb2.CreateDataFrameRequest(
             parquetFilePath=self._file_path,
-            catalog=self.connection.catalog_name,
-            schema=self.connection.database,
+            catalog=self._connection.catalog_name,
+            schema=self._connection.database,
             sessionId=self._sessionId,
-            engineIP=self._engine_ip
+            engineIP=self._engine_ip,
+            userUUID=self._user_uuid,
+            dataframeNumber=self._dataframe_number
         )
 
         create_dataframe_response = client.createDataFrame(
@@ -1080,9 +1091,11 @@ class DataFrame:
         for field in fields:
             projection_fields.append(field)
 
-        client = self.connection.client
+        client = self._connection.client
         projection_on_dataframe_request = e6x_engine_pb2.ProjectionOnDataFrameRequest(
+            userUUID=self._user_uuid,
             queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             field=projection_fields
         )
@@ -1094,9 +1107,11 @@ class DataFrame:
         return self
 
     def where(self, where_clause : str) -> "DataFrame":
-        client = self.connection.client
+        client = self._connection.client
         filter_on_dataframe_request = e6x_engine_pb2.FilterOnDataFrameRequest(
+            userUUID=self._user_uuid,
             queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             whereClause=where_clause
         )
@@ -1136,7 +1151,9 @@ class DataFrame:
         client = self.connection.client
 
         orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+            userUUID=self._user_uuid,
             queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             field=orderby_fields,
             sortDirection=sort_direction_request,
@@ -1155,10 +1172,12 @@ class DataFrame:
         for field in field_list:
             orderby_fields.append(field)
 
-        client = self.connection.client
+        client = self._connection.client
 
         orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+            userUUID=self._user_uuid,
             queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             field=orderby_fields,
             sortDirection=sort_direction_request,
@@ -1171,9 +1190,11 @@ class DataFrame:
         return self
 
     def limit(self, fetch_limit : int) -> "DataFrame":
-        client = self.connection.client
+        client = self._connection.client
         limit_on_dataframe_request = e6x_engine_pb2.LimitOnDataFrameRequest(
+            userUUID=self._user_uuid,
             queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             fetchLimit=fetch_limit
         )
@@ -1189,9 +1210,11 @@ class DataFrame:
         return self.fetchall()
 
     def execute(self):
-        client = self.connection.client
+        client = self._connection.client
         execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
+            userUUID=self._user_uuid,
             queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId
         )
         execute_dataframe_response = client.executeDataFrame(
@@ -1204,7 +1227,7 @@ class DataFrame:
             sessionId=self._sessionId,
             queryId=self._query_id
         )
-        get_result_metadata_response = self.connection.client.getResultMetadata(
+        get_result_metadata_response = self._connection.client.getResultMetadata(
             result_meta_data_request,
         )
         buffer = BytesIO(get_result_metadata_response.resultMetaData)
@@ -1212,7 +1235,7 @@ class DataFrame:
         self._is_metadata_updated = True
 
     def _fetch_batch(self):
-        client = self.connection.client
+        client = self._connection.client
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self._sessionId,
@@ -1239,6 +1262,44 @@ class DataFrame:
         rows = self._data
         self._data = None
         return rows
+
+class DataFrameSession:
+    def __init__(self, connection: Connection):
+        self._user_uuid = str(uuid.uuid4())
+        self._connection = connection
+        self._dataframe_count = 0
+        self._dataframe_map = dict()
+        self._is_terminated = False
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.terminate()
+
+    def update_dataframe_map(self, dataframe : "DataFrame"):
+        self._dataframe_map.update({self._dataframe_count, dataframe})
+        self._dataframe_count = self._dataframe_count + 1
+
+    @property
+    def get_user_uuid(self):
+        return self._user_uuid
+
+    @property
+    def get_dataframe_number(self) -> int:
+        return self._dataframe_count
+
+    @property
+    def is_terminated(self) -> bool:
+        return self._is_terminated
+
+    def terminate(self):
+
+        if not self._is_terminated:
+            drop_user_context_request = e6x_engine_pb2.DropUserContextRequest(
+                userUUID=self.get_user_uuid
+            )
+
+            drop_user_context_response = self._connection.client.dropUserContext(drop_user_context_request)
+            self._is_terminated = True
+
 
 
 def poll(self, get_progress_update=True):

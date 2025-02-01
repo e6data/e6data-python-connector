@@ -301,75 +301,95 @@ message ClearOrCancelQueryResponse{
 
 message CreateDataFrameRequest
 {
-    string parquetFilePath = 1;
-    string catalog = 2;
-    string schema = 3;
-    string sessionId = 4;
-    string engineIP = 5;
+  string parquetFilePath = 1;
+  string catalog = 2;
+  string schema = 3;
+  string sessionId = 4;
+  string engineIP = 5;
+  string userUUID = 6;
+  int32 dataframeNumber = 7;
 }
 
 message CreateDataFrameResponse
 {
-    string queryId = 1;
+  string queryId = 1;
 }
 
 message ProjectionOnDataFrameRequest
 {
-    string queryId = 1;
-    string sessionId = 2;
-    repeated string field = 3;
+  string userUUID = 1;
+  string queryId = 2;
+  int32 dataframeNumber = 3;
+  string sessionId = 4;
+  repeated string field = 5;
 }
 
 message ProjectionOnDataFrameResponse {}
 
+
 message FilterOnDataFrameRequest
 {
-    string queryId = 1;
-    string sessionId = 2;
-    string whereClause = 3;
+  string userUUID = 1;
+  string queryId = 2;
+  int32 dataframeNumber = 3;
+  string sessionId = 4;
+  string whereClause = 5;
 }
 
 message FilterOnDataFrameResponse {}
 
 enum SortDirection
 {
-    ASC = 0;
-    DESC = 1;
+  ASC = 0;
+  DESC = 1;
 }
 
 enum NullDirection
 {
-    FIRST = 0;
-    LAST = 1;
+  FIRST = 0;
+  LAST = 1;
 }
 
 message OrderByOnDataFrameRequest
 {
-    string queryId = 1;
-    string sessionId = 2;
-    repeated string field = 3;
-    repeated SortDirection sortDirection = 4;
-    repeated NullDirection nullsDirection = 5;
+  string userUUID = 1;
+  string queryId = 2;
+  int32 dataframeNumber = 3;
+  string sessionId = 4;
+  repeated string field = 5;
+  repeated SortDirection sortDirection = 6;
+  repeated NullDirection nullsDirection = 7;
 }
 
 message OrderByOnDataFrameResponse {}
 
 message LimitOnDataFrameRequest
 {
-    string queryId = 1;
-    string sessionId = 2;
-    int32 fetchLimit = 3;
+  string userUUID = 1;
+  string queryId = 2;
+  int32 dataframeNumber = 3;
+  string sessionId = 4;
+  int32 fetchLimit = 5;
 }
 
 message LimitOnDataFrameResponse {}
 
 message ExecuteDataFrameRequest
 {
-    string queryId = 1;
-    string sessionId = 2;
+  string userUUID = 1;
+  string queryId = 2;
+  int32 dataframeNumber = 3;
+  string sessionId = 4;
 }
 
 message ExecuteDataFrameResponse {}
+
+message DropUserContextRequest
+{
+    string userUUID = 1;
+}
+
+message DropUserContextResponse {}
 
 service QueryEngineService {
   rpc clear(ClearRequest) returns (ClearResponse);
@@ -443,4 +463,6 @@ service QueryEngineService {
   rpc limitOnDataFrame(LimitOnDataFrameRequest) returns (LimitOnDataFrameResponse);
 
   rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
+
+  rpc dropUserContext(DropUserContextRequest) returns (DropUserContextResponse);
 }
