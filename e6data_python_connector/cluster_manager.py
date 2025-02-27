@@ -7,6 +7,15 @@ from grpc._channel import _InactiveRpcError
 import multiprocessing
 
 
+def _get_grpc_header(engine_ip=None, cluster=None):
+    metadata = []
+    if engine_ip:
+        metadata.append(('plannerip', engine_ip))
+    if cluster:
+        metadata.append(('cluster-uuid', cluster))
+    return metadata
+
+
 class _StatusLock:
     _LOCK_TIMEOUT = 500
 
@@ -36,13 +45,14 @@ status_lock = _StatusLock()
 
 
 class ClusterManager:
-    def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 3):
+    def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 3, cluster_uuid=None):
         self._host = host
         self._port = port
         self._user = user
         self._password = password
         self._timeout = time.time() + timeout
         self._secure_channel = secure_channel
+        self.cluster_uuid = cluster_uuid
 
     @property
     def _get_connection(self):
@@ -68,13 +78,19 @@ class ClusterManager:
                 user=self._user,
                 password=self._password
             )
-            current_status = self._get_connection.status(status_payload)
+            current_status = self._get_connection.status(
+                status_payload,
+                metadata=_get_grpc_header(cluster=self.cluster_uuid)
+            )
             if current_status.status == 'suspended':
                 payload = cluster_pb2.ResumeRequest(
                     user=self._user,
                     password=self._password
                 )
-                response = self._get_connection.resume(payload)
+                response = self._get_connection.resume(
+                    payload,
+                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
+                )
             elif current_status.status == 'active':
                 return True
             elif current_status.status != 'resuming':
@@ -89,7 +105,10 @@ class ClusterManager:
                         user=self._user,
                         password=self._password
                     )
-                    response = self._get_connection.status(status_payload)
+                    response = self._get_connection.status(
+                        status_payload,
+                        metadata=_get_grpc_header(cluster=self.cluster_uuid)
+                    )
                     if response.status == 'active':
                         lock.set_active()
                         return True
