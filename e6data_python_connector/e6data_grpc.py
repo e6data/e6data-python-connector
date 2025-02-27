@@ -228,7 +228,8 @@ class Connection(object):
                             port=self._port,
                             user=self.__username,
                             password=self.__password,
-                            secure_channel=self._secure_channel
+                            secure_channel=self._secure_channel,
+                            cluster_uuid=self.cluster_uuid
                         ).resume()
                         if status:
                             authenticate_request = e6x_engine_pb2.AuthenticateRequest(
