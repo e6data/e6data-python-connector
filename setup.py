@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = [2, 2, 0]
+VERSION = [2, 2, 1]
 
 
 def get_long_desc():
@@ -35,14 +35,13 @@ setuptools.setup(
     include_package_data=True,
     install_requires=[
         'sqlalchemy>=1.0.0',
-        'future',
-        'python-dateutil',
-        'pycryptodome',
-        'pytz',
-        'thrift',
-        'grpcio',
+        'future==1.0.0',
+        'python-dateutil==2.9.0.post0',
+        'pycryptodome==3.19.1',
+        'pytz==2024.1',
+        'thrift==0.20.0',
+        'grpcio==1.65.1',
         'grpcio-tools',
-        'sqlalchemy'
     ],
     classifiers=[
         "Operating System :: POSIX :: Linux",
@@ -51,7 +50,10 @@ setuptools.setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9'
+        'Programming Language :: Python :: 3.9',
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
     entry_points={
         'sqlalchemy.dialects': [
