@@ -189,7 +189,7 @@ class Connection(object):
         self._max_send_message_length = 300 * 1024 * 1024  # mb
         self.grpc_prepare_timeout = 10 * 60  # 10 minutes
 
-        if type(grpc_options) == dict:
+        if isinstance(grpc_options, dict):
             self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
             self._max_receive_message_length = grpc_options.get(
                 'max_receive_message_length') or self._max_receive_message_length
@@ -243,13 +243,14 @@ class Connection(object):
                     raise ValueError("Invalid credentials.")
             except _InactiveRpcError as e:
                 if self._auto_resume:
-                    if e.code() == grpc.StatusCode.UNKNOWN and 'Stream removed' in e.details():
+                    if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
                         status = ClusterManager(
                             host=self._host,
                             port=self._port,
                             user=self.__username,
                             password=self.__password,
-                            secure_channel=self._secure_channel
+                            secure_channel=self._secure_channel,
+                            cluster_uuid=self.cluster_uuid
                         ).resume()
                         if status:
                             authenticate_request = e6x_engine_pb2.AuthenticateRequest(
