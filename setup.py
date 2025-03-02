@@ -12,27 +12,36 @@
 
 import setuptools
 
-VERSION = [2, 2, 2]
+VERSION = (2, 2, 2)
 
 
 def get_long_desc():
-    with open("README.md", "r") as fh:
-        long_description = fh.read()
-    return long_description
+    """
+    Reads the `README.md` file to provide a detailed description of the package.
+
+    Returns:
+        str: The content of the README.md file as a string.
+    """
+    try:
+        with open("README.md", "r", encoding="utf-8") as fh:  # Explicitly specifying encoding.
+            return fh.read()
+    except FileNotFoundError:
+        # Fallback if README.md is missing.
+        return "Client for the e6data distributed SQL Engine."
 
 
 setuptools.setup(
     name="e6data-python-connector",
-    version='.'.join('%s' % v for v in VERSION),
+    version=".".join(map(str, VERSION)),  # More Pythonic way to convert tuple to string.
     author="Uniphi, Inc.",
     author_email="info@e6data.com",
     description="Client for the e6data distributed SQL Engine.",
     long_description=get_long_desc(),
     long_description_content_type="text/markdown",
     url='https://github.com/e6x-labs/e6data-python-connector',
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(),  # Automatically detects all packages in the source tree.
     license="Apache 2.0",
-    include_package_data=True,
+    include_package_data=True,  # Includes non-Python files specified in MANIFEST.in.
     install_requires=[
         'sqlalchemy>=1.0.0',
         'future==1.0.0',
