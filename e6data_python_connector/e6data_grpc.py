@@ -71,8 +71,12 @@ def re_auth(func):
         try:
             return func(self, *args, **kwargs)
         except _InactiveRpcError as e:
+            print(f'RE_AUTH: Function Name: {func}')
+            print(f'RE_AUTH: Error Found {e}')
             if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
+                print('RE_AUTH: Initialising re-authentication.')
                 self.connection.get_re_authenticate_session_id()
+                print(f'RE_AUTH: Re-auth successful.')
                 return func(self, *args, **kwargs)
             else:
                 raise e
