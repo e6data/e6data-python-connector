@@ -33,7 +33,7 @@ def get_long_desc():
 setuptools.setup(
     name="e6data-python-connector",
     version=".".join(map(str, VERSION)),  # More Pythonic way to convert tuple to string.
-    author="Uniphi, Inc.",
+    author="e6data, Inc.",
     author_email="info@e6data.com",
     description="Client for the e6data distributed SQL Engine.",
     long_description=get_long_desc(),
