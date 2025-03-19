@@ -14,6 +14,7 @@ import sys
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
+import numpy as np
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -24,6 +25,7 @@ from e6data_python_connector.constants import *
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
+from abc import ABC
 
 apilevel = '2.0'
 threadsafety = 2  # Threads may share the e6xdb and connections.
@@ -38,6 +40,23 @@ ssl_cert_parameter_map = {
     "optional": CERT_OPTIONAL,
     "required": CERT_REQUIRED,
 }
+MAX_RETRY = 1
+
+
+def _retry(obj, func_name, retry_counter=0, *args):
+    try:
+        return getattr(obj, func_name)(*args)
+    except _InactiveRpcError as e:
+        if (e.code() == grpc.StatusCode.INTERNAL and 'Access denied. Invalid session' in e.details() and
+                retry_counter < MAX_RETRY):
+            getattr(obj, "reset_connection")()
+            return _retry(obj, func_name, retry_counter + 1, *args)
+
+
+class RetryableConnection(ABC):
+
+    def reset_session(self):
+        raise NotImplementedError()
 
 
 def _parse_timestamp(value):
@@ -123,7 +142,7 @@ def connect(*args, **kwargs):
     return Connection(*args, **kwargs)
 
 
-class Connection(object):
+class Connection(RetryableConnection):
     """Create connection to e6data """
 
     def __init__(
@@ -200,6 +219,9 @@ class Connection(object):
             self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
             self.grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self.grpc_prepare_timeout
         self._create_client()
+
+    def reset_session(self):
+        self._session_id = None
 
     def _create_client(self):
         if self._secure_channel:
@@ -286,7 +308,8 @@ class Connection(object):
         :param prop_map: To set engine props
         """
         set_props_request = e6x_engine_pb2.SetPropsRequest(sessionId=self.get_session_id, props=prop_map)
-        self._client.setProps(set_props_request)
+        _retry(self._client, "setProps", 0, set_props_request)
+
 
     def __enter__(self):
         """Transport should already be opened by __init__"""
@@ -387,6 +410,12 @@ class Connection(object):
         """Return a new :py:class:`Cursor` object using the connection."""
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
+    def load_parquet(self, parquet_path):
+        return DataFrame(self, file_path=parquet_path)
+
+    def createMLPipeline(self):
+        return MLPipeline(self)
+
     def rollback(self):
         raise Exception("e6xdb does not support transactions")  # pragma: no cover
 
@@ -394,8 +423,166 @@ class Connection(object):
     def client(self):
         return self._client
 
+class DataFrame:
 
-class Cursor(DBAPICursor):
+    def __init__(self, connection: Connection, file_path):
+        self.connection = connection
+        self._file_path = file_path
+        self._engine_ip = connection.host
+        self._sessionId = connection.get_session_id
+        self._is_metadata_updated = False
+        self._query_id = None
+        self._data = None
+        self._batch = None
+        self._create_dataframe()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def _create_dataframe(self):
+        client = self.connection.client
+
+        create_dataframe_request = e6x_engine_pb2.CreateDataFrameRequest(
+            parquetFilePath=self._file_path,
+            catalog=self.connection.catalog_name,
+            schema=self.connection.database,
+            sessionId=self._sessionId,
+            engineIP=self._engine_ip
+        )
+
+        create_dataframe_response = client.createDataFrame(
+            create_dataframe_request
+        )
+        self._query_id = create_dataframe_response.queryId
+
+    def select(self, *fields) -> "DataFrame":
+        projection_fields = []
+        for field in fields:
+            projection_fields.append(field)
+
+        client = self.connection.client
+        projection_on_dataframe_request = e6x_engine_pb2.ProjectionOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=projection_fields
+        )
+
+        projection_on_dataframe_response = client.projectionOnDataFrame(
+            projection_on_dataframe_request
+        )
+
+        return self
+
+    def where(self, where_clause : str) -> "DataFrame":
+        client = self.connection.client
+        filter_on_dataframe_request = e6x_engine_pb2.FilterOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            whereClause=where_clause
+        )
+
+        filter_on_dataframe_response = client.filterOnDataFrame(
+            filter_on_dataframe_request
+        )
+
+        return self
+
+    def order_by(self, *field_list) -> "DataFrame":
+        orderby_fields = []
+        sort_direction_request = []
+        null_direction_request = []
+        for field in field_list:
+            orderby_fields.append(field)
+
+        client = self.connection.client
+
+        orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            field=orderby_fields,
+            sortDirection=sort_direction_request,
+            nullsDirection=null_direction_request
+        )
+
+        orderby_on_dataframe_response = client.orderByOnDataFrame(
+            orderby_on_dataframe_request
+        )
+        return self
+
+    def limit(self, fetch_limit : int) -> "DataFrame":
+        client = self.connection.client
+        limit_on_dataframe_request = e6x_engine_pb2.LimitOnDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId,
+            fetchLimit=fetch_limit
+        )
+
+        limit_on_dataframe_response = client.limitOnDataFrame(
+            limit_on_dataframe_request
+        )
+
+        return self
+
+    def show(self):
+        self.execute()
+        return self.fetchall()
+
+    def execute(self):
+        client = self.connection.client
+        execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
+            queryId=self._query_id,
+            sessionId=self._sessionId
+        )
+        execute_dataframe_response = client.executeDataFrame(
+            execute_dataframe_request
+        )
+
+    def _update_meta_data(self):
+        result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
+            engineIP=self._engine_ip,
+            sessionId=self._sessionId,
+            queryId=self._query_id
+        )
+        get_result_metadata_response = self.connection.client.getResultMetadata(
+            result_meta_data_request,
+        )
+        buffer = BytesIO(get_result_metadata_response.resultMetaData)
+        self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
+        self._is_metadata_updated = True
+
+    def _fetch_batch(self):
+        client = self.connection.client
+        get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
+            engineIP=self._engine_ip,
+            sessionId=self._sessionId,
+            queryId=self._query_id
+        )
+        get_next_result_batch_response = client.getNextResultBatch(
+            get_next_result_batch_request,
+        )
+        buffer = get_next_result_batch_response.resultBatch
+        if not self._is_metadata_updated:
+            self._update_meta_data()
+        if not buffer or len(buffer) == 0:
+            return None
+        # one batch retrieves the predefined set of rows
+        return read_rows_from_chunk(self._query_columns_description, buffer)
+
+    def fetchall(self):
+        self._data = list()
+        while True:
+            rows = self._fetch_batch()
+            if rows is None:
+                break
+            self._data = self._data + rows
+        rows = self._data
+        self._data = None
+        return rows
+
+class Cursor(DBAPICursor, RetryableConnection):
     """These objects represent a database cursor, which is used to manage the context of a fetch
     operation.
     Cursors are not isolated, i.e., any changes done to the database by a cursor are immediately
@@ -416,6 +603,9 @@ class Cursor(DBAPICursor):
         self._rowcount = 0
         self._database = self.connection.database if database is None else database
         self._catalog_name = catalog_name if catalog_name else self.connection.catalog_name
+
+    def reset_session(self):
+        self.connection.reset_session()
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
@@ -716,6 +906,130 @@ class Cursor(DBAPICursor):
             planner=explain_analyze_response.explainAnalyze,
         )
 
+class Matrix:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+
+    def __enter__(self):
+        pass
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def flatten_2d_array(self, matrix):
+        return [value for row in matrix for value in row]
+
+    def reshape_1d_to_2d(self, flattened, rows, cols):
+        return [flattened[i * cols:(i + 1) * cols] for i in range(rows)]
+
+    def matmul(self, matrixA, matrixB):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="multiply",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]),
+            matrix2=self.flatten_2d_array(matrixB),
+            rows2=len(matrixB),
+            cols2=len(matrixB[0])
+        )
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        print("Resultant Matrix:")
+        print(result_matrix)
+
+    def add(self, matrixA, matrixB):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="add",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]),
+            matrix2=self.flatten_2d_array(matrixB),
+            rows2=len(matrixB),
+            cols2=len(matrixB[0])
+        )
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        #print("Resultant Matrix:")
+        print(result_matrix)
+    def transpose(self, matrixA):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="transpose",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]))
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        print("Resultant Matrix:")
+        print(result_matrix)
+
+    def inverse(self, matrixA):
+        request = e6x_engine_pb2.MatrixRequest(
+            operation="inverse",
+            matrix1=self.flatten_2d_array(matrixA),
+            rows1=len(matrixA),
+            cols1=len(matrixA[0]))
+
+        response = self.connection.client.ComputeMatrix(request)
+
+        # Convert the response back to a NumPy array
+        result_matrix = self.reshape_1d_to_2d(response.result, response.rows, response.cols)
+        print("Resultant Matrix:")
+        print(result_matrix)
+
+
+class MLPipeline:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+        self._engine_ip = connection.host
+        self._sessionId = connection.get_session_id
+        self._database = self.connection.database
+        self._catalog_name = self.connection.catalog_name
+
+    def __enter__(self):
+        pass
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def train_linear_model(self, sql_query):
+        self.tasks.append({
+            "type": "train",
+            "sql_query": sql_query
+        })
+        return self
+
+    def predict_linear_model(self, sql_query):
+        self.tasks.append({
+            "type": "predict",
+            "sql_query": sql_query
+        })
+        return self
+
+    def execute(self):
+        client = self.connection.client
+        execute_mlpipeline_request = e6x_engine_pb2.executeMLPipeline(
+            queryId=self._query_id,
+            sessionId=self._sessionId
+        )
+        execute_mlpipeline_response = client.executeMLPipeline(execute_mlpipeline_request)
+
+        # Step 4: Extract the DoubleMatrix from the response
+        double_matrix = execute_mlpipeline_response.result  # Assuming `result` is the DoubleMatrix field
+
+        # Step 5: Convert DoubleMatrix to a Python 2D list
+        matrix = [[value for value in row.values] for row in double_matrix.rows]
+
+        # Step 6: Process or print the matrix
+        print("Received matrix:")
+        for row in matrix:
+            print(row)
 
 def poll(self, get_progress_update=True):
     """Poll for and return the raw status data provided by the Hive Thrift REST API.

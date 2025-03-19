@@ -297,6 +297,134 @@ message ClearOrCancelQueryRequest{
 message ClearOrCancelQueryResponse{
 }
 
+// DataFrame
+message CreateDataFrameRequest
+{
+    string parquetFilePath = 1;
+    string catalog = 2;
+    string schema = 3;
+    string sessionId = 4;
+    string engineIP = 5;
+}
+
+message CreateDataFrameResponse
+{
+    string queryId = 1;
+}
+
+message ProjectionOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    repeated string field = 3;
+}
+
+message ProjectionOnDataFrameResponse {}
+
+message FilterOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    string whereClause = 3;
+}
+
+message FilterOnDataFrameResponse {}
+
+enum SortDirection
+{
+    ASC = 0;
+    DESC = 1;
+}
+
+enum NullDirection
+{
+    FIRST = 0;
+    LAST = 1;
+}
+
+message OrderByOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    repeated string field = 3;
+    repeated SortDirection sortDirection = 4;
+    repeated NullDirection nullsDirection = 5;
+}
+
+message OrderByOnDataFrameResponse {}
+
+message LimitOnDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+    int32 fetchLimit = 3;
+}
+
+message LimitOnDataFrameResponse {}
+
+message ExecuteDataFrameRequest
+{
+    string queryId = 1;
+    string sessionId = 2;
+}
+
+message ExecuteDataFrameResponse {}
+
+// Define a row of doubles
+message DoubleRow {
+  repeated double values = 1; // Represents a row in the 2D array
+}
+
+// Define a 2D array of doubles
+message DoubleMatrix {
+  repeated DoubleRow rows = 1; // Represents all rows in the 2D array
+}
+
+// Represents an individual task in the DAG
+message Task {
+  string type = 1;        // Task type: "train", "predict"
+  string sql_query = 2;   // SQL query for the task
+  string model_id = 3;    // Optional: Model ID for prediction tasks
+}
+
+// Represents the full DAG as a list of tasks
+message DAG {
+  repeated Task tasks = 1;  // List of tasks in the DAG
+}
+
+// Request to execute the DAG
+message ExecuteMLPipelineRequest {
+  string session_id = 1;  // Unique session ID
+  string catalog = 2;
+  string schema = 3;
+  DAG dag = 4;            // The DAG to execute
+}
+
+// Response after DAG execution
+message ExecuteMLPipelineResponse {
+  string status = 1;      // Status of execution
+  DoubleMatrix result = 2;      // Serialized result (e.g., predictions or output)
+}
+
+// Matrix request message
+message MatrixRequest {
+  string operation = 1;        // Operation type: "add", "multiply", etc.
+  repeated double matrix1 = 2;  // Flattened row-major matrix1
+  int32 rows1 = 3;             // Number of rows in matrix1
+  int32 cols1 = 4;             // Number of columns in matrix1
+  repeated double matrix2 = 5;  // Flattened row-major matrix2
+  optional int32 rows2 = 6;             // Number of rows in matrix2
+  optional int32 cols2 = 7;             // Number of columns in matrix2
+}
+
+// Matrix response message
+message MatrixResponse {
+  repeated double result = 1;  // Flattened row-major result matrix
+  int32 rows = 2;             // Number of rows in result matrix
+  int32 cols = 3;             // Number of columns in result matrix
+  string status = 4;          // Status message (e.g., "success")
+}
+
 service QueryEngineService {
   rpc clear(ClearRequest) returns (ClearResponse);
 
@@ -355,4 +483,23 @@ service QueryEngineService {
   rpc getNextRemoteCachedChunk(RemoteChunkRequest) returns (RemoteChunkResponse);
 
   rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
+
+  // dataframe
+
+  rpc createDataFrame(CreateDataFrameRequest) returns (CreateDataFrameResponse);
+
+  rpc projectionOnDataFrame(ProjectionOnDataFrameRequest) returns (ProjectionOnDataFrameResponse);
+
+  rpc filterOnDataFrame(FilterOnDataFrameRequest) returns (FilterOnDataFrameResponse);
+
+  rpc orderByOnDataFrame(OrderByOnDataFrameRequest) returns (OrderByOnDataFrameResponse);
+
+  rpc limitOnDataFrame(LimitOnDataFrameRequest) returns (LimitOnDataFrameResponse);
+
+  rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
+
+  rpc executeMLPipeline(ExecuteMLPipelineRequest) returns (ExecuteMLPipelineResponse);
+
+  rpc ComputeMatrix (MatrixRequest) returns (MatrixResponse);
+
 }
