@@ -108,6 +108,7 @@ message PrepareStatementV2Request{
   string catalog = 3;
   string queryString = 4;
   string quoting = 5;
+  optional string plannerIp = 6;
 }
 message PrepareStatementResponse{
   string engineIP = 1;
@@ -176,6 +177,7 @@ message AuthenticateRequest{
 
 message AuthenticateResponse{
   string  sessionId = 1;
+  string  plannerIp = 2;
 }
 
 message GetTablesRequest{
