@@ -6,7 +6,7 @@ from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Map
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class GFieldInfo(_message.Message):
-    __slots__ = ["fieldName", "fieldType"]
+    __slots__ = ("fieldName", "fieldType")
     FIELDNAME_FIELD_NUMBER: _ClassVar[int]
     FIELDTYPE_FIELD_NUMBER: _ClassVar[int]
     fieldName: str
@@ -14,7 +14,7 @@ class GFieldInfo(_message.Message):
     def __init__(self, fieldName: _Optional[str] = ..., fieldType: _Optional[str] = ...) -> None: ...
 
 class FailedSchemaElement(_message.Message):
-    __slots__ = ["name", "type", "reason"]
+    __slots__ = ("name", "type", "reason")
     NAME_FIELD_NUMBER: _ClassVar[int]
     TYPE_FIELD_NUMBER: _ClassVar[int]
     REASON_FIELD_NUMBER: _ClassVar[int]
@@ -24,7 +24,7 @@ class FailedSchemaElement(_message.Message):
     def __init__(self, name: _Optional[str] = ..., type: _Optional[str] = ..., reason: _Optional[str] = ...) -> None: ...
 
 class GetAddCatalogsResponse(_message.Message):
-    __slots__ = ["status", "failures"]
+    __slots__ = ("status", "failures")
     STATUS_FIELD_NUMBER: _ClassVar[int]
     FAILURES_FIELD_NUMBER: _ClassVar[int]
     status: str
@@ -32,7 +32,7 @@ class GetAddCatalogsResponse(_message.Message):
     def __init__(self, status: _Optional[str] = ..., failures: _Optional[_Iterable[_Union[FailedSchemaElement, _Mapping]]] = ...) -> None: ...
 
 class CatalogResponse(_message.Message):
-    __slots__ = ["name", "isDefault"]
+    __slots__ = ("name", "isDefault")
     NAME_FIELD_NUMBER: _ClassVar[int]
     ISDEFAULT_FIELD_NUMBER: _ClassVar[int]
     name: str
@@ -40,7 +40,7 @@ class CatalogResponse(_message.Message):
     def __init__(self, name: _Optional[str] = ..., isDefault: bool = ...) -> None: ...
 
 class ParameterValue(_message.Message):
-    __slots__ = ["index", "type", "value"]
+    __slots__ = ("index", "type", "value")
     INDEX_FIELD_NUMBER: _ClassVar[int]
     TYPE_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
@@ -50,7 +50,7 @@ class ParameterValue(_message.Message):
     def __init__(self, index: _Optional[int] = ..., type: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
 
 class ClearRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -60,11 +60,11 @@ class ClearRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class ClearResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class CancelQueryRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -74,11 +74,11 @@ class CancelQueryRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class CancelQueryResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class ExplainRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -88,13 +88,13 @@ class ExplainRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class ExplainResponse(_message.Message):
-    __slots__ = ["explain"]
+    __slots__ = ("explain",)
     EXPLAIN_FIELD_NUMBER: _ClassVar[int]
     explain: str
     def __init__(self, explain: _Optional[str] = ...) -> None: ...
 
 class DryRunRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "schema", "queryString"]
+    __slots__ = ("engineIP", "sessionId", "schema", "queryString")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
@@ -106,13 +106,13 @@ class DryRunRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., queryString: _Optional[str] = ...) -> None: ...
 
 class DryRunResponse(_message.Message):
-    __slots__ = ["dryrunValue"]
+    __slots__ = ("dryrunValue",)
     DRYRUNVALUE_FIELD_NUMBER: _ClassVar[int]
     dryrunValue: str
     def __init__(self, dryrunValue: _Optional[str] = ...) -> None: ...
 
 class DryRunRequestV2(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "schema", "queryString", "catalog"]
+    __slots__ = ("engineIP", "sessionId", "schema", "queryString", "catalog")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
@@ -126,7 +126,7 @@ class DryRunRequestV2(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., queryString: _Optional[str] = ..., catalog: _Optional[str] = ...) -> None: ...
 
 class ExplainAnalyzeRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -136,7 +136,7 @@ class ExplainAnalyzeRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class ExplainAnalyzeResponse(_message.Message):
-    __slots__ = ["explainAnalyze", "isCached", "parsingTime", "queueingTime"]
+    __slots__ = ("explainAnalyze", "isCached", "parsingTime", "queueingTime")
     EXPLAINANALYZE_FIELD_NUMBER: _ClassVar[int]
     ISCACHED_FIELD_NUMBER: _ClassVar[int]
     PARSINGTIME_FIELD_NUMBER: _ClassVar[int]
@@ -148,7 +148,7 @@ class ExplainAnalyzeResponse(_message.Message):
     def __init__(self, explainAnalyze: _Optional[str] = ..., isCached: bool = ..., parsingTime: _Optional[int] = ..., queueingTime: _Optional[int] = ...) -> None: ...
 
 class PrepareStatementRequest(_message.Message):
-    __slots__ = ["sessionId", "schema", "queryString", "quoting"]
+    __slots__ = ("sessionId", "schema", "queryString", "quoting")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     QUERYSTRING_FIELD_NUMBER: _ClassVar[int]
@@ -160,21 +160,23 @@ class PrepareStatementRequest(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., queryString: _Optional[str] = ..., quoting: _Optional[str] = ...) -> None: ...
 
 class PrepareStatementV2Request(_message.Message):
-    __slots__ = ["sessionId", "schema", "catalog", "queryString", "quoting"]
+    __slots__ = ("sessionId", "schema", "catalog", "queryString", "quoting", "plannerIp")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     CATALOG_FIELD_NUMBER: _ClassVar[int]
     QUERYSTRING_FIELD_NUMBER: _ClassVar[int]
     QUOTING_FIELD_NUMBER: _ClassVar[int]
+    PLANNERIP_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
     schema: str
     catalog: str
     queryString: str
     quoting: str
-    def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., catalog: _Optional[str] = ..., queryString: _Optional[str] = ..., quoting: _Optional[str] = ...) -> None: ...
+    plannerIp: str
+    def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., catalog: _Optional[str] = ..., queryString: _Optional[str] = ..., quoting: _Optional[str] = ..., plannerIp: _Optional[str] = ...) -> None: ...
 
 class PrepareStatementResponse(_message.Message):
-    __slots__ = ["engineIP", "queryId"]
+    __slots__ = ("engineIP", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     engineIP: str
@@ -182,7 +184,7 @@ class PrepareStatementResponse(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class UserAccessInfo(_message.Message):
-    __slots__ = ["uuid", "userName", "tokens"]
+    __slots__ = ("uuid", "userName", "tokens")
     UUID_FIELD_NUMBER: _ClassVar[int]
     USERNAME_FIELD_NUMBER: _ClassVar[int]
     TOKENS_FIELD_NUMBER: _ClassVar[int]
@@ -192,7 +194,7 @@ class UserAccessInfo(_message.Message):
     def __init__(self, uuid: _Optional[str] = ..., userName: _Optional[str] = ..., tokens: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ExecuteStatementRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId", "shouldNotCache"]
+    __slots__ = ("engineIP", "sessionId", "queryId", "shouldNotCache")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -204,7 +206,7 @@ class ExecuteStatementRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., shouldNotCache: bool = ...) -> None: ...
 
 class ExecuteStatementV2Request(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId", "shouldNotCache", "params"]
+    __slots__ = ("engineIP", "sessionId", "queryId", "shouldNotCache", "params")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -218,11 +220,11 @@ class ExecuteStatementV2Request(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., shouldNotCache: bool = ..., params: _Optional[_Iterable[_Union[ParameterValue, _Mapping]]] = ...) -> None: ...
 
 class ExecuteStatementResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class GetNextResultRowRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -232,13 +234,13 @@ class GetNextResultRowRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class GetNextResultRowResponse(_message.Message):
-    __slots__ = ["resultRow"]
+    __slots__ = ("resultRow",)
     RESULTROW_FIELD_NUMBER: _ClassVar[int]
     resultRow: bytes
     def __init__(self, resultRow: _Optional[bytes] = ...) -> None: ...
 
 class GetNextResultBatchRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId", "asRowData"]
+    __slots__ = ("engineIP", "sessionId", "queryId", "asRowData")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -250,13 +252,13 @@ class GetNextResultBatchRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ..., asRowData: bool = ...) -> None: ...
 
 class GetNextResultBatchResponse(_message.Message):
-    __slots__ = ["resultBatch"]
+    __slots__ = ("resultBatch",)
     RESULTBATCH_FIELD_NUMBER: _ClassVar[int]
     resultBatch: bytes
     def __init__(self, resultBatch: _Optional[bytes] = ...) -> None: ...
 
 class GetResultMetadataRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -266,13 +268,13 @@ class GetResultMetadataRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class GetResultMetadataResponse(_message.Message):
-    __slots__ = ["resultMetaData"]
+    __slots__ = ("resultMetaData",)
     RESULTMETADATA_FIELD_NUMBER: _ClassVar[int]
     resultMetaData: bytes
     def __init__(self, resultMetaData: _Optional[bytes] = ...) -> None: ...
 
 class AuthenticateRequest(_message.Message):
-    __slots__ = ["user", "password"]
+    __slots__ = ("user", "password")
     USER_FIELD_NUMBER: _ClassVar[int]
     PASSWORD_FIELD_NUMBER: _ClassVar[int]
     user: str
@@ -280,13 +282,15 @@ class AuthenticateRequest(_message.Message):
     def __init__(self, user: _Optional[str] = ..., password: _Optional[str] = ...) -> None: ...
 
 class AuthenticateResponse(_message.Message):
-    __slots__ = ["sessionId"]
+    __slots__ = ("sessionId", "plannerIp")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    PLANNERIP_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
-    def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
+    plannerIp: str
+    def __init__(self, sessionId: _Optional[str] = ..., plannerIp: _Optional[str] = ...) -> None: ...
 
 class GetTablesRequest(_message.Message):
-    __slots__ = ["sessionId", "schema"]
+    __slots__ = ("sessionId", "schema")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
@@ -294,7 +298,7 @@ class GetTablesRequest(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ...) -> None: ...
 
 class GetTablesV2Request(_message.Message):
-    __slots__ = ["sessionId", "schema", "catalog"]
+    __slots__ = ("sessionId", "schema", "catalog")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     CATALOG_FIELD_NUMBER: _ClassVar[int]
@@ -304,19 +308,19 @@ class GetTablesV2Request(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., catalog: _Optional[str] = ...) -> None: ...
 
 class GetTablesResponse(_message.Message):
-    __slots__ = ["tables"]
+    __slots__ = ("tables",)
     TABLES_FIELD_NUMBER: _ClassVar[int]
     tables: _containers.RepeatedScalarFieldContainer[str]
     def __init__(self, tables: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class GetSchemaNamesRequest(_message.Message):
-    __slots__ = ["sessionId"]
+    __slots__ = ("sessionId",)
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
     def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
 
 class GetSchemaNamesV2Request(_message.Message):
-    __slots__ = ["sessionId", "catalog"]
+    __slots__ = ("sessionId", "catalog")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     CATALOG_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
@@ -324,13 +328,13 @@ class GetSchemaNamesV2Request(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., catalog: _Optional[str] = ...) -> None: ...
 
 class GetSchemaNamesResponse(_message.Message):
-    __slots__ = ["schemas"]
+    __slots__ = ("schemas",)
     SCHEMAS_FIELD_NUMBER: _ClassVar[int]
     schemas: _containers.RepeatedScalarFieldContainer[str]
     def __init__(self, schemas: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class GetColumnsRequest(_message.Message):
-    __slots__ = ["sessionId", "schema", "table"]
+    __slots__ = ("sessionId", "schema", "table")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     TABLE_FIELD_NUMBER: _ClassVar[int]
@@ -340,7 +344,7 @@ class GetColumnsRequest(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., table: _Optional[str] = ...) -> None: ...
 
 class GetColumnsV2Request(_message.Message):
-    __slots__ = ["sessionId", "schema", "table", "catalog"]
+    __slots__ = ("sessionId", "schema", "table", "catalog")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     TABLE_FIELD_NUMBER: _ClassVar[int]
@@ -352,13 +356,13 @@ class GetColumnsV2Request(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., schema: _Optional[str] = ..., table: _Optional[str] = ..., catalog: _Optional[str] = ...) -> None: ...
 
 class GetColumnsResponse(_message.Message):
-    __slots__ = ["fieldInfo"]
+    __slots__ = ("fieldInfo",)
     FIELDINFO_FIELD_NUMBER: _ClassVar[int]
     fieldInfo: _containers.RepeatedCompositeFieldContainer[GFieldInfo]
     def __init__(self, fieldInfo: _Optional[_Iterable[_Union[GFieldInfo, _Mapping]]] = ...) -> None: ...
 
 class StatusRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -368,7 +372,7 @@ class StatusRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class StatusResponse(_message.Message):
-    __slots__ = ["status", "rowCount"]
+    __slots__ = ("status", "rowCount")
     STATUS_FIELD_NUMBER: _ClassVar[int]
     ROWCOUNT_FIELD_NUMBER: _ClassVar[int]
     status: bool
@@ -376,7 +380,7 @@ class StatusResponse(_message.Message):
     def __init__(self, status: bool = ..., rowCount: _Optional[int] = ...) -> None: ...
 
 class AddCatalogsRequest(_message.Message):
-    __slots__ = ["sessionId", "json"]
+    __slots__ = ("sessionId", "json")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     JSON_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
@@ -384,17 +388,17 @@ class AddCatalogsRequest(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., json: _Optional[str] = ...) -> None: ...
 
 class UpdateUsersRequest(_message.Message):
-    __slots__ = ["users"]
+    __slots__ = ("users",)
     USERS_FIELD_NUMBER: _ClassVar[int]
     users: bytes
     def __init__(self, users: _Optional[bytes] = ...) -> None: ...
 
 class UpdateUsersResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class SetPropsRequest(_message.Message):
-    __slots__ = ["sessionId", "props"]
+    __slots__ = ("sessionId", "props")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     PROPS_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
@@ -402,41 +406,41 @@ class SetPropsRequest(_message.Message):
     def __init__(self, sessionId: _Optional[str] = ..., props: _Optional[str] = ...) -> None: ...
 
 class SetPropsResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class GetAddCatalogsRequest(_message.Message):
-    __slots__ = ["sessionId"]
+    __slots__ = ("sessionId",)
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
     def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
 
 class AddCatalogsResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class GetCatalogesRequest(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class GetCatalogesResponse(_message.Message):
-    __slots__ = ["catalogResponses"]
+    __slots__ = ("catalogResponses",)
     CATALOGRESPONSES_FIELD_NUMBER: _ClassVar[int]
     catalogResponses: _containers.RepeatedCompositeFieldContainer[CatalogResponse]
     def __init__(self, catalogResponses: _Optional[_Iterable[_Union[CatalogResponse, _Mapping]]] = ...) -> None: ...
 
 class RefreshCatalogsRequest(_message.Message):
-    __slots__ = ["sessionId"]
+    __slots__ = ("sessionId",)
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
     def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
 
 class RefreshCatalogsResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...
 
 class RemoteChunkRequest(_message.Message):
-    __slots__ = ["originalQueryId", "remoteQueryId", "sQueryHash"]
+    __slots__ = ("originalQueryId", "remoteQueryId", "sQueryHash")
     ORIGINALQUERYID_FIELD_NUMBER: _ClassVar[int]
     REMOTEQUERYID_FIELD_NUMBER: _ClassVar[int]
     SQUERYHASH_FIELD_NUMBER: _ClassVar[int]
@@ -446,7 +450,7 @@ class RemoteChunkRequest(_message.Message):
     def __init__(self, originalQueryId: _Optional[str] = ..., remoteQueryId: _Optional[str] = ..., sQueryHash: _Optional[str] = ...) -> None: ...
 
 class RemoteChunkResponse(_message.Message):
-    __slots__ = ["error", "chunk"]
+    __slots__ = ("error", "chunk")
     ERROR_FIELD_NUMBER: _ClassVar[int]
     CHUNK_FIELD_NUMBER: _ClassVar[int]
     error: str
@@ -454,7 +458,7 @@ class RemoteChunkResponse(_message.Message):
     def __init__(self, error: _Optional[str] = ..., chunk: _Optional[bytes] = ...) -> None: ...
 
 class ClearOrCancelQueryRequest(_message.Message):
-    __slots__ = ["engineIP", "sessionId", "queryId"]
+    __slots__ = ("engineIP", "sessionId", "queryId")
     ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     QUERYID_FIELD_NUMBER: _ClassVar[int]
@@ -464,5 +468,5 @@ class ClearOrCancelQueryRequest(_message.Message):
     def __init__(self, engineIP: _Optional[str] = ..., sessionId: _Optional[str] = ..., queryId: _Optional[str] = ...) -> None: ...
 
 class ClearOrCancelQueryResponse(_message.Message):
-    __slots__ = []
+    __slots__ = ()
     def __init__(self) -> None: ...

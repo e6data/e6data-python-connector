@@ -71,12 +71,8 @@ def re_auth(func):
         try:
             return func(self, *args, **kwargs)
         except _InactiveRpcError as e:
-            print(f'RE_AUTH: Function Name: {func}')
-            print(f'RE_AUTH: Error Found {e}')
             if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
-                print('RE_AUTH: Initialising re-authentication.')
                 self.connection.get_re_authenticate_session_id()
-                print(f'RE_AUTH: Re-auth successful.')
                 return func(self, *args, **kwargs)
             else:
                 raise e
@@ -192,6 +188,7 @@ class Connection(object):
         self._max_receive_message_length = -1
         self._max_send_message_length = 300 * 1024 * 1024  # mb
         self.grpc_prepare_timeout = 10 * 60  # 10 minutes
+        self._planner_ip = None
 
         if isinstance(grpc_options, dict):
             self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
@@ -224,7 +221,8 @@ class Connection(object):
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     def get_re_authenticate_session_id(self):
-        self._session_id = None
+        self.close()
+        self._create_client()
         return self.get_session_id
 
     @property
@@ -243,6 +241,7 @@ class Connection(object):
                     metadata=_get_grpc_header(cluster=self.cluster_uuid)
                 )
                 self._session_id = authenticate_response.sessionId
+                self._planner_ip = authenticate_response.plannerIp
                 if not self._session_id:
                     raise ValueError("Invalid credentials.")
             except _InactiveRpcError as e:
@@ -266,6 +265,7 @@ class Connection(object):
                                 metadata=_get_grpc_header(cluster=self.cluster_uuid)
                             )
                             self._session_id = authenticate_response.sessionId
+                            self._planner_ip = authenticate_response.plannerIp
                         else:
                             raise e
                     else:
@@ -423,6 +423,8 @@ class Cursor(DBAPICursor):
 
     @property
     def metadata(self):
+        if not self._engine_ip:
+            self._engine_ip = self.connection._planner_ip
         return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_uuid)
 
     @property
@@ -568,7 +570,8 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
                 catalog=self._catalog_name,
-                queryString=sql
+                queryString=sql,
+                plannerIp=self._engine_ip
             )
             prepare_statement_response = client.prepareStatementV2(
                 prepare_statement_request,
