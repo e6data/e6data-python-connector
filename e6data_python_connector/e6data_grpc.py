@@ -11,6 +11,7 @@ import datetime
 import logging
 import re
 import sys
+import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
@@ -68,18 +69,21 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
-        try:
-            return func(self, *args, **kwargs)
-        except _InactiveRpcError as e:
-            print(f'RE_AUTH: Function Name: {func}')
-            print(f'RE_AUTH: Error Found {e}')
-            if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
-                print('RE_AUTH: Initialising re-authentication.')
-                self.connection.get_re_authenticate_session_id()
-                print(f'RE_AUTH: Re-auth successful.')
+        max_retry = 5
+        current_retry = 0
+        while current_retry < max_retry:
+            try:
                 return func(self, *args, **kwargs)
-            else:
-                raise e
+            except _InactiveRpcError as e:
+                current_retry += 1
+                if current_retry == max_retry:
+                    raise e
+                if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
+                    time.sleep(0.2)
+                    print(f'RE_AUTH: Function Name: {func}')
+                    print(f'RE_AUTH: Error Found {e}')
+                else:
+                    raise e
 
     return wrapper
 
