@@ -82,9 +82,9 @@ def re_auth(func):
                     time.sleep(0.2)
                     print(f'RE_AUTH: Function Name: {func}')
                     print(f'RE_AUTH: Error Found {e}')
+                    self.connection.get_re_authenticate_session_id()
                 else:
                     raise e
-
     return wrapper
 
 
