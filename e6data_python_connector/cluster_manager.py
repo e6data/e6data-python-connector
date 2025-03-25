@@ -220,6 +220,7 @@ class ClusterManager:
                     payload,
                     metadata=_get_grpc_header(cluster=self.cluster_uuid)
                 )
+                print(f'Cluster resume response: {response}')
             elif current_status.status == 'active':
                 return True
             elif current_status.status != 'resuming':
@@ -227,6 +228,7 @@ class ClusterManager:
                  If cluster cannot be resumed due to its current state, 
                  or already in a process of resuming, terminate the operation.
                  """
+                print(f'Cluster is not suspended status, raising error.')
                 return False
 
             # Wait for the cluster to become active
@@ -240,12 +242,16 @@ class ClusterManager:
                         status_payload,
                         metadata=_get_grpc_header(cluster=self.cluster_uuid)
                     )
+                    print(f'Cluster status response: {response}')
                     if response.status == 'active':
+                        print('Cluster is now active, starting execution.')
                         lock.set_active()
                         return True
                     if response.status in ['suspended', 'failed']:
+                        print(f'Trying to resume the cluster, found status: {response.status}, raising error.')
                         return False
                     if time.time() > self._timeout:
+                        print('Cluster resume timed out.')
                         return False
                 except _InactiveRpcError as e:
                     pass
