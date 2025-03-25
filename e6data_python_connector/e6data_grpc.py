@@ -11,6 +11,7 @@ import datetime
 import logging
 import re
 import sys
+import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
@@ -68,18 +69,22 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
-        try:
-            return func(self, *args, **kwargs)
-        except _InactiveRpcError as e:
-            print(f'RE_AUTH: Function Name: {func}')
-            print(f'RE_AUTH: Error Found {e}')
-            if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
-                print('RE_AUTH: Initialising re-authentication.')
-                self.connection.get_re_authenticate_session_id()
-                print(f'RE_AUTH: Re-auth successful.')
+        max_retry = 5
+        current_retry = 0
+        while current_retry < max_retry:
+            try:
                 return func(self, *args, **kwargs)
-            else:
-                raise e
+            except _InactiveRpcError as e:
+                current_retry += 1
+                if current_retry == max_retry:
+                    raise e
+                if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
+                    time.sleep(0.2)
+                    _logger.info(f'RE_AUTH: Function Name: {func}')
+                    _logger.info(f'RE_AUTH: Error Found {e}')
+                    self.connection.get_re_authenticate_session_id()
+                else:
+                    raise e
 
     return wrapper
 
@@ -169,6 +174,7 @@ class Connection(object):
                 - max_receive_message_length: This parameter sets the maximum allowed size (in bytes) for incoming messages on the gRPC server.
                 - max_send_message_length: Similar to max_receive_message_length, this parameter sets the maximum allowed size (in bytes) for outgoing messages from the gRPC client
                 - grpc_prepare_timeout: Timeout for prepare statement API call (default to 10 minutes).
+                - keepalive_time_ms: This parameter defines the time, in milliseconds, Default to 30 seconds
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -188,43 +194,88 @@ class Connection(object):
 
         self._auto_resume = auto_resume
 
-        self._keepalive_timeout_ms = 900000
-        self._max_receive_message_length = -1
-        self._max_send_message_length = 300 * 1024 * 1024  # mb
-        self.grpc_prepare_timeout = 10 * 60  # 10 minutes
-
-        if isinstance(grpc_options, dict):
-            self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
-            self._max_receive_message_length = grpc_options.get(
-                'max_receive_message_length') or self._max_receive_message_length
-            self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
-            self.grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self.grpc_prepare_timeout
+        self._grpc_options = grpc_options
+        if self._grpc_options is None:
+            self._grpc_options = dict()
+        self.grpc_prepare_timeout = self._grpc_options.get('grpc_prepare_timeout') or 10 * 60  # 10 minutes
         self._create_client()
 
+    @property
+    def _get_grpc_options(self):
+        """
+        Property to get gRPC options for the connection.
+
+        This method checks if the gRPC options are already cached. If not, it creates a copy of the
+        provided gRPC options and merges them with the default options. The merged options are then
+        cached for future use.
+
+        Returns:
+            list: A list of tuples containing gRPC options.
+        """
+        if not hasattr(self, '_cached_grpc_options'):
+            grpc_options = self._grpc_options.copy()
+            default_options = {
+                "keepalive_timeout_ms": 900000,  # Time in milliseconds to keep the connection alive.
+                "max_receive_message_length": -1,  # Maximum size of received messages.
+                "max_send_message_length": 300 * 1024 * 1024,  # Maximum size of sent messages (300 MB).
+                "grpc_prepare_timeout": self.grpc_prepare_timeout,  # Timeout for prepare statement API call.
+                "keepalive_time_ms": 30000,  # Time in milliseconds between keep-alive pings.
+                "keepalive_permit_without_calls": 1,  # Allow keep-alives with no active RPCs.
+                "http2.max_pings_without_data": 0,  # Unlimited pings without data.
+                "http2.min_time_between_pings_ms": 15000,  # Minimum time between pings (15 seconds).
+                "http2.min_ping_interval_without_data_ms": 15000,  # Minimum interval between pings without data (15 seconds).
+            }
+            if grpc_options:
+                for key, value in grpc_options.items():
+                    default_options[key] = value
+
+            self._cached_grpc_options = [(f'grpc.{key}', value) for key, value in default_options.items()]
+
+        return self._cached_grpc_options
+
     def _create_client(self):
+        """
+        Creates a gRPC client for the connection.
+
+        This method initializes a gRPC channel based on whether a secure channel is required or not.
+        It then creates a client stub for the QueryEngineService.
+
+        If the secure channel is enabled, it uses `grpc.secure_channel` with SSL credentials.
+        Otherwise, it uses `grpc.insecure_channel`.
+
+        The gRPC options are retrieved from the `_get_grpc_options` property.
+
+        Raises:
+            grpc.RpcError: If there is an error in creating the gRPC channel or client stub.
+        """
         if self._secure_channel:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
-                options=[
-                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
-                    ('grpc.max_send_message_length', self._max_send_message_length),
-                    ('grpc.max_receive_message_length', self._max_receive_message_length)
-                ],
+                options=self._get_grpc_options,
                 credentials=grpc.ssl_channel_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(
                 target='{}:{}'.format(self._host, self._port),
-                options=[
-                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
-                    ('grpc.max_send_message_length', self._max_send_message_length),
-                    ('grpc.max_receive_message_length', self._max_receive_message_length)
-                ]
+                options=self._get_grpc_options
             )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     def get_re_authenticate_session_id(self):
-        self._session_id = None
+        """
+        Re-authenticates the session by closing the current connection and creating a new client.
+
+        This method is used to re-establish the session ID by closing the existing gRPC channel,
+        creating a new client, and then retrieving a new session ID.
+
+        Returns:
+            str: The new session ID after re-authentication.
+
+        Raises:
+            Exception: If there is an error during the re-authentication process.
+        """
+        self.close()
+        self._create_client()
         return self.get_session_id
 
     @property
@@ -277,35 +328,58 @@ class Connection(object):
                 raise e
         return self._session_id
 
-    def update_users(self, user_info):
-        self.client.updateUsers(userInfo=user_info)
-
-    def set_prop_map(self, prop_map: str):
-        """
-        To enable to disable the caches.
-        :param prop_map: To set engine props
-        """
-        set_props_request = e6x_engine_pb2.SetPropsRequest(sessionId=self.get_session_id, props=prop_map)
-        self._client.setProps(set_props_request)
-
     def __enter__(self):
-        """Transport should already be opened by __init__"""
+        """
+        Enters the runtime context related to this object.
+
+        This method is called when the execution flow enters the context of the `with` statement.
+
+        Returns:
+            Connection: The current instance of the connection.
+        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Call close"""
+        """
+        Exits the runtime context related to this object.
+
+        This method is called when the execution flow exits the context of the `with` statement.
+
+        Args:
+            exc_type (Type[BaseException]): The type of exception raised (if any).
+            exc_val (BaseException): The exception instance raised (if any).
+            exc_tb (Traceback): The traceback object of the exception (if any).
+        """
         self.close()
 
     def close(self):
+        """
+        Closes the gRPC channel and resets the session ID.
+
+        This method ensures that the gRPC channel is properly closed and the session ID is reset to None.
+        """
         if self._channel is not None:
             self._channel.close()
             self._channel = None
         self._session_id = None
 
     def check_connection(self):
+        """
+        Checks if the gRPC channel is still open.
+
+        Returns:
+            bool: True if the gRPC channel is open, False otherwise.
+        """
         return self._channel is not None
 
     def clear(self, query_id, engine_ip=None):
+        """
+        Clears the query results from the server.
+
+        Args:
+            query_id (str): The ID of the query to be cleared.
+            engine_ip (str, optional): The IP address of the engine. Defaults to None.
+        """
         clear_request = e6x_engine_pb2.ClearRequest(
             sessionId=self.get_session_id,
             queryId=query_id,
@@ -317,10 +391,22 @@ class Connection(object):
         )
 
     def reopen(self):
+        """
+        Reopens the gRPC channel by closing the current channel and creating a new client.
+
+        This method is useful for re-establishing the connection if it was previously closed.
+        """
         self._channel.close()
         self._create_client()
 
     def query_cancel(self, engine_ip, query_id):
+        """
+        Cancels the execution of a query on the server.
+
+        Args:
+            engine_ip (str): The IP address of the engine.
+            query_id (str): The ID of the query to be canceled.
+        """
         cancel_query_request = e6x_engine_pb2.CancelQueryRequest(
             engineIP=engine_ip,
             sessionId=self.get_session_id,
@@ -332,6 +418,15 @@ class Connection(object):
         )
 
     def dry_run(self, query):
+        """
+        Performs a dry run of the query to validate its syntax and structure.
+
+        Args:
+            query (str): The SQL query to be validated.
+
+        Returns:
+            str: The result of the dry run validation.
+        """
         dry_run_request = e6x_engine_pb2.DryRunRequest(
             sessionId=self.get_session_id,
             schema=self.database,
@@ -344,6 +439,16 @@ class Connection(object):
         return dry_run_response.dryrunValue
 
     def get_tables(self, catalog, database):
+        """
+        Retrieves the list of tables from the specified catalog and database.
+
+        Args:
+            catalog (str): The catalog name.
+            database (str): The database name.
+
+        Returns:
+            list: A list of table names.
+        """
         get_table_request = e6x_engine_pb2.GetTablesV2Request(
             sessionId=self.get_session_id,
             schema=database,
@@ -356,6 +461,17 @@ class Connection(object):
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
+        """
+        Retrieves the list of columns for the specified table in the given catalog and database.
+
+        Args:
+            catalog (str): The catalog name.
+            database (str): The database name.
+            table (str): The table name.
+
+        Returns:
+            list: A list of dictionaries containing column information.
+        """
         get_columns_request = e6x_engine_pb2.GetColumnsV2Request(
             sessionId=self.get_session_id,
             schema=database,
@@ -369,6 +485,15 @@ class Connection(object):
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
+        """
+        Retrieves the list of schema names from the specified catalog.
+
+        Args:
+            catalog (str): The catalog name.
+
+        Returns:
+            list: A list of schema names.
+        """
         get_schema_request = e6x_engine_pb2.GetSchemaNamesV2Request(
             sessionId=self.get_session_id,
             catalog=catalog
@@ -380,29 +505,65 @@ class Connection(object):
         return list(get_schema_response.schemas)
 
     def commit(self):
-        """We do not support transactions, so this does nothing."""
+        """
+        Commits the current transaction.
+
+        Note:
+            This method does nothing as transactions are not supported.
+        """
         pass
 
     def cursor(self, catalog_name=None, db_name=None):
-        """Return a new :py:class:`Cursor` object using the connection."""
+        """
+        Creates a new cursor object for executing queries.
+
+        Args:
+            catalog_name (str, optional): The catalog name. Defaults to None.
+            db_name (str, optional): The database name. Defaults to None.
+
+        Returns:
+            Cursor: A new cursor object.
+        """
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
     def rollback(self):
-        raise Exception("e6xdb does not support transactions")  # pragma: no cover
+        """
+        Rolls back the current transaction.
+
+        Raises:
+            Exception: Always raises an exception as transactions are not supported.
+        """
+        raise Exception("e6data does not support transactions")  # pragma: no cover
 
     @property
     def client(self):
+        """
+        Returns the gRPC client stub for interacting with the server.
+
+        Returns:
+            e6x_engine_pb2_grpc.QueryEngineServiceStub: The gRPC client stub.
+        """
         return self._client
 
 
 class Cursor(DBAPICursor):
-    """These objects represent a database cursor, which is used to manage the context of a fetch
+    """
+    These objects represent a database cursor, which is used to manage the context of a fetch
     operation.
     Cursors are not isolated, i.e., any changes done to the database by a cursor are immediately
     visible by other cursors or connections.
     """
 
     def __init__(self, connection: Connection, array_size=1000, database=None, catalog_name=None):
+        """
+        Initialize a new Cursor object.
+
+        Args:
+            connection (Connection): The connection object to the database.
+            array_size (int, optional): The number of rows to fetch at a time. Defaults to 1000.
+            database (str, optional): The database name. Defaults to None.
+            catalog_name (str, optional): The catalog name. Defaults to None.
+        """
         super(Cursor, self).__init__()
         self._array_size = array_size
         self.connection = connection
@@ -423,15 +584,32 @@ class Cursor(DBAPICursor):
 
     @property
     def metadata(self):
+        """
+        Get the gRPC metadata for the current query.
+
+        Returns:
+            list: A list of tuples containing gRPC metadata.
+        """
         return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_uuid)
 
     @property
     def arraysize(self):
+        """
+        Get the array size for fetching rows.
+
+        Returns:
+            int: The number of rows to fetch at a time.
+        """
         return self._arraysize
 
     @arraysize.setter
     def arraysize(self, value):
-        """Array size cannot be None, and should be an integer"""
+        """
+        Set the array size for fetching rows.
+
+        Args:
+            value (int): The number of rows to fetch at a time.
+        """
         default_arraysize = 1000
         try:
             self._arraysize = int(value) or default_arraysize
@@ -467,14 +645,29 @@ class Cursor(DBAPICursor):
         return self._description
 
     def __enter__(self):
+        """
+        Enter the runtime context related to this object.
+
+        Returns:
+            Cursor: The current instance of the cursor.
+        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the runtime context related to this object.
+
+        Args:
+            exc_type (Type[BaseException]): The type of exception raised (if any).
+            exc_val (BaseException): The exception instance raised (if any).
+            exc_tb (Traceback): The traceback object of the exception (if any).
+        """
         self.close()
 
     def close(self):
-        """Close the operation handle"""
-        # self.connection.close()
+        """
+         Close the operation handle and reset the cursor state.
+         """
         try:
             self.clear()
         except:
@@ -491,17 +684,44 @@ class Cursor(DBAPICursor):
         self._database = None
 
     def get_tables(self):
+        """
+        Retrieve the list of tables from the current database.
+
+        Returns:
+            list: A list of table names.
+        """
         schema = self.connection.database
         return self.connection.get_tables(catalog=self._catalog_name, database=schema)
 
     def get_columns(self, table):
+        """
+        Retrieve the list of columns for the specified table.
+
+        Args:
+            table (str): The table name.
+
+        Returns:
+            list: A list of dictionaries containing column information.
+        """
         schema = self.connection.database
         return self.connection.get_columns(catalog=self._catalog_name, database=schema, table=table)
 
     def get_schema_names(self):
+        """
+         Retrieve the list of schema names from the current catalog.
+
+         Returns:
+             list: A list of schema names.
+         """
         return self.connection.get_schema_names(catalog=self._catalog_name)
 
     def clear(self, query_id=None):
+        """
+        Clear the query results from the server.
+
+        Args:
+            query_id (str, optional): The ID of the query to be cleared. Defaults to None.
+        """
         if not query_id:
             query_id = self._query_id
         clear_request = e6x_engine_pb2.ClearOrCancelQueryRequest(
@@ -512,9 +732,24 @@ class Cursor(DBAPICursor):
         return self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
 
     def cancel(self, query_id):
+        """
+        Cancel the execution of a query on the server.
+
+        Args:
+            query_id (str): The ID of the query to be canceled.
+        """
         self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
 
     def status(self, query_id):
+        """
+        Get the status of the specified query.
+
+        Args:
+            query_id (str): The ID of the query.
+
+        Returns:
+            StatusResponse: The status response of the query.
+        """
         status_request = e6x_engine_pb2.StatusRequest(
             sessionId=self.connection.get_session_id,
             queryId=query_id,
@@ -524,12 +759,17 @@ class Cursor(DBAPICursor):
 
     @re_auth
     def execute(self, operation, parameters=None, **kwargs):
-        """Prepare and execute a database operation (query or command).
-        Return values are not defined.
         """
+        Prepare and execute a database operation (query or command).
+
+        Args:
+            operation (str): The SQL query or command to execute.
+            parameters (dict, optional): The parameters to bind to the query. Defaults to None.
+
+        Returns:
+            str: The query ID of the executed query.
         """
-        Semicolon is now not supported. So removing it from query end.
-        """
+        # Semicolon is now not supported. So removing it from query end.
         operation = operation.strip()  # Remove leading and trailing whitespaces.
         if operation.endswith(';'):
             operation = operation[:-1]
@@ -593,10 +833,19 @@ class Cursor(DBAPICursor):
 
     @property
     def rowcount(self):
+        """
+        Get the number of rows affected by the last execute operation.
+
+        Returns:
+            int: The number of rows affected.
+        """
         self.update_mete_data()
         return self._rowcount
 
     def update_mete_data(self):
+        """
+        Update the metadata for the current query.
+        """
         result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -611,6 +860,12 @@ class Cursor(DBAPICursor):
         self._is_metadata_updated = True
 
     def _fetch_more(self):
+        """
+        Fetch more rows from the server.
+
+        Returns:
+            list: A list of rows fetched from the server.
+        """
         batch_size = self._arraysize
         self._data = list()
         for i in range(batch_size):
@@ -621,6 +876,12 @@ class Cursor(DBAPICursor):
         return self._data
 
     def _fetch_all(self):
+        """
+        Fetch all rows from the server.
+
+        Returns:
+            list: A list of all rows fetched from the server.
+        """
         self._data = list()
         while True:
             rows = self.fetch_batch()
@@ -632,6 +893,15 @@ class Cursor(DBAPICursor):
         return rows
 
     def fetchall_buffer(self, query_id=None):
+        """
+        Fetch all rows from the server in a buffered manner.
+
+        Args:
+            query_id (str, optional): The ID of the query. Defaults to None.
+
+        Yields:
+            list: A list of rows fetched from the server.
+        """
         if query_id:
             self._query_id = query_id
         while True:
@@ -641,6 +911,12 @@ class Cursor(DBAPICursor):
             yield rows
 
     def fetch_batch(self):
+        """
+        Fetch a batch of rows from the server.
+
+        Returns:
+            list: A list of rows fetched from the server.
+        """
         client = self.connection.client
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
@@ -660,9 +936,24 @@ class Cursor(DBAPICursor):
         return read_rows_from_chunk(self._query_columns_description, buffer)
 
     def fetchall(self):
+        """
+         Fetch all rows from the server.
+
+         Returns:
+             list: A list of all rows fetched from the server.
+         """
         return self._fetch_all()
 
     def fetchmany(self, size: int = None):
+        """
+        Fetch a specified number of rows from the server.
+
+        Args:
+            size (int, optional): The number of rows to fetch. Defaults to None.
+
+        Returns:
+            list: A list of rows fetched from the server.
+        """
         if size is None:
             size = self.arraysize
         if self._data is None:
@@ -681,13 +972,24 @@ class Cursor(DBAPICursor):
         return rows
 
     def fetchone(self):
-        # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
+        """
+        Fetch a single row from the server.
+
+        Returns:
+            list: A single row fetched from the server.
+        """
         rows = self.fetchmany(1)
         if rows is None or len(rows) == 0:
             return None
         return rows
 
     def explain(self):
+        """
+        Get the execution plan for the current query.
+
+        Returns:
+            str: The execution plan of the query.
+        """
         explain_request = e6x_engine_pb2.ExplainRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -700,6 +1002,12 @@ class Cursor(DBAPICursor):
         return explain_response.explain
 
     def explain_analyse(self):
+        """
+        Get the execution plan for the current query.
+
+        Returns:
+            dict: The execution plan of the query.
+        """
         explain_analyze_request = e6x_engine_pb2.ExplainAnalyzeRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
