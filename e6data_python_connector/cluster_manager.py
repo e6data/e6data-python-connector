@@ -169,6 +169,24 @@ class ClusterManager:
             )
         return cluster_pb2_grpc.ClusterServiceStub(self._channel)
 
+    def _check_cluster_status(self):
+        while True:
+            try:
+                # Create a status request payload with user credentials
+                status_payload = cluster_pb2.ClusterStatusRequest(
+                    user=self._user,
+                    password=self._password
+                )
+                # Send the status request to the cluster service
+                response = self._get_connection.status(
+                    status_payload,
+                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
+                )
+                # Yield the current status
+                yield response.status
+            except _InactiveRpcError as e:
+                yield None
+
     def resume(self) -> bool:
         """
         Resumes the cluster if it is currently suspended or not in the 'active' state.
@@ -229,27 +247,15 @@ class ClusterManager:
                  """
                 return False
 
-            # Wait for the cluster to become active
-            while True:
-                try:
-                    status_payload = cluster_pb2.ClusterStatusRequest(
-                        user=self._user,
-                        password=self._password
-                    )
-                    response = self._get_connection.status(
-                        status_payload,
-                        metadata=_get_grpc_header(cluster=self.cluster_uuid)
-                    )
-                    if response.status == 'active':
-                        lock.set_active()
-                        return True
-                    if response.status in ['failed']:
-                        return False
-                    if time.time() > self._timeout:
-                        return False
-                except _InactiveRpcError as e:
-                    pass
+            for status in self._check_cluster_status():
+                if status == 'active':
+                    lock.set_active()
+                    return True
+                elif status == 'failed' or time.time() > self._timeout:
+                    return False
+                # Wait for 5 seconds before the next status check
                 time.sleep(5)
+            return False
 
     def suspend(self):
         """
