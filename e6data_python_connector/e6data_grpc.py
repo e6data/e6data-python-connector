@@ -80,11 +80,12 @@ def re_auth(func):
                     raise e
                 if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
                     time.sleep(0.2)
-                    print(f'RE_AUTH: Function Name: {func}')
-                    print(f'RE_AUTH: Error Found {e}')
+                    _logger.info(f'RE_AUTH: Function Name: {func}')
+                    _logger.info(f'RE_AUTH: Error Found {e}')
                     self.connection.get_re_authenticate_session_id()
                 else:
                     raise e
+
     return wrapper
 
 
@@ -173,6 +174,7 @@ class Connection(object):
                 - max_receive_message_length: This parameter sets the maximum allowed size (in bytes) for incoming messages on the gRPC server.
                 - max_send_message_length: Similar to max_receive_message_length, this parameter sets the maximum allowed size (in bytes) for outgoing messages from the gRPC client
                 - grpc_prepare_timeout: Timeout for prepare statement API call (default to 10 minutes).
+                - keepalive_time_ms: This parameter defines the time, in milliseconds, Default to 30 seconds
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -192,43 +194,76 @@ class Connection(object):
 
         self._auto_resume = auto_resume
 
-        self._keepalive_timeout_ms = 900000
-        self._max_receive_message_length = -1
-        self._max_send_message_length = 300 * 1024 * 1024  # mb
-        self.grpc_prepare_timeout = 10 * 60  # 10 minutes
-
-        if isinstance(grpc_options, dict):
-            self._keepalive_timeout_ms = grpc_options.get('keepalive_timeout_ms') or self._keepalive_timeout_ms
-            self._max_receive_message_length = grpc_options.get(
-                'max_receive_message_length') or self._max_receive_message_length
-            self._max_send_message_length = grpc_options.get('max_send_message_length') or self._max_send_message_length
-            self.grpc_prepare_timeout = grpc_options.get('grpc_prepare_timeout') or self.grpc_prepare_timeout
+        self._grpc_options = grpc_options
+        if self._grpc_options is None:
+            self._grpc_options = dict()
+        self.grpc_prepare_timeout = self._grpc_options.get('grpc_prepare_timeout') or 10 * 60  # 10 minutes
         self._create_client()
 
+    @property
+    def _get_grpc_options(self):
+        """
+        Property to get gRPC options for the connection.
+
+        This method checks if the gRPC options are already cached. If not, it creates a copy of the
+        provided gRPC options and merges them with the default options. The merged options are then
+        cached for future use.
+
+        Returns:
+            list: A list of tuples containing gRPC options.
+        """
+        if not hasattr(self, '_cached_grpc_options'):
+            grpc_options = self._grpc_options.copy()
+            default_options = {
+                "keepalive_timeout_ms": 900000,  # Time in milliseconds to keep the connection alive.
+                "max_receive_message_length": -1,  # Maximum size of received messages.
+                "max_send_message_length": 300 * 1024 * 1024,  # Maximum size of sent messages (300 MB).
+                "grpc_prepare_timeout": self.grpc_prepare_timeout,  # Timeout for prepare statement API call.
+                "keepalive_time_ms": 30000,  # Time in milliseconds between keep-alive pings.
+                "keepalive_permit_without_calls": 1,  # Allow keep-alives with no active RPCs.
+                "http2.max_pings_without_data": 0,  # Unlimited pings without data.
+                "http2.min_time_between_pings_ms": 15000,  # Minimum time between pings (15 seconds).
+                "http2.min_ping_interval_without_data_ms": 15000,  # Minimum interval between pings without data (15 seconds).
+            }
+            if grpc_options:
+                for key, value in grpc_options.items():
+                    default_options[key] = value
+
+            self._cached_grpc_options = [(f'grpc.{key}', value) for key, value in default_options.items()]
+
+        return self._cached_grpc_options
+
     def _create_client(self):
+        """
+        Creates a gRPC client for the connection.
+
+        This method initializes a gRPC channel based on whether a secure channel is required or not.
+        It then creates a client stub for the QueryEngineService.
+
+        If the secure channel is enabled, it uses `grpc.secure_channel` with SSL credentials.
+        Otherwise, it uses `grpc.insecure_channel`.
+
+        The gRPC options are retrieved from the `_get_grpc_options` property.
+
+        Raises:
+            grpc.RpcError: If there is an error in creating the gRPC channel or client stub.
+        """
         if self._secure_channel:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
-                options=[
-                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
-                    ('grpc.max_send_message_length', self._max_send_message_length),
-                    ('grpc.max_receive_message_length', self._max_receive_message_length)
-                ],
+                options=self._get_grpc_options,
                 credentials=grpc.ssl_channel_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(
                 target='{}:{}'.format(self._host, self._port),
-                options=[
-                    ("grpc.keepalive_timeout_ms", self._keepalive_timeout_ms),
-                    ('grpc.max_send_message_length', self._max_send_message_length),
-                    ('grpc.max_receive_message_length', self._max_receive_message_length)
-                ]
+                options=self._get_grpc_options
             )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     def get_re_authenticate_session_id(self):
-        self._session_id = None
+        self.close()
+        self._create_client()
         return self.get_session_id
 
     @property
