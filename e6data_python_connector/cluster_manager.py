@@ -8,6 +8,19 @@ import multiprocessing
 
 
 def _get_grpc_header(engine_ip=None, cluster=None):
+    """
+    Generate gRPC metadata headers for the request.
+
+    This function creates a list of metadata headers to be used in gRPC requests.
+    It includes optional headers for the engine IP and cluster UUID.
+
+    Args:
+        engine_ip (str, optional): The IP address of the engine. Defaults to None.
+        cluster (str, optional): The UUID of the cluster. Defaults to None.
+
+    Returns:
+        list: A list of tuples representing the gRPC metadata headers.
+    """
     metadata = []
     if engine_ip:
         metadata.append(('plannerip', engine_ip))

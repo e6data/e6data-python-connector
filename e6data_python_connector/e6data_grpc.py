@@ -328,35 +328,58 @@ class Connection(object):
                 raise e
         return self._session_id
 
-    def update_users(self, user_info):
-        self.client.updateUsers(userInfo=user_info)
-
-    def set_prop_map(self, prop_map: str):
-        """
-        To enable to disable the caches.
-        :param prop_map: To set engine props
-        """
-        set_props_request = e6x_engine_pb2.SetPropsRequest(sessionId=self.get_session_id, props=prop_map)
-        self._client.setProps(set_props_request)
-
     def __enter__(self):
-        """Transport should already be opened by __init__"""
+        """
+        Enters the runtime context related to this object.
+
+        This method is called when the execution flow enters the context of the `with` statement.
+
+        Returns:
+            Connection: The current instance of the connection.
+        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Call close"""
+        """
+        Exits the runtime context related to this object.
+
+        This method is called when the execution flow exits the context of the `with` statement.
+
+        Args:
+            exc_type (Type[BaseException]): The type of exception raised (if any).
+            exc_val (BaseException): The exception instance raised (if any).
+            exc_tb (Traceback): The traceback object of the exception (if any).
+        """
         self.close()
 
     def close(self):
+        """
+        Closes the gRPC channel and resets the session ID.
+
+        This method ensures that the gRPC channel is properly closed and the session ID is reset to None.
+        """
         if self._channel is not None:
             self._channel.close()
             self._channel = None
         self._session_id = None
 
     def check_connection(self):
+        """
+        Checks if the gRPC channel is still open.
+
+        Returns:
+            bool: True if the gRPC channel is open, False otherwise.
+        """
         return self._channel is not None
 
     def clear(self, query_id, engine_ip=None):
+        """
+        Clears the query results from the server.
+
+        Args:
+            query_id (str): The ID of the query to be cleared.
+            engine_ip (str, optional): The IP address of the engine. Defaults to None.
+        """
         clear_request = e6x_engine_pb2.ClearRequest(
             sessionId=self.get_session_id,
             queryId=query_id,
@@ -368,10 +391,22 @@ class Connection(object):
         )
 
     def reopen(self):
+        """
+        Reopens the gRPC channel by closing the current channel and creating a new client.
+
+        This method is useful for re-establishing the connection if it was previously closed.
+        """
         self._channel.close()
         self._create_client()
 
     def query_cancel(self, engine_ip, query_id):
+        """
+        Cancels the execution of a query on the server.
+
+        Args:
+            engine_ip (str): The IP address of the engine.
+            query_id (str): The ID of the query to be canceled.
+        """
         cancel_query_request = e6x_engine_pb2.CancelQueryRequest(
             engineIP=engine_ip,
             sessionId=self.get_session_id,
@@ -383,6 +418,15 @@ class Connection(object):
         )
 
     def dry_run(self, query):
+        """
+        Performs a dry run of the query to validate its syntax and structure.
+
+        Args:
+            query (str): The SQL query to be validated.
+
+        Returns:
+            str: The result of the dry run validation.
+        """
         dry_run_request = e6x_engine_pb2.DryRunRequest(
             sessionId=self.get_session_id,
             schema=self.database,
@@ -395,6 +439,16 @@ class Connection(object):
         return dry_run_response.dryrunValue
 
     def get_tables(self, catalog, database):
+        """
+        Retrieves the list of tables from the specified catalog and database.
+
+        Args:
+            catalog (str): The catalog name.
+            database (str): The database name.
+
+        Returns:
+            list: A list of table names.
+        """
         get_table_request = e6x_engine_pb2.GetTablesV2Request(
             sessionId=self.get_session_id,
             schema=database,
@@ -407,6 +461,17 @@ class Connection(object):
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
+        """
+        Retrieves the list of columns for the specified table in the given catalog and database.
+
+        Args:
+            catalog (str): The catalog name.
+            database (str): The database name.
+            table (str): The table name.
+
+        Returns:
+            list: A list of dictionaries containing column information.
+        """
         get_columns_request = e6x_engine_pb2.GetColumnsV2Request(
             sessionId=self.get_session_id,
             schema=database,
@@ -420,6 +485,15 @@ class Connection(object):
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
+        """
+        Retrieves the list of schema names from the specified catalog.
+
+        Args:
+            catalog (str): The catalog name.
+
+        Returns:
+            list: A list of schema names.
+        """
         get_schema_request = e6x_engine_pb2.GetSchemaNamesV2Request(
             sessionId=self.get_session_id,
             catalog=catalog
@@ -431,29 +505,65 @@ class Connection(object):
         return list(get_schema_response.schemas)
 
     def commit(self):
-        """We do not support transactions, so this does nothing."""
+        """
+        Commits the current transaction.
+
+        Note:
+            This method does nothing as transactions are not supported.
+        """
         pass
 
     def cursor(self, catalog_name=None, db_name=None):
-        """Return a new :py:class:`Cursor` object using the connection."""
+        """
+        Creates a new cursor object for executing queries.
+
+        Args:
+            catalog_name (str, optional): The catalog name. Defaults to None.
+            db_name (str, optional): The database name. Defaults to None.
+
+        Returns:
+            Cursor: A new cursor object.
+        """
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
     def rollback(self):
-        raise Exception("e6xdb does not support transactions")  # pragma: no cover
+        """
+        Rolls back the current transaction.
+
+        Raises:
+            Exception: Always raises an exception as transactions are not supported.
+        """
+        raise Exception("e6data does not support transactions")  # pragma: no cover
 
     @property
     def client(self):
+        """
+        Returns the gRPC client stub for interacting with the server.
+
+        Returns:
+            e6x_engine_pb2_grpc.QueryEngineServiceStub: The gRPC client stub.
+        """
         return self._client
 
 
 class Cursor(DBAPICursor):
-    """These objects represent a database cursor, which is used to manage the context of a fetch
+    """
+    These objects represent a database cursor, which is used to manage the context of a fetch
     operation.
     Cursors are not isolated, i.e., any changes done to the database by a cursor are immediately
     visible by other cursors or connections.
     """
 
     def __init__(self, connection: Connection, array_size=1000, database=None, catalog_name=None):
+        """
+        Initialize a new Cursor object.
+
+        Args:
+            connection (Connection): The connection object to the database.
+            array_size (int, optional): The number of rows to fetch at a time. Defaults to 1000.
+            database (str, optional): The database name. Defaults to None.
+            catalog_name (str, optional): The catalog name. Defaults to None.
+        """
         super(Cursor, self).__init__()
         self._array_size = array_size
         self.connection = connection
@@ -474,15 +584,32 @@ class Cursor(DBAPICursor):
 
     @property
     def metadata(self):
+        """
+        Get the gRPC metadata for the current query.
+
+        Returns:
+            list: A list of tuples containing gRPC metadata.
+        """
         return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_uuid)
 
     @property
     def arraysize(self):
+        """
+        Get the array size for fetching rows.
+
+        Returns:
+            int: The number of rows to fetch at a time.
+        """
         return self._arraysize
 
     @arraysize.setter
     def arraysize(self, value):
-        """Array size cannot be None, and should be an integer"""
+        """
+        Set the array size for fetching rows.
+
+        Args:
+            value (int): The number of rows to fetch at a time.
+        """
         default_arraysize = 1000
         try:
             self._arraysize = int(value) or default_arraysize
@@ -518,14 +645,29 @@ class Cursor(DBAPICursor):
         return self._description
 
     def __enter__(self):
+        """
+        Enter the runtime context related to this object.
+
+        Returns:
+            Cursor: The current instance of the cursor.
+        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the runtime context related to this object.
+
+        Args:
+            exc_type (Type[BaseException]): The type of exception raised (if any).
+            exc_val (BaseException): The exception instance raised (if any).
+            exc_tb (Traceback): The traceback object of the exception (if any).
+        """
         self.close()
 
     def close(self):
-        """Close the operation handle"""
-        # self.connection.close()
+        """
+         Close the operation handle and reset the cursor state.
+         """
         try:
             self.clear()
         except:
@@ -542,17 +684,44 @@ class Cursor(DBAPICursor):
         self._database = None
 
     def get_tables(self):
+        """
+        Retrieve the list of tables from the current database.
+
+        Returns:
+            list: A list of table names.
+        """
         schema = self.connection.database
         return self.connection.get_tables(catalog=self._catalog_name, database=schema)
 
     def get_columns(self, table):
+        """
+        Retrieve the list of columns for the specified table.
+
+        Args:
+            table (str): The table name.
+
+        Returns:
+            list: A list of dictionaries containing column information.
+        """
         schema = self.connection.database
         return self.connection.get_columns(catalog=self._catalog_name, database=schema, table=table)
 
     def get_schema_names(self):
+        """
+         Retrieve the list of schema names from the current catalog.
+
+         Returns:
+             list: A list of schema names.
+         """
         return self.connection.get_schema_names(catalog=self._catalog_name)
 
     def clear(self, query_id=None):
+        """
+        Clear the query results from the server.
+
+        Args:
+            query_id (str, optional): The ID of the query to be cleared. Defaults to None.
+        """
         if not query_id:
             query_id = self._query_id
         clear_request = e6x_engine_pb2.ClearOrCancelQueryRequest(
@@ -563,9 +732,24 @@ class Cursor(DBAPICursor):
         return self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
 
     def cancel(self, query_id):
+        """
+        Cancel the execution of a query on the server.
+
+        Args:
+            query_id (str): The ID of the query to be canceled.
+        """
         self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
 
     def status(self, query_id):
+        """
+        Get the status of the specified query.
+
+        Args:
+            query_id (str): The ID of the query.
+
+        Returns:
+            StatusResponse: The status response of the query.
+        """
         status_request = e6x_engine_pb2.StatusRequest(
             sessionId=self.connection.get_session_id,
             queryId=query_id,
@@ -575,12 +759,17 @@ class Cursor(DBAPICursor):
 
     @re_auth
     def execute(self, operation, parameters=None, **kwargs):
-        """Prepare and execute a database operation (query or command).
-        Return values are not defined.
         """
+        Prepare and execute a database operation (query or command).
+
+        Args:
+            operation (str): The SQL query or command to execute.
+            parameters (dict, optional): The parameters to bind to the query. Defaults to None.
+
+        Returns:
+            str: The query ID of the executed query.
         """
-        Semicolon is now not supported. So removing it from query end.
-        """
+        # Semicolon is now not supported. So removing it from query end.
         operation = operation.strip()  # Remove leading and trailing whitespaces.
         if operation.endswith(';'):
             operation = operation[:-1]
@@ -644,10 +833,19 @@ class Cursor(DBAPICursor):
 
     @property
     def rowcount(self):
+        """
+        Get the number of rows affected by the last execute operation.
+
+        Returns:
+            int: The number of rows affected.
+        """
         self.update_mete_data()
         return self._rowcount
 
     def update_mete_data(self):
+        """
+        Update the metadata for the current query.
+        """
         result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -662,6 +860,12 @@ class Cursor(DBAPICursor):
         self._is_metadata_updated = True
 
     def _fetch_more(self):
+        """
+        Fetch more rows from the server.
+
+        Returns:
+            list: A list of rows fetched from the server.
+        """
         batch_size = self._arraysize
         self._data = list()
         for i in range(batch_size):
@@ -672,6 +876,12 @@ class Cursor(DBAPICursor):
         return self._data
 
     def _fetch_all(self):
+        """
+        Fetch all rows from the server.
+
+        Returns:
+            list: A list of all rows fetched from the server.
+        """
         self._data = list()
         while True:
             rows = self.fetch_batch()
@@ -683,6 +893,15 @@ class Cursor(DBAPICursor):
         return rows
 
     def fetchall_buffer(self, query_id=None):
+        """
+        Fetch all rows from the server in a buffered manner.
+
+        Args:
+            query_id (str, optional): The ID of the query. Defaults to None.
+
+        Yields:
+            list: A list of rows fetched from the server.
+        """
         if query_id:
             self._query_id = query_id
         while True:
@@ -692,6 +911,12 @@ class Cursor(DBAPICursor):
             yield rows
 
     def fetch_batch(self):
+        """
+        Fetch a batch of rows from the server.
+
+        Returns:
+            list: A list of rows fetched from the server.
+        """
         client = self.connection.client
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
@@ -711,9 +936,24 @@ class Cursor(DBAPICursor):
         return read_rows_from_chunk(self._query_columns_description, buffer)
 
     def fetchall(self):
+        """
+         Fetch all rows from the server.
+
+         Returns:
+             list: A list of all rows fetched from the server.
+         """
         return self._fetch_all()
 
     def fetchmany(self, size: int = None):
+        """
+        Fetch a specified number of rows from the server.
+
+        Args:
+            size (int, optional): The number of rows to fetch. Defaults to None.
+
+        Returns:
+            list: A list of rows fetched from the server.
+        """
         if size is None:
             size = self.arraysize
         if self._data is None:
@@ -732,13 +972,24 @@ class Cursor(DBAPICursor):
         return rows
 
     def fetchone(self):
-        # _logger.info("fetch One returning the batch itself which is limited by predefined no.of rows")
+        """
+        Fetch a single row from the server.
+
+        Returns:
+            list: A single row fetched from the server.
+        """
         rows = self.fetchmany(1)
         if rows is None or len(rows) == 0:
             return None
         return rows
 
     def explain(self):
+        """
+        Get the execution plan for the current query.
+
+        Returns:
+            str: The execution plan of the query.
+        """
         explain_request = e6x_engine_pb2.ExplainRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -751,6 +1002,12 @@ class Cursor(DBAPICursor):
         return explain_response.explain
 
     def explain_analyse(self):
+        """
+        Get the execution plan for the current query.
+
+        Returns:
+            dict: The execution plan of the query.
+        """
         explain_analyze_request = e6x_engine_pb2.ExplainAnalyzeRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
