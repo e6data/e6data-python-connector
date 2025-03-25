@@ -247,7 +247,7 @@ class ClusterManager:
                         print('Cluster is now active, starting execution.')
                         lock.set_active()
                         return True
-                    if response.status in ['suspended', 'failed']:
+                    if response.status in ['failed']:
                         print(f'Trying to resume the cluster, found status: {response.status}, raising error.')
                         return False
                     if time.time() > self._timeout:
