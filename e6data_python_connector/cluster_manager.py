@@ -123,7 +123,7 @@ class ClusterManager:
         cluster_uuid (str): The unique identifier for the target cluster.
     """
 
-    def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 3, cluster_uuid=None):
+    def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 3, cluster_uuid=None, grpc_options=None):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -147,6 +147,9 @@ class ClusterManager:
         self._timeout = time.time() + timeout
         self._secure_channel = secure_channel
         self.cluster_uuid = cluster_uuid
+        self._grpc_options = grpc_options
+        if grpc_options is None:
+            self._grpc_options = dict()
 
     @property
     def _get_connection(self):
@@ -161,11 +164,13 @@ class ClusterManager:
         if self._secure_channel:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
+                options=self._grpc_options,
                 credentials=grpc.ssl_channel_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(
-                target='{}:{}'.format(self._host, self._port)
+                target='{}:{}'.format(self._host, self._port),
+                options=self._grpc_options
             )
         return cluster_pb2_grpc.ClusterServiceStub(self._channel)
 

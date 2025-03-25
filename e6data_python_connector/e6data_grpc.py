@@ -262,6 +262,18 @@ class Connection(object):
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
     def get_re_authenticate_session_id(self):
+        """
+        Re-authenticates the session by closing the current connection and creating a new client.
+
+        This method is used to re-establish the session ID by closing the existing gRPC channel,
+        creating a new client, and then retrieving a new session ID.
+
+        Returns:
+            str: The new session ID after re-authentication.
+
+        Raises:
+            Exception: If there is an error during the re-authentication process.
+        """
         self.close()
         self._create_client()
         return self.get_session_id
