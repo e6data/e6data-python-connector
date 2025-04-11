@@ -267,7 +267,6 @@ class ClusterManager:
 
             for status in self._check_cluster_status():
                 if status == 'active':
-                    lock.set_active()
                     return True
                 elif status == 'failed' or time.time() > self._timeout:
                     return False
