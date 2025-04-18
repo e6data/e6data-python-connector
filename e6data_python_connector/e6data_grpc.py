@@ -328,6 +328,13 @@ class Connection(object):
                 raise e
         return self._session_id
 
+    def _set_session_id(self, refreshed_session_id):
+        if refreshed_session_id:
+            self._session_id = refreshed_session_id
+
+    def _set_session_id_from_response(self, response):
+        self._set_session_id(response.sessionId)
+
     def __enter__(self):
         """
         Enters the runtime context related to this object.
@@ -385,10 +392,11 @@ class Connection(object):
             queryId=query_id,
             engineIP=engine_ip
         )
-        self._client.clear(
+        clear_response = self._client.clear(
             clear_request,
             metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
+        self._set_session_id_from_response(clear_response)
 
     def reopen(self):
         """
