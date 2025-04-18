@@ -10,3 +10,4 @@ MANIFEST.in
 venv/
 .DS_Store
 gen-py/
+.mise.toml
