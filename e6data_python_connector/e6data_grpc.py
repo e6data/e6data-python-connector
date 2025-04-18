@@ -952,6 +952,9 @@ class Cursor(DBAPICursor):
             get_next_result_batch_request,
             metadata=self.metadata
         )
+
+        self.connection._set_session_id_from_response(get_next_result_batch_response)
+
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
             self.update_mete_data()
