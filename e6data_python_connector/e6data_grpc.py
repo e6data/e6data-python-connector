@@ -490,6 +490,7 @@ class Connection(object):
             get_columns_request,
             metadata=_get_grpc_header(cluster=self.cluster_uuid)
         )
+        self._set_session_id_from_response(get_columns_response)
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
