@@ -420,10 +420,11 @@ class Connection(object):
             sessionId=self.get_session_id,
             queryId=query_id
         )
-        self._client.cancelQuery(
+        cancel_query_response = self._client.cancelQuery(
             cancel_query_request,
             metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
+        self._set_session_id_from_response(cancel_query_response)
 
     def dry_run(self, query):
         """
