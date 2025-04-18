@@ -817,10 +817,12 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id,
             )
-            client.executeStatement(
+            execute_statement_response = client.executeStatement(
                 execute_statement_request,
                 metadata=self.metadata
             )
+
+            self.connection._set_session_id_from_response(execute_statement_response)
         else:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
                 sessionId=self.connection.get_session_id,
@@ -843,10 +845,12 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id
             )
-            client.executeStatementV2(
+            execute_statement_response = client.executeStatementV2(
                 execute_statement_request,
                 metadata=self.metadata
             )
+
+            self.connection._set_session_id_from_response(execute_statement_response)
         self.update_mete_data()
         return self._query_id
 
