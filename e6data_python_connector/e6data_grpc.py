@@ -808,8 +808,10 @@ class Cursor(DBAPICursor):
                 metadata=self.metadata
             )
 
+            self.connection._set_session_id_from_response(prepare_statement_response)
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
+
             execute_statement_request = e6x_engine_pb2.ExecuteStatementRequest(
                 engineIP=self._engine_ip,
                 sessionId=self.connection.get_session_id,
@@ -832,6 +834,7 @@ class Cursor(DBAPICursor):
                 timeout=self.connection.grpc_prepare_timeout
             )
 
+            self.connection._set_session_id_from_response(prepare_statement_response)
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
 
