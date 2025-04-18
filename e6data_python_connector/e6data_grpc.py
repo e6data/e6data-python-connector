@@ -1047,6 +1047,9 @@ class Cursor(DBAPICursor):
             explain_analyze_request,
             metadata=self.metadata
         )
+
+        self.connection._set_session_id_from_response(explain_analyze_response)
+
         return dict(
             is_cached=explain_analyze_response.isCached,
             parsing_time=explain_analyze_response.parsingTime,
