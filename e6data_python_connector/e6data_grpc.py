@@ -1027,6 +1027,8 @@ class Cursor(DBAPICursor):
             explain_request,
             metadata=self.metadata
         )
+
+        self.connection._set_session_id_from_response(explain_response)
         return explain_response.explain
 
     def explain_analyse(self):
