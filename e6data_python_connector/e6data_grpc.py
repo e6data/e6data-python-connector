@@ -879,6 +879,8 @@ class Cursor(DBAPICursor):
             metadata=self.metadata
         )
         buffer = BytesIO(get_result_metadata_response.resultMetaData)
+
+        self.connection._set_session_id_from_response(get_result_metadata_response)
         self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
         self._is_metadata_updated = True
 
