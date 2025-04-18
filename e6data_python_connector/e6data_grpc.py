@@ -741,7 +741,9 @@ class Cursor(DBAPICursor):
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        return self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
+        clear_response = self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
+        self.connection._set_session_id_from_response(clear_response)
+        return clear_response
 
     def cancel(self, query_id):
         """
