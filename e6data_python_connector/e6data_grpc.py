@@ -332,7 +332,7 @@ class Connection(object):
         if refreshed_session_id:
             self._session_id = refreshed_session_id
 
-    def _set_session_id_from_response(self, response):
+    def set_session_id_from_response(self, response):
         self._set_session_id(response.sessionId)
 
     def __enter__(self):
@@ -396,7 +396,7 @@ class Connection(object):
             clear_request,
             metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
-        self._set_session_id_from_response(clear_response)
+        self.set_session_id_from_response(clear_response)
 
     def reopen(self):
         """
@@ -424,7 +424,7 @@ class Connection(object):
             cancel_query_request,
             metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid)
         )
-        self._set_session_id_from_response(cancel_query_response)
+        self.set_session_id_from_response(cancel_query_response)
 
     def dry_run(self, query):
         """
@@ -467,7 +467,7 @@ class Connection(object):
             get_table_request,
             metadata=_get_grpc_header(cluster=self.cluster_uuid)
         )
-        self._set_session_id_from_response(get_table_response)
+        self.set_session_id_from_response(get_table_response)
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
@@ -492,7 +492,7 @@ class Connection(object):
             get_columns_request,
             metadata=_get_grpc_header(cluster=self.cluster_uuid)
         )
-        self._set_session_id_from_response(get_columns_response)
+        self.set_session_id_from_response(get_columns_response)
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
@@ -513,7 +513,7 @@ class Connection(object):
             get_schema_request,
             metadata=_get_grpc_header(cluster=self.cluster_uuid)
         )
-        self._set_session_id_from_response(get_schema_response)
+        self.set_session_id_from_response(get_schema_response)
         return list(get_schema_response.schemas)
 
     def commit(self):
@@ -742,7 +742,7 @@ class Cursor(DBAPICursor):
             engineIP=self._engine_ip
         )
         clear_response = self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
-        self.connection._set_session_id_from_response(clear_response)
+        self.connection.set_session_id_from_response(clear_response)
         return clear_response
 
     def cancel(self, query_id):
@@ -770,7 +770,7 @@ class Cursor(DBAPICursor):
             engineIP=self._engine_ip
         )
         status_response = self.connection.client.status(status_request, metadata=self.metadata)
-        self.connection._set_session_id_from_response(status_response)
+        self.connection.set_session_id_from_response(status_response)
         return status_response
 
     @re_auth
@@ -808,7 +808,7 @@ class Cursor(DBAPICursor):
                 metadata=self.metadata
             )
 
-            self.connection._set_session_id_from_response(prepare_statement_response)
+            self.connection.set_session_id_from_response(prepare_statement_response)
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
 
@@ -822,7 +822,7 @@ class Cursor(DBAPICursor):
                 metadata=self.metadata
             )
 
-            self.connection._set_session_id_from_response(execute_statement_response)
+            self.connection.set_session_id_from_response(execute_statement_response)
         else:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
                 sessionId=self.connection.get_session_id,
@@ -836,7 +836,7 @@ class Cursor(DBAPICursor):
                 timeout=self.connection.grpc_prepare_timeout
             )
 
-            self.connection._set_session_id_from_response(prepare_statement_response)
+            self.connection.set_session_id_from_response(prepare_statement_response)
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
 
@@ -850,7 +850,7 @@ class Cursor(DBAPICursor):
                 metadata=self.metadata
             )
 
-            self.connection._set_session_id_from_response(execute_statement_response)
+            self.connection.set_session_id_from_response(execute_statement_response)
         self.update_mete_data()
         return self._query_id
 
@@ -880,7 +880,7 @@ class Cursor(DBAPICursor):
         )
         buffer = BytesIO(get_result_metadata_response.resultMetaData)
 
-        self.connection._set_session_id_from_response(get_result_metadata_response)
+        self.connection.set_session_id_from_response(get_result_metadata_response)
         self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
         self._is_metadata_updated = True
 
@@ -953,7 +953,7 @@ class Cursor(DBAPICursor):
             metadata=self.metadata
         )
 
-        self.connection._set_session_id_from_response(get_next_result_batch_response)
+        self.connection.set_session_id_from_response(get_next_result_batch_response)
 
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
@@ -1028,7 +1028,7 @@ class Cursor(DBAPICursor):
             metadata=self.metadata
         )
 
-        self.connection._set_session_id_from_response(explain_response)
+        self.connection.set_session_id_from_response(explain_response)
         return explain_response.explain
 
     def explain_analyse(self):
@@ -1048,7 +1048,7 @@ class Cursor(DBAPICursor):
             metadata=self.metadata
         )
 
-        self.connection._set_session_id_from_response(explain_analyze_response)
+        self.connection.set_session_id_from_response(explain_analyze_response)
 
         return dict(
             is_cached=explain_analyze_response.isCached,
