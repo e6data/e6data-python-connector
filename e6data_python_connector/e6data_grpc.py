@@ -467,6 +467,7 @@ class Connection(object):
             get_table_request,
             metadata=_get_grpc_header(cluster=self.cluster_uuid)
         )
+        self._set_session_id_from_response(get_table_response)
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
