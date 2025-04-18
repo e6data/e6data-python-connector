@@ -513,6 +513,7 @@ class Connection(object):
             get_schema_request,
             metadata=_get_grpc_header(cluster=self.cluster_uuid)
         )
+        self._set_session_id_from_response(get_schema_response)
         return list(get_schema_response.schemas)
 
     def commit(self):
