@@ -769,7 +769,9 @@ class Cursor(DBAPICursor):
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        return self.connection.client.status(status_request, metadata=self.metadata)
+        status_response = self.connection.client.status(status_request, metadata=self.metadata)
+        self.connection._set_session_id_from_response(status_response)
+        return status_response
 
     @re_auth
     def execute(self, operation, parameters=None, **kwargs):
