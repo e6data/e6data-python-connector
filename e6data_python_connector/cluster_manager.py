@@ -136,7 +136,7 @@ class ClusterManager:
         cluster_uuid (str): The unique identifier for the target cluster.
     """
 
-    def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 3, cluster_uuid=None, grpc_options=None):
+    def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 5, cluster_uuid=None, grpc_options=None):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -148,7 +148,7 @@ class ClusterManager:
             secure_channel (bool, optional): Whether to use a secure
                 gRPC channel for communication; defaults to False.
             timeout (int, optional): The timeout duration (in seconds) for operations;
-                defaults to 3 minutes.
+                defaults to 5 minutes.
             cluster_uuid (str, optional): The unique identifier for the target cluster;
                 defaults to None.
         """
