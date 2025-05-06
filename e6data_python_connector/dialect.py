@@ -235,6 +235,13 @@ class E6dataDialect(default.DefaultDialect):
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
 
+        # Extract grpc_options from query params
+        grpc_options = {}
+        for key, value in url.query.items():
+            # Skip known parameters that are not grpc_options
+            if key not in {"schema", "catalog", "cluster-uuid", "secure", "auto-resume"}:
+                grpc_options[key] = value
+
         kwargs = {
             "host": url.host,
             "port": url.port,
@@ -245,7 +252,8 @@ class E6dataDialect(default.DefaultDialect):
             "catalog": self.catalog_name,
             "cluster_uuid": self.cluster_uuid,
             'secure': self.secure,
-            'auto_resume': self.auto_resume
+            'auto_resume': self.auto_resume,
+            'grpc_options': grpc_options
         }
         return [], kwargs
 
