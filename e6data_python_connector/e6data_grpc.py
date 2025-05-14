@@ -1275,7 +1275,7 @@ class DataFrameSession:
         self.terminate()
 
     def update_dataframe_map(self, dataframe : "DataFrame"):
-        self._dataframe_map.update({self._dataframe_count, dataframe})
+        self._dataframe_map.update({self._dataframe_count : dataframe})
         self._dataframe_count = self._dataframe_count + 1
 
     @property
