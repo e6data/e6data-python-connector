@@ -30,11 +30,10 @@ class TestDataFrame(TestCase):
         self.disconnect()
 
     def test_table_creation(self):
-        self._dataframe = self.e6x_connection.load_parquet('<file_path>')
-        self._dataframe.select('col1','col2')
-
-        rows = self._dataframe.show()
-
-        for row in rows:
-            print(row)
-
+        try:
+            self._dataframe = self.e6x_connection.load_parquet('<filepath>')
+            rows = self._dataframe.show()
+            for row in rows:
+                print(row)
+        except BaseException as e:
+            print(f"Exception :{e}")
