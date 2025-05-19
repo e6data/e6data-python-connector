@@ -15,7 +15,7 @@ class TestDataFrame(TestCase):
         self.e6x_connection = Connection(
             host=self._host,
             port=9001,
-            username='limbad@e6x.io',
+            username='dummy@gmail.com',
             password='Dummy@123',
             database=self._database,
             catalog=self._catalog

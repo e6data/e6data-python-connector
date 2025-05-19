@@ -304,10 +304,11 @@ message CreateDataFrameRequest
   string parquetFilePath = 1;
   string catalog = 2;
   string schema = 3;
-  string sessionId = 4;
-  string engineIP = 5;
-  string userUUID = 6;
+  string table = 4;
+  string sessionId = 5;
+  string engineIP = 6;
   int32 dataframeNumber = 7;
+  bool createFromParquet = 8;
 }
 
 message CreateDataFrameResponse
@@ -317,23 +318,49 @@ message CreateDataFrameResponse
 
 message ProjectionOnDataFrameRequest
 {
-  string userUUID = 1;
-  string queryId = 2;
-  int32 dataframeNumber = 3;
-  string sessionId = 4;
-  repeated string field = 5;
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  repeated string field = 4;
 }
 
 message ProjectionOnDataFrameResponse {}
 
+message ColumnAliasOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  map<string, string> columnAliasMap = 4;
+}
+
+message ColumnAliasOnDataFrameResponse {}
+
+message AggregateOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  map<string, AggregateFunction> aggregateFunctionMap = 4;
+  repeated string groupBy = 5;
+}
+
+enum AggregateFunction
+{
+  SUM = 0;
+  COUNT = 1;
+  COUNT_STAR = 2;
+  COUNT_DISTINCT = 3;
+}
+
+message AggregateOnDataFrameResponse {}
 
 message FilterOnDataFrameRequest
 {
-  string userUUID = 1;
-  string queryId = 2;
-  int32 dataframeNumber = 3;
-  string sessionId = 4;
-  string whereClause = 5;
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string whereClause = 4;
 }
 
 message FilterOnDataFrameResponse {}
@@ -344,49 +371,38 @@ enum SortDirection
   DESC = 1;
 }
 
-enum NullDirection
-{
-  FIRST = 0;
-  LAST = 1;
-}
-
 message OrderByOnDataFrameRequest
 {
-  string userUUID = 1;
-  string queryId = 2;
-  int32 dataframeNumber = 3;
-  string sessionId = 4;
-  repeated string field = 5;
-  repeated SortDirection sortDirection = 6;
-  repeated NullDirection nullsDirection = 7;
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  map<string, SortDirection> orderByFieldMap = 4;
 }
 
 message OrderByOnDataFrameResponse {}
 
 message LimitOnDataFrameRequest
 {
-  string userUUID = 1;
-  string queryId = 2;
-  int32 dataframeNumber = 3;
-  string sessionId = 4;
-  int32 fetchLimit = 5;
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  int32 fetchLimit = 4;
 }
 
 message LimitOnDataFrameResponse {}
 
 message ExecuteDataFrameRequest
 {
-  string userUUID = 1;
-  string queryId = 2;
-  int32 dataframeNumber = 3;
-  string sessionId = 4;
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
 }
 
 message ExecuteDataFrameResponse {}
 
 message DropUserContextRequest
 {
-    string userUUID = 1;
+    string sessionId = 1;
 }
 
 message DropUserContextResponse {}
@@ -455,6 +471,8 @@ service QueryEngineService {
   rpc createDataFrame(CreateDataFrameRequest) returns (CreateDataFrameResponse);
 
   rpc projectionOnDataFrame(ProjectionOnDataFrameRequest) returns (ProjectionOnDataFrameResponse);
+
+  rpc aggregateOnDataFrame(AggregateOnDataFrameRequest) returns (AggregateOnDataFrameResponse);
 
   rpc filterOnDataFrame(FilterOnDataFrameRequest) returns (FilterOnDataFrameResponse);
 
