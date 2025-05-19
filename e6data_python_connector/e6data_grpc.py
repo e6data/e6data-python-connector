@@ -16,7 +16,6 @@ from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 from typing import overload
-import uuid
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -26,6 +25,7 @@ from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPIC
 from e6data_python_connector.constants import *
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
+from e6data_python_connector.server.e6x_engine_pb2 import AggregateFunction
 from e6data_python_connector.typeId import *
 
 apilevel = '2.0'
@@ -364,11 +364,11 @@ class Connection(object):
 
         This method ensures that the gRPC channel is properly closed and the session ID is reset to None.
         """
+        self._dataframe_session.terminate()
         if self._channel is not None:
             self._channel.close()
             self._channel = None
         self._session_id = None
-        self._dataframe_session.terminate()
 
     def check_connection(self):
         """
@@ -537,8 +537,22 @@ class Connection(object):
         dataframe = DataFrame(
             self,
             file_path=parquet_path,
-            user_uuid=self._dataframe_session.get_user_uuid,
-            dataframe_number=self._dataframe_session.get_dataframe_number)
+            dataframe_number=self._dataframe_session.get_dataframe_number,
+            table_name=None
+        )
+
+        self._dataframe_session.update_dataframe_map(dataframe=dataframe)
+        return dataframe
+
+    def load_table(self, table_name, database = None, catalog = None) -> "DataFrame":
+        dataframe = DataFrame(
+            self,
+            file_path=None,
+            dataframe_number=self._dataframe_session.get_dataframe_number,
+            table_name=table_name,
+            database=database,
+            catalog=catalog
+        )
 
         self._dataframe_session.update_dataframe_map(dataframe=dataframe)
         return dataframe
@@ -1048,10 +1062,12 @@ class Cursor(DBAPICursor):
 
 class DataFrame:
 
-    def __init__(self, connection: Connection, file_path, user_uuid, dataframe_number):
-        self._user_uuid = user_uuid
+    def __init__(self, connection: Connection, file_path, dataframe_number, table_name, database = None, catalog = None):
         self._dataframe_number = dataframe_number
         self._connection = connection
+        self._catalog = self._connection.catalog_name if catalog is None else catalog
+        self._database = self._connection.database if database is None else database
+        self._table_name = table_name
         self._file_path = file_path
         self._engine_ip = connection.host
         self._sessionId = connection.get_session_id
@@ -1059,19 +1075,20 @@ class DataFrame:
         self._query_id = None
         self._data = None
         self._batch = None
-        self._create_dataframe()
+        self._create_dataframe(self._file_path is not None)
 
-    def _create_dataframe(self):
+    def _create_dataframe(self, create_dataframe_from_parquet : bool):
         client = self._connection.client
 
         create_dataframe_request = e6x_engine_pb2.CreateDataFrameRequest(
             parquetFilePath=self._file_path,
-            catalog=self._connection.catalog_name,
-            schema=self._connection.database,
+            catalog=self._catalog,
+            schema=self._database,
+            table=self._table_name,
             sessionId=self._sessionId,
             engineIP=self._engine_ip,
-            userUUID=self._user_uuid,
-            dataframeNumber=self._dataframe_number
+            dataframeNumber=self._dataframe_number,
+            createFromParquet=create_dataframe_from_parquet
         )
 
         create_dataframe_response = client.createDataFrame(
@@ -1079,122 +1096,99 @@ class DataFrame:
         )
         self._query_id = create_dataframe_response.queryId
 
-    def select(self, *fields) -> "DataFrame":
+    def select(self, *fields : str) -> "DataFrame":
         projection_fields = []
         for field in fields:
             projection_fields.append(field)
 
         client = self._connection.client
         projection_on_dataframe_request = e6x_engine_pb2.ProjectionOnDataFrameRequest(
-            userUUID=self._user_uuid,
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             field=projection_fields
         )
 
-        projection_on_dataframe_response = client.projectionOnDataFrame(
-            projection_on_dataframe_request
+        client.projectionOnDataFrame(projection_on_dataframe_request)
+
+        return self
+
+    def aggregate(self, agg_function : dict[str, str], group_by : list[str] = None) -> "DataFrame":
+        def get_agg_enum(function_name : str) -> AggregateFunction | None:
+            match function_name.lower():
+                case 'sum':
+                    return e6x_engine_pb2.AggregateFunction.SUM
+                case 'count':
+                    return e6x_engine_pb2.AggregateFunction.COUNT
+                case 'count_star':
+                    return e6x_engine_pb2.AggregateFunction.COUNT_STAR
+                case 'count_distinct':
+                    return e6x_engine_pb2.AggregateFunction.COUNT_DISTINCT
+                case _:
+                    return None
+
+        agg_function_map = {}
+
+        for column in agg_function.keys():
+            fun = get_agg_enum(agg_function.get(column))
+            if fun is not None:
+                agg_function_map.update({column : fun})
+
+        client = self._connection.client
+        aggregate_on_dataframe_request = e6x_engine_pb2.AggregateOnDataFrameRequest(
+            queryId=self._query_id,
+            dataframeNumber=self._dataframe_number,
+            sessionId=self._sessionId,
+            aggregateFunctionMap=agg_function_map,
+            groupBy=group_by
         )
+
+        client.aggregateOnDataFrame(aggregate_on_dataframe_request)
 
         return self
 
     def where(self, where_clause : str) -> "DataFrame":
         client = self._connection.client
         filter_on_dataframe_request = e6x_engine_pb2.FilterOnDataFrameRequest(
-            userUUID=self._user_uuid,
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             whereClause=where_clause
         )
 
-        filter_on_dataframe_response = client.filterOnDataFrame(
-            filter_on_dataframe_request
-        )
+        client.filterOnDataFrame(filter_on_dataframe_request)
 
         return self
 
-    @overload
-    def order_by(self, field_list : list, sort_direction_list = None, null_direction_list = None) -> "DataFrame":
-        orderby_fields = []
-        sort_direction_request = []
-        null_direction_request = []
-        for field in field_list:
-            orderby_fields.append(field)
+    def order_by(self, *field_list : str) -> "DataFrame":
+        order_by_map = dict()
 
-        for direction in sort_direction_list:
-            direction = str(direction).upper()
-            if direction == 'ASC':
-                sort_direction_request.append(e6x_engine_pb2.SortDirection.ASC)
-            elif direction == 'DESC':
-                sort_direction_request.append(e6x_engine_pb2.SortDirection.DESC)
-            else:
-                sort_direction_request.append(None)
-
-        for direction in null_direction_list:
-            direction = str(direction).upper()
-            if direction == 'NULLS_FIRST':
-                null_direction_request.append(e6x_engine_pb2.NullDirection.FIRST)
-            elif direction == 'NULLS_LAST':
-                null_direction_request.append(e6x_engine_pb2.NullDirection.LAST)
-            else:
-                null_direction_request.append(None)
-
-        client = self.connection.client
-
-        orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
-            userUUID=self._user_uuid,
-            queryId=self._query_id,
-            dataframeNumber=self._dataframe_number,
-            sessionId=self._sessionId,
-            field=orderby_fields,
-            sortDirection=sort_direction_request,
-            nullsDirection=null_direction_request
-        )
-
-        orderby_on_dataframe_response = client.orderByOnDataFrame(
-            orderby_on_dataframe_request
-        )
-        return self
-
-    def order_by(self, *field_list) -> "DataFrame":
-        orderby_fields = []
-        sort_direction_request = []
-        null_direction_request = []
-        for field in field_list:
-            orderby_fields.append(field)
+        # default sorting in ASCENDING order
+        for column in field_list:
+            order_by_map.update({ column : e6x_engine_pb2.SortDirection.ASC})
 
         client = self._connection.client
 
         orderby_on_dataframe_request = e6x_engine_pb2.OrderByOnDataFrameRequest(
-            userUUID=self._user_uuid,
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
-            field=orderby_fields,
-            sortDirection=sort_direction_request,
-            nullsDirection=null_direction_request
+            orderByFieldMap=order_by_map
         )
 
-        orderby_on_dataframe_response = client.orderByOnDataFrame(
-            orderby_on_dataframe_request
-        )
+        client.orderByOnDataFrame(orderby_on_dataframe_request)
         return self
 
     def limit(self, fetch_limit : int) -> "DataFrame":
         client = self._connection.client
         limit_on_dataframe_request = e6x_engine_pb2.LimitOnDataFrameRequest(
-            userUUID=self._user_uuid,
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
             fetchLimit=fetch_limit
         )
 
-        limit_on_dataframe_response = client.limitOnDataFrame(
-            limit_on_dataframe_request
-        )
+        client.limitOnDataFrame(limit_on_dataframe_request)
 
         return self
 
@@ -1205,14 +1199,11 @@ class DataFrame:
     def execute(self):
         client = self._connection.client
         execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
-            userUUID=self._user_uuid,
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId
         )
-        execute_dataframe_response = client.executeDataFrame(
-            execute_dataframe_request
-        )
+        client.executeDataFrame(execute_dataframe_request)
 
     def _update_meta_data(self):
         result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
@@ -1258,7 +1249,6 @@ class DataFrame:
 
 class DataFrameSession:
     def __init__(self, connection: Connection):
-        self._user_uuid = str(uuid.uuid4())
         self._connection = connection
         self._dataframe_count = 0
         self._dataframe_map = dict()
@@ -1272,10 +1262,6 @@ class DataFrameSession:
         self._dataframe_count = self._dataframe_count + 1
 
     @property
-    def get_user_uuid(self):
-        return self._user_uuid
-
-    @property
     def get_dataframe_number(self) -> int:
         return self._dataframe_count
 
@@ -1284,14 +1270,13 @@ class DataFrameSession:
         return self._is_terminated
 
     def terminate(self):
-
         if not self._is_terminated:
             drop_user_context_request = e6x_engine_pb2.DropUserContextRequest(
-                userUUID=self.get_user_uuid
+                sessionId=self._connection.get_session_id
             )
 
-            drop_user_context_response = self._connection.client.dropUserContext(drop_user_context_request)
-            self._is_terminated = True
+            self._connection.client.dropUserContext(drop_user_context_request)
+        self._is_terminated = True
 
 
 
