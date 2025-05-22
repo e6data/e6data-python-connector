@@ -299,10 +299,12 @@ class AuthenticateRequest(_message.Message):
     def __init__(self, user: _Optional[str] = ..., password: _Optional[str] = ...) -> None: ...
 
 class AuthenticateResponse(_message.Message):
-    __slots__ = ("sessionId",)
+    __slots__ = ("sessionId", "engineIP")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
-    def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
+    engineIP: str
+    def __init__(self, sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ...) -> None: ...
 
 class GetTablesRequest(_message.Message):
     __slots__ = ("sessionId", "schema")
@@ -513,46 +515,25 @@ class CreateDataFrameResponse(_message.Message):
     def __init__(self, queryId: _Optional[str] = ...) -> None: ...
 
 class ProjectionOnDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId", "field")
+    __slots__ = ("queryId", "dataframeNumber", "sessionId", "engineIP", "field")
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     FIELD_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     dataframeNumber: int
     sessionId: str
+    engineIP: str
     field: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ..., field: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ProjectionOnDataFrameResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
-class ColumnAliasOnDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId", "columnAliasMap")
-    class ColumnAliasMapEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: str
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
-    QUERYID_FIELD_NUMBER: _ClassVar[int]
-    DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
-    SESSIONID_FIELD_NUMBER: _ClassVar[int]
-    COLUMNALIASMAP_FIELD_NUMBER: _ClassVar[int]
-    queryId: str
-    dataframeNumber: int
-    sessionId: str
-    columnAliasMap: _containers.ScalarMap[str, str]
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., columnAliasMap: _Optional[_Mapping[str, str]] = ...) -> None: ...
-
-class ColumnAliasOnDataFrameResponse(_message.Message):
-    __slots__ = ()
-    def __init__(self) -> None: ...
-
 class AggregateOnDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId", "aggregateFunctionMap", "groupBy")
+    __slots__ = ("queryId", "dataframeNumber", "sessionId", "engineIP", "aggregateFunctionMap", "groupBy")
     class AggregateFunctionMapEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -563,37 +544,41 @@ class AggregateOnDataFrameRequest(_message.Message):
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     AGGREGATEFUNCTIONMAP_FIELD_NUMBER: _ClassVar[int]
     GROUPBY_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     dataframeNumber: int
     sessionId: str
+    engineIP: str
     aggregateFunctionMap: _containers.ScalarMap[str, AggregateFunction]
     groupBy: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., aggregateFunctionMap: _Optional[_Mapping[str, AggregateFunction]] = ..., groupBy: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ..., aggregateFunctionMap: _Optional[_Mapping[str, AggregateFunction]] = ..., groupBy: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class AggregateOnDataFrameResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
 class FilterOnDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId", "whereClause")
+    __slots__ = ("queryId", "dataframeNumber", "sessionId", "engineIP", "whereClause")
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     WHERECLAUSE_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     dataframeNumber: int
     sessionId: str
+    engineIP: str
     whereClause: str
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., whereClause: _Optional[str] = ...) -> None: ...
+    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ..., whereClause: _Optional[str] = ...) -> None: ...
 
 class FilterOnDataFrameResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
 class OrderByOnDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId", "orderByFieldMap")
+    __slots__ = ("queryId", "dataframeNumber", "sessionId", "engineIP", "orderByFieldMap")
     class OrderByFieldMapEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -604,52 +589,60 @@ class OrderByOnDataFrameRequest(_message.Message):
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     ORDERBYFIELDMAP_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     dataframeNumber: int
     sessionId: str
+    engineIP: str
     orderByFieldMap: _containers.ScalarMap[str, SortDirection]
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., orderByFieldMap: _Optional[_Mapping[str, SortDirection]] = ...) -> None: ...
+    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ..., orderByFieldMap: _Optional[_Mapping[str, SortDirection]] = ...) -> None: ...
 
 class OrderByOnDataFrameResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
 class LimitOnDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId", "fetchLimit")
+    __slots__ = ("queryId", "dataframeNumber", "sessionId", "engineIP", "fetchLimit")
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     FETCHLIMIT_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     dataframeNumber: int
     sessionId: str
+    engineIP: str
     fetchLimit: int
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., fetchLimit: _Optional[int] = ...) -> None: ...
+    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ..., fetchLimit: _Optional[int] = ...) -> None: ...
 
 class LimitOnDataFrameResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
 class ExecuteDataFrameRequest(_message.Message):
-    __slots__ = ("queryId", "dataframeNumber", "sessionId")
+    __slots__ = ("queryId", "dataframeNumber", "sessionId", "engineIP")
     QUERYID_FIELD_NUMBER: _ClassVar[int]
     DATAFRAMENUMBER_FIELD_NUMBER: _ClassVar[int]
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     queryId: str
     dataframeNumber: int
     sessionId: str
-    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ...) -> None: ...
+    engineIP: str
+    def __init__(self, queryId: _Optional[str] = ..., dataframeNumber: _Optional[int] = ..., sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ...) -> None: ...
 
 class ExecuteDataFrameResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
 class DropUserContextRequest(_message.Message):
-    __slots__ = ("sessionId",)
+    __slots__ = ("sessionId", "engineIP")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    ENGINEIP_FIELD_NUMBER: _ClassVar[int]
     sessionId: str
-    def __init__(self, sessionId: _Optional[str] = ...) -> None: ...
+    engineIP: str
+    def __init__(self, sessionId: _Optional[str] = ..., engineIP: _Optional[str] = ...) -> None: ...
 
 class DropUserContextResponse(_message.Message):
     __slots__ = ()
