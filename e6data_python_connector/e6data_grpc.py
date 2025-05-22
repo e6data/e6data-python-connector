@@ -188,6 +188,8 @@ class Connection(object):
         self.cluster_uuid = cluster_uuid
         self._session_id = None
         self._host = host
+        # engine ip for stickiness
+        self._engine_ip = None
         self._port = port
 
         self._secure_channel = secure
@@ -329,6 +331,7 @@ class Connection(object):
                                 metadata=_get_grpc_header(cluster=self.cluster_uuid)
                             )
                             self._session_id = authenticate_response.sessionId
+                            self._engine_ip = authenticate_response.engineIP
                         else:
                             raise e
                     else:
@@ -541,25 +544,23 @@ class Connection(object):
         return Cursor(self, database=db_name, catalog_name=catalog_name)
 
     def load_parquet(self, parquet_path) -> "DataFrame":
-        dataframe = DataFrame(
-            self,
-            file_path=parquet_path,
-            dataframe_number=self._dataframe_session.get_dataframe_number,
-            table_name=None
-        )
+        dataframe = DataFrame(self,
+                              file_path=parquet_path,
+                              dataframe_number=self._dataframe_session.get_dataframe_number,
+                              table_name=None,
+                              engine_ip=self._engine_ip)
 
         self._dataframe_session.update_dataframe_map(dataframe=dataframe)
         return dataframe
 
     def load_table(self, table_name, database = None, catalog = None) -> "DataFrame":
-        dataframe = DataFrame(
-            self,
-            file_path=None,
-            dataframe_number=self._dataframe_session.get_dataframe_number,
-            table_name=table_name,
-            database=database,
-            catalog=catalog
-        )
+        dataframe = DataFrame(self,
+                              file_path=None,
+                              dataframe_number=self._dataframe_session.get_dataframe_number,
+                              table_name=table_name,
+                              engine_ip=self._engine_ip,
+                              database=database,
+                              catalog=catalog)
 
         self._dataframe_session.update_dataframe_map(dataframe=dataframe)
         return dataframe
@@ -1069,15 +1070,15 @@ class Cursor(DBAPICursor):
 
 class DataFrame:
 
-    def __init__(self, connection: Connection, file_path, dataframe_number, table_name, database = None, catalog = None):
+    def __init__(self, connection: Connection, file_path, dataframe_number, table_name, engine_ip, database = None, catalog = None):
         self._dataframe_number = dataframe_number
         self._connection = connection
         self._catalog = self._connection.catalog_name if catalog is None else catalog
         self._database = self._connection.database if database is None else database
         self._table_name = table_name
         self._file_path = file_path
-        self._engine_ip = connection.host
         self._sessionId = connection.get_session_id
+        self._engine_ip = engine_ip
         self._is_metadata_updated = False
         self._query_id = None
         self._data = None
@@ -1113,6 +1114,7 @@ class DataFrame:
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
+            engineIP=self._engine_ip,
             field=projection_fields
         )
 
@@ -1146,6 +1148,7 @@ class DataFrame:
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
+            engineIP=self._engine_ip,
             aggregateFunctionMap=agg_function_map,
             groupBy=group_by
         )
@@ -1160,6 +1163,7 @@ class DataFrame:
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
+            engineIP=self._engine_ip,
             whereClause=where_clause
         )
 
@@ -1180,6 +1184,7 @@ class DataFrame:
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
+            engineIP=self._engine_ip,
             orderByFieldMap=order_by_map
         )
 
@@ -1192,6 +1197,7 @@ class DataFrame:
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
             sessionId=self._sessionId,
+            engineIP=self._engine_ip,
             fetchLimit=fetch_limit
         )
 
@@ -1208,7 +1214,8 @@ class DataFrame:
         execute_dataframe_request = e6x_engine_pb2.ExecuteDataFrameRequest(
             queryId=self._query_id,
             dataframeNumber=self._dataframe_number,
-            sessionId=self._sessionId
+            sessionId=self._sessionId,
+            engineIP=self._engine_ip,
         )
         client.executeDataFrame(execute_dataframe_request)
 
@@ -1255,11 +1262,13 @@ class DataFrame:
         return rows
 
 class DataFrameSession:
-    def __init__(self, connection: Connection):
+    def __init__(self, connection: Connection, planner_ip):
         self._connection = connection
         self._dataframe_count = 0
         self._dataframe_map = dict()
         self._is_terminated = False
+        self._session_id = connection.get_session_id
+        self._planner_ip = planner_ip
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.terminate()
@@ -1276,10 +1285,15 @@ class DataFrameSession:
     def is_terminated(self) -> bool:
         return self._is_terminated
 
+    @property
+    def planner_ip(self):
+        return self._planner_ip
+
     def terminate(self):
         if not self._is_terminated:
             drop_user_context_request = e6x_engine_pb2.DropUserContextRequest(
-                sessionId=self._connection.get_session_id
+                sessionId=self._session_id,
+                engineIP=self._planner_ip
             )
 
             self._connection.client.dropUserContext(drop_user_context_request)

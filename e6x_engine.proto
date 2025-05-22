@@ -174,8 +174,12 @@ message AuthenticateRequest{
   string  password = 2;
 }
 
+// passing session IP as a session and session objects are local to planner
+// session is per connection not per statement
+// so to maintain stickiness in planner we will send session and the planner IP from which session is created
 message AuthenticateResponse{
   string  sessionId = 1;
+  string  engineIP = 2;
 }
 
 message GetTablesRequest{
@@ -321,28 +325,20 @@ message ProjectionOnDataFrameRequest
   string queryId = 1;
   int32 dataframeNumber = 2;
   string sessionId = 3;
-  repeated string field = 4;
+  string engineIP = 4;
+  repeated string field = 5;
 }
 
 message ProjectionOnDataFrameResponse {}
-
-message ColumnAliasOnDataFrameRequest
-{
-  string queryId = 1;
-  int32 dataframeNumber = 2;
-  string sessionId = 3;
-  map<string, string> columnAliasMap = 4;
-}
-
-message ColumnAliasOnDataFrameResponse {}
 
 message AggregateOnDataFrameRequest
 {
   string queryId = 1;
   int32 dataframeNumber = 2;
   string sessionId = 3;
-  map<string, AggregateFunction> aggregateFunctionMap = 4;
-  repeated string groupBy = 5;
+  string engineIP = 4;
+  map<string, AggregateFunction> aggregateFunctionMap = 5;
+  repeated string groupBy = 6;
 }
 
 enum AggregateFunction
@@ -360,7 +356,8 @@ message FilterOnDataFrameRequest
   string queryId = 1;
   int32 dataframeNumber = 2;
   string sessionId = 3;
-  string whereClause = 4;
+  string engineIP = 4;
+  string whereClause = 5;
 }
 
 message FilterOnDataFrameResponse {}
@@ -376,7 +373,8 @@ message OrderByOnDataFrameRequest
   string queryId = 1;
   int32 dataframeNumber = 2;
   string sessionId = 3;
-  map<string, SortDirection> orderByFieldMap = 4;
+  string engineIP = 4;
+  map<string, SortDirection> orderByFieldMap = 5;
 }
 
 message OrderByOnDataFrameResponse {}
@@ -386,7 +384,8 @@ message LimitOnDataFrameRequest
   string queryId = 1;
   int32 dataframeNumber = 2;
   string sessionId = 3;
-  int32 fetchLimit = 4;
+  string engineIP = 4;
+  int32 fetchLimit = 5;
 }
 
 message LimitOnDataFrameResponse {}
@@ -396,6 +395,7 @@ message ExecuteDataFrameRequest
   string queryId = 1;
   int32 dataframeNumber = 2;
   string sessionId = 3;
+  string engineIP = 4;
 }
 
 message ExecuteDataFrameResponse {}
@@ -403,6 +403,7 @@ message ExecuteDataFrameResponse {}
 message DropUserContextRequest
 {
     string sessionId = 1;
+    string engineIP = 2;
 }
 
 message DropUserContextResponse {}
