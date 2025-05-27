@@ -47,7 +47,7 @@ The `Connection` class represents an open connection to the database.
 | `host`                 | `string`  | IP address or hostname of the e6Data cluster.                                                                |
 | `port`                 | `int`     | Port number for the gRPC service (e.g., `80`, `443`).                                                        |
 | `username`             | `string`  | User's email for authentication.                                                                             |
-| `password`             | `string`  | Authentication token obtained from the console.                                                              |
+| `password`             | `string`  | Personal Access Token for authentication obtained from the e6data dashboard.                                 |
 | `catalog`              | `string`  | The catalog name for accessing metadata.                                                                     |
 | `database`             | `string`  | Database to query.                                                                                           |
 | `secure`               | `bool`    | Whether to use gRPC secure channel (SSL). Defaults to `False`.                                               |
