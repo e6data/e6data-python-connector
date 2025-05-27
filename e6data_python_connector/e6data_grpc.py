@@ -142,7 +142,7 @@ class Connection(object):
             database: str = None,
             cluster_uuid: str = None,
             secure: bool = False,
-            auto_resume: bool = False,
+            auto_resume: bool = True,
             grpc_options: dict = None,
     ):
         """

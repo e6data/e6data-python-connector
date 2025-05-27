@@ -12,16 +12,20 @@ logging.basicConfig(level=logging.DEBUG)
 
 class TestE6X(TestCase):
     def setUp(self) -> None:
-        self._host = "127.0.0.1"
-        self._database = "tpcds_1000"
-        self.catalog_name = 'perfhive'
+        self._host = os.environ.get('ENGINE_IP')
+        self._database = os.environ.get('DB_NAME')
+        self._email = os.environ.get('EMAIL')
+        self._password = os.environ.get('PASSWORD')
+        self._catalog_name = os.environ.get('CATALOG')
+        self._port = int(os.environ.get('PORT', 80))
         logging.debug('Trying to connect to engine host {}, database {}.'.format(self._host, self._database))
         self.e6x_connection = Connection(
             host=self._host,
-            port=4000,
-            username='shubham@e6x.io',
+            port=self._port,
+            username=self._email,
             database=self._database,
-            password='w3aSShTYPGt12Z8QuCXcxuAggKB4INyEzDwg1WFj0THDgJRMuwryt5dt',
+            password=self._password,
+            catalog=self._catalog_name
         )
         logging.debug('Successfully to connect to engine.')
 
@@ -35,7 +39,7 @@ class TestE6X(TestCase):
     def test_query_1(self):
         sql = 'select 1'
         logging.debug('Executing query: {}'.format(sql))
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
         self.assertIsNotNone(query_id)
@@ -47,7 +51,7 @@ class TestE6X(TestCase):
     def test_query_2(self):
         sql = "select timestamp_add('year',2,current_date())"
         logging.debug('Executing query: {}'.format(sql))
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
         self.assertIsNotNone(query_id)
@@ -59,7 +63,7 @@ class TestE6X(TestCase):
     def test_query_3_fetch_one(self):
         sql = "select * from date_dim limit 3"
         logging.debug('Executing query: {}'.format(sql))
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
         self.assertIsNotNone(query_id)
@@ -71,7 +75,7 @@ class TestE6X(TestCase):
     def test_query_4_fetch_many(self):
         sql = "select * from date_dim limit 3"
         logging.debug('Executing query: {}'.format(sql))
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
         self.assertIsNotNone(query_id)
@@ -91,7 +95,7 @@ class TestE6X(TestCase):
         sql = "select * from date_dim limit 3"
         logging.debug('Executing query: {}'.format(sql))
         # self.e6x_connection.set_or_update_caches(True)
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         logging.debug('Query Id {}'.format(query_id))
         self.assertIsNotNone(query_id)
@@ -108,7 +112,7 @@ class TestE6X(TestCase):
     def test_query_6_explain_analyse(self):
         sql = "select * from date_dim limit 3"
         logging.debug('Executing query: {}'.format(sql))
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         cursor.explain_analyse()
         self.e6x_connection.close()
@@ -116,7 +120,7 @@ class TestE6X(TestCase):
     def test_query_7_explain(self):
         sql = "select * from date_dim limit 3"
         logging.debug('Executing query: {}'.format(sql))
-        cursor = self.e6x_connection.cursor(catalog_name=self.catalog_name)
+        cursor = self.e6x_connection.cursor()
         query_id = cursor.execute(sql)
         cursor.explain()
         self.e6x_connection.close()
