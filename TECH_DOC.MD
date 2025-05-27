@@ -77,15 +77,12 @@ A `Cursor` facilitates query execution and data fetching. Cursors are bound to a
 ### **Execution Lifecycle**
 1. **Initialization**:
    - Establishes a gRPC channel (secure or non-secure) during connection initialization. Options such as timeouts and keepalives affect setup time.
-   - _Estimated Wall Time_: ~100ms, depending on network conditions.
 
 2. **Authentication**:
    - Authenticates via gRPC by passing `username` and `password`.
-   - _Execution Time_: ~300ms–800ms.
 
 3. **Prepare Statement**:
    - Queries are sent via `prepareStatement` API for compilation before execution.
-   - _Execution Time_: Varies with query complexity (average: 100ms–1s).
 
 4. **Query Execution**:
    - Executes the prepared query with IDs and retrieves data.
@@ -98,7 +95,7 @@ A `Cursor` facilitates query execution and data fetching. Cursors are bound to a
 
 ### **Best Practices to Minimize Execution Times**
 - **Enable Query Caching**:
-  Use gRPC cache settings to reduce repeated query times (saves ~20ms–200ms for subsequent executions).
+  Use gRPC cache settings to reduce repeated query times.
   
 - **Limit Result Sets**:
   Use `LIMIT` clauses during queries to avoid fetching unnecessary data.
@@ -253,6 +250,123 @@ The connector includes robust error handling mechanisms, with retry logic for co
    Ensure that `explain_analyse` produces correct and useful insights regarding query execution.
 
 ---
+
+### Improving Performance using Python 3.12 or Latest
+
+To improve the performance of the `e6Data Python Connector` and ensure compatibility with state-of-the-art features, it is recommended to use Python 3.12 (or the latest stable version). Below are the enhancements in Python 3.12 that can benefit the connector:
+
+---
+
+### **Key Benefits of Using Python 3.12+**
+
+1. **Faster Startup Time**:
+   - Python 3.12 introduces enhanced interpreter internals, reducing startup times for processes, which is beneficial for short-lived connections or scripts.
+
+2. **Improved Performance of `cpython`**:
+   - Optimized execution of imported modules and object handling.
+   - Faster `for` loops and tighter memory management, which significantly impacts iterative data fetching methods like `fetchmany` or `fetchall`.
+
+3. **Better Memory Usage**:
+   - Python 3.12 has improvements in memory allocation for frequently created objects, which can reduce overhead during large query-handling operations.
+
+4. **Support for the `perf` Module**:
+   - Python 3.12 introduces better compatibility with debugging and performance profiling libraries like `perf`. Using this module, you can precisely measure the performance of the connector and identify bottlenecks.
+
+5. **Typing Enhancements**:
+   - Enhanced type annotations allow you to write cleaner, more optimized code if you extend or interact with the connector in custom applications.
+
+6. **Improved Error Tracing**:
+   - The new traceback system provides better visibility into exceptions. This can lead to faster debugging when encountering issues such as query failures or connection problems.
+
+---
+
+### **Best Practices To Leverage Python 3.12 (or Latest)**
+
+1. **Use Faster Built-in Functions**:
+   - Python 3.12's built-in functions now execute more efficiently. Functions like `len()`, `max()`, and `min()` are faster. Use these directly during logic implementation.
+
+2. **Enable Adaptive Specialization**:
+   - Turn on optimizations available in Python 3.12 by using runtime flags:
+```shell script
+python3.12 -X adaptive
+```
+
+
+3. **Use Robust Async Functionality**:
+   - For better async handling (e.g., with large data transfers), Python 3.12 introduces internals that speed up `asyncio` operations, especially useful in gRPC async calls.
+
+4. **Upgraded Garbage Collection**:
+   - Python 3.12 reduces the overhead of garbage collection by improving the cleanup of short-lived objects. For large datasets or batch operations, this helps reduce memory usage.
+
+5. **Leverage New PEP Features**:
+   - Python 3.12 includes additional PEP compliance, such as [PEP 709 (Inlined Comprehensions)], which can make code execution for list comprehensions faster:
+```python
+   # Starting Python 3.12 – optimizations are now inline without manual intervention.
+   data_rows = [process(row) for row in cursor.fetchall()]
+```
+
+
+---
+
+### **Recommendations for Transition**
+
+1. **Upgrade Environment**:
+   - Ensure your Python environment uses the latest stable version of Python 3.12 or above. Use `virtualenv` to isolate the upgraded environment.
+```shell script
+python3.12 -m venv venv
+   source venv/bin/activate
+```
+
+
+2. **Rebuild Dependencies**:
+   - Re-install the connector using an updated Python version to ensure compatibility. Test for warnings or deprecations after upgrading:
+```shell script
+pip install --upgrade .
+```
+
+
+3. **Configure gRPC for Compatibility**:
+   - Use Python 3.12's updated `multiprocessing` and `asyncio` support to handle concurrent requests more efficiently. This helps maintain stable performance during multiple gRPC transactions.
+
+4. **Monitor and Profile**:
+   - Use Python 3.12's enhanced debugging and profiling tools (e.g., `perf` or `time.perf_counter()`) to measure performance improvements:
+```python
+import time
+
+start = time.perf_counter()
+cursor.fetchall()
+end = time.perf_counter()
+print(f"Fetch Time: {end - start}")
+```
+
+
+---
+
+### **Testing Performance with Python 3.12**
+
+1. **Benchmark Handling of Large Data**:
+   - Test bulk fetches and analyze memory usage to ensure Python 3.12 optimizations are applied:
+```python
+test_data = cursor.fetchmany(10000)
+assert isinstance(test_data, list)
+```
+
+
+2. **Concurrency Validation**:
+   - Measure performance during concurrent queries. Python 3.12's `asyncio` features shine here when handling large datasets:
+```python
+import asyncio
+
+async def fetch_data():
+    await cursor.execute_async("SELECT * FROM large_table LIMIT 100")
+
+asyncio.run(fetch_data())
+```
+
+
+With Python 3.12's adaptive optimizations, your application can achieve better memory utilization, faster data processing, and smoother user experience overall for `e6Data` Python Connector-based solutions.
+
+----
 
 ## **Summary**
 
