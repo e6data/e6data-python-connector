@@ -301,8 +301,8 @@ python3.12 -X adaptive
 5. **Leverage New PEP Features**:
    - Python 3.12 includes additional PEP compliance, such as [PEP 709 (Inlined Comprehensions)], which can make code execution for list comprehensions faster:
 ```python
-   # Starting Python 3.12 – optimizations are now inline without manual intervention.
-   data_rows = [process(row) for row in cursor.fetchall()]
+# Starting Python 3.12 – optimizations are now inline without manual intervention.
+data_rows = [process(row) for row in cursor.fetchall()]
 ```
 
 
@@ -314,7 +314,7 @@ python3.12 -X adaptive
    - Ensure your Python environment uses the latest stable version of Python 3.12 or above. Use `virtualenv` to isolate the upgraded environment.
 ```shell script
 python3.12 -m venv venv
-   source venv/bin/activate
+source venv/bin/activate
 ```
 
 
