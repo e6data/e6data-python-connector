@@ -142,7 +142,7 @@ class Connection(object):
             database: str = None,
             cluster_uuid: str = None,
             secure: bool = False,
-            auto_resume: bool = False,
+            auto_resume: bool = True,
             grpc_options: dict = None,
     ):
         """
@@ -198,6 +198,12 @@ class Connection(object):
         if self._grpc_options is None:
             self._grpc_options = dict()
         self.grpc_prepare_timeout = self._grpc_options.get('grpc_prepare_timeout') or 10 * 60  # 10 minutes
+        self.grpc_auto_resume_timeout_seconds = 60 * 5  # 5 minutes
+        if 'grpc_auto_resume_timeout_seconds' in self._grpc_options:
+            """
+            The default maximum time on client side to wait for the cluster to resume is 5 minutes.
+            """
+            self.grpc_auto_resume_timeout_seconds = self._grpc_options.pop('grpc_auto_resume_timeout_seconds')
         self._create_client()
 
     @property
@@ -305,7 +311,8 @@ class Connection(object):
                             user=self.__username,
                             password=self.__password,
                             secure_channel=self._secure_channel,
-                            cluster_uuid=self.cluster_uuid
+                            cluster_uuid=self.cluster_uuid,
+                            timeout=self.grpc_auto_resume_timeout_seconds
                         ).resume()
                         if status:
                             authenticate_request = e6x_engine_pb2.AuthenticateRequest(

@@ -14,14 +14,19 @@ class TestE6X(TestCase):
     def setUp(self) -> None:
         self._host = os.environ.get('ENGINE_IP')
         self._database = os.environ.get('DB_NAME')
+        self._email = os.environ.get('EMAIL')
+        self._password = os.environ.get('PASSWORD')
+        self._catalog = os.environ.get('CATALOG')
+        self._port = int(os.environ.get('PORT', 80))
         self.e6x_connection = None
         logging.debug('Trying to connect to engine host {}, database {}.'.format(self._host, self._database))
         self.e6x_connection = Connection(
             host=self._host,
-            port=9000,
-            username='vishal@e6x.io',
+            port=self._port,
+            username=self._email,
             database=self._database,
-            password='75cei^%$TREdgfhU&T^RTYDrchfgvjy65dhcgf',
+            password=self._password,
+            catalog=self._catalog
         )
         logging.debug('Successfully to connect to engine.')
 
