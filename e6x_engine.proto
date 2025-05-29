@@ -174,8 +174,12 @@ message AuthenticateRequest{
   string  password = 2;
 }
 
+// passing session IP as a session and session objects are local to planner
+// session is per connection not per statement
+// so to maintain stickiness in planner we will send session and the planner IP from which session is created
 message AuthenticateResponse{
   string  sessionId = 1;
+  string  engineIP = 2;
 }
 
 message GetTablesRequest{
@@ -297,6 +301,113 @@ message ClearOrCancelQueryRequest{
 message ClearOrCancelQueryResponse{
 }
 
+// DataFrame
+
+message CreateDataFrameRequest
+{
+  string parquetFilePath = 1;
+  string catalog = 2;
+  string schema = 3;
+  string table = 4;
+  string sessionId = 5;
+  string engineIP = 6;
+  int32 dataframeNumber = 7;
+  bool createFromParquet = 8;
+}
+
+message CreateDataFrameResponse
+{
+  string queryId = 1;
+}
+
+message ProjectionOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  repeated string field = 5;
+}
+
+message ProjectionOnDataFrameResponse {}
+
+message AggregateOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  map<string, AggregateFunction> aggregateFunctionMap = 5;
+  repeated string groupBy = 6;
+}
+
+enum AggregateFunction
+{
+  SUM = 0;
+  COUNT = 1;
+  COUNT_STAR = 2;
+  COUNT_DISTINCT = 3;
+}
+
+message AggregateOnDataFrameResponse {}
+
+message FilterOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  string whereClause = 5;
+}
+
+message FilterOnDataFrameResponse {}
+
+enum SortDirection
+{
+  ASC = 0;
+  DESC = 1;
+}
+
+message OrderByOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  map<string, SortDirection> orderByFieldMap = 5;
+}
+
+message OrderByOnDataFrameResponse {}
+
+message LimitOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  int32 fetchLimit = 5;
+}
+
+message LimitOnDataFrameResponse {}
+
+message ExecuteDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+}
+
+message ExecuteDataFrameResponse {}
+
+message DropUserContextRequest
+{
+    string sessionId = 1;
+    string engineIP = 2;
+}
+
+message DropUserContextResponse {}
+
 service QueryEngineService {
   rpc clear(ClearRequest) returns (ClearResponse);
 
@@ -355,4 +466,22 @@ service QueryEngineService {
   rpc getNextRemoteCachedChunk(RemoteChunkRequest) returns (RemoteChunkResponse);
 
   rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
+
+  // dataframe
+
+  rpc createDataFrame(CreateDataFrameRequest) returns (CreateDataFrameResponse);
+
+  rpc projectionOnDataFrame(ProjectionOnDataFrameRequest) returns (ProjectionOnDataFrameResponse);
+
+  rpc aggregateOnDataFrame(AggregateOnDataFrameRequest) returns (AggregateOnDataFrameResponse);
+
+  rpc filterOnDataFrame(FilterOnDataFrameRequest) returns (FilterOnDataFrameResponse);
+
+  rpc orderByOnDataFrame(OrderByOnDataFrameRequest) returns (OrderByOnDataFrameResponse);
+
+  rpc limitOnDataFrame(LimitOnDataFrameRequest) returns (LimitOnDataFrameResponse);
+
+  rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
+
+  rpc dropUserContext(DropUserContextRequest) returns (DropUserContextResponse);
 }
