@@ -327,7 +327,7 @@ pip install --upgrade .
 
 
 3. **Configure gRPC for Compatibility**:
-   - Use Python 3.12's updated `multiprocessing` and `asyncio` support to handle concurrent requests more efficiently. This helps maintain stable performance during multiple gRPC transactions.
+   - Use Python 3.12's updated `multithreading` and `multiprocessing` support to handle concurrent requests more efficiently. This helps maintain stable performance during multiple gRPC transactions.
 
 4. **Monitor and Profile**:
    - Use Python 3.12's enhanced debugging and profiling tools (e.g., `perf` or `time.perf_counter()`) to measure performance improvements:
