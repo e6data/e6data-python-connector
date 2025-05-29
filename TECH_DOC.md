@@ -38,7 +38,7 @@ This documentation covers technical details of the connector, including architec
 
 ## **Components and Interfaces**
 
-### **1. Connection Object**
+### **Connection Object**
 The `Connection` class represents an open connection to the database.  
 
 #### **Parameters**
@@ -55,20 +55,21 @@ The `Connection` class represents an open connection to the database.
 
 ---
 
-### **2. Cursor Object**
+### **Cursor Object**
 A `Cursor` facilitates query execution and data fetching. Cursors are bound to a `Connection` object and are not isolated, meaning that changes in a cursor are immediately visible to others.
 
 #### **Key Methods**
-| Method                     | Description                                                                                                         |
-|----------------------------|---------------------------------------------------------------------------------------------------------------------|
-| `execute(sql, params)`     | Executes a SQL statement. Supports parameterized queries.                                                           |
-| `fetchone()`               | Fetches a single row from the query result.                                                                         |
-| `fetchmany(size=N)`        | Fetches `N` rows from the result.                                                                                   |
-| `fetchall()`               | Fetches all rows from the query result. Useful for small datasets.                                                  |
-| `explain_analyse()`        | Provides runtime statistics and query metrics such as parsing time, queuing time, etc.                              |
-| `get_tables()`             | Lists all tables in the current database.                                                                           |
-| `get_columns()`            | Lists column metadata for a given table.                                                                            |
-| `clear()`                  | Clears cached results of the previous query to free memory.                                                         |
+| Method                     | Description                                                                            |
+|----------------------------|----------------------------------------------------------------------------------------|
+| `execute(sql, params)`     | Executes a SQL statement. Supports parameterized queries.                              |
+| `fetchone()`               | Fetches a single row from the query result.                                            |
+| `fetchmany(size=N)`        | Fetches `N` rows from the result.                                                      |
+| `fetchall()`               | Fetches all rows from the query result. Useful for small datasets.                     |
+| `fetchall_buffer()`        | Fetches all rows from the query result. Useful for large datasets.                     |
+| `explain_analyse()`        | Provides runtime statistics and query metrics such as parsing time, queuing time, etc. |
+| `get_tables()`             | Lists all tables in the current database.                                              |
+| `get_columns()`            | Lists column metadata for a given table.                                               |
+| `clear()`                  | Clears cached results of the previous query to free memory.                            |
 
 ---
 
@@ -121,6 +122,7 @@ The parameter accepts a dictionary that allows users to control behavior and con
 | **`http2.max_pings_without_data`** | `0` | Number of pings that can be sent without data. `0` means unlimited pings. |
 | **`http2.min_time_between_pings_ms`** | `15000ms` (15 seconds) | Minimum interval between consecutive pings to verify connection status. |
 | **`http2.min_ping_interval_without_data_ms`** | `15000ms` (15 seconds) | Interval between pings sent without any data being exchanged. |
+
 #### **Use Case Scenarios**
 Here are some practical examples of how the gRPC options can be configured to address specific scenarios:
 1. **Handling Large Query Results**: When returning large datasets, configure the limits for transmitted message sizes to prevent errors or connection resets.
@@ -178,7 +180,7 @@ The merged configuration ensures all user-defined parameters override the defaul
 
 ---
 
-#### **What is `pyformat`?**
+### **What is `pyformat`?**
 The `pyformat` parameter style is a method to include parameters in SQL queries using a Python-specific formatting style. It is one of the five parameter styles recommended by [PEP-249](https://peps.python.org/pep-0249/) for database interactions. This approach is particularly useful for writing parameterized queries that prevent SQL injection and improve code readability.
 `pyformat` uses **named placeholders** as parameters, which are represented in the SQL query with the syntax. `%(name)s`
 #### **Examples of `pyformat` SQL Queries**
@@ -255,7 +257,6 @@ The connector includes robust error handling mechanisms, with retry logic for co
 
 To improve the performance of the `e6Data Python Connector` and ensure compatibility with state-of-the-art features, it is recommended to use Python 3.12 (or the latest stable version). Below are the enhancements in Python 3.12 that can benefit the connector:
 
----
 
 ### **Key Benefits of Using Python 3.12+**
 
@@ -339,28 +340,15 @@ end = time.perf_counter()
 print(f"Fetch Time: {end - start}")
 ```
 
-
 ---
 
 ### **Testing Performance with Python 3.12**
 
-1. **Benchmark Handling of Large Data**:
+**Benchmark Handling of Large Data**:
    - Test bulk fetches and analyze memory usage to ensure Python 3.12 optimizations are applied:
 ```python
 test_data = cursor.fetchmany(10000)
 assert isinstance(test_data, list)
-```
-
-
-2. **Concurrency Validation**:
-   - Measure performance during concurrent queries. Python 3.12's `asyncio` features shine here when handling large datasets:
-```python
-import asyncio
-
-async def fetch_data():
-    await cursor.execute_async("SELECT * FROM large_table LIMIT 100")
-
-asyncio.run(fetch_data())
 ```
 
 
