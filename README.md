@@ -4,7 +4,7 @@
 
 ## Introduction
 
-The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations.
+The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations. It includes automatic support for blue-green deployments, ensuring seamless failover during server updates without query interruption.
 
 ### Dependencies
 Make sure to install below dependencies and wheel before install e6data-python-connector.
@@ -203,3 +203,24 @@ cursor.clear()
 cursor.close()
 conn.close()
 ```
+
+## Advanced Features
+
+### Blue-Green Deployment Support
+
+The connector automatically handles blue-green deployments on the server side:
+
+- **Automatic Strategy Detection**: Detects active deployment (blue/green) on connection
+- **Seamless Failover**: Switches strategies without interrupting running queries
+- **Zero Configuration**: No code changes required in your application
+- **Thread-Safe**: Works correctly in multi-threaded and multi-process environments
+
+For detailed information, see [BLUE_GREEN_STRATEGY.md](BLUE_GREEN_STRATEGY.md).
+
+### Performance Optimization
+
+- Use `fetchall_buffer()` for memory-efficient large result sets
+- Configure gRPC options for optimal network performance
+- Enable connection pooling for better resource utilization
+
+See [TECH_DOC.md](TECH_DOC.md) for detailed technical documentation.
