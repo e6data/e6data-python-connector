@@ -38,7 +38,7 @@ sleep 3
 # Check if server is running
 if ! kill -0 $SERVER_PID 2>/dev/null; then
     echo "Error: Mock server failed to start"
-    echo "Please check if port 50051 is available"
+    echo "Please check if port 50052 is available"
     exit 1
 fi
 

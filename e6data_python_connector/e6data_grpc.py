@@ -17,7 +17,6 @@ from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 import threading
 import multiprocessing
-import os
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -159,8 +158,9 @@ def _get_active_strategy():
         shared_strategy = _get_shared_strategy()
         current_time = time.time()
         # Check if strategy is cached and not expired
-        if (shared_strategy['active_strategy'] is not None and 
-            current_time - shared_strategy['last_check_time'] < STRATEGY_CACHE_TIMEOUT):
+        # if (shared_strategy['active_strategy'] is not None and
+        #     current_time - shared_strategy['last_check_time'] < STRATEGY_CACHE_TIMEOUT):
+        if shared_strategy['active_strategy'] is not None:
             return shared_strategy['active_strategy']
         return None
 
@@ -209,6 +209,7 @@ def _apply_pending_strategy():
 
 def _register_query_strategy(query_id, strategy):
     """Register the strategy used for a specific query."""
+    print('_register_query_strategy', query_id, strategy, _get_shared_strategy())
     if not query_id or not strategy:
         return
     with _strategy_lock:
@@ -220,12 +221,13 @@ def _register_query_strategy(query_id, strategy):
 
 def _get_query_strategy(query_id):
     """Get the strategy used for a specific query."""
+    current_active_strategy = _get_active_strategy()
     if not query_id:
-        return _get_active_strategy()
+        return current_active_strategy
     with _strategy_lock:
         shared_strategy = _get_shared_strategy()
         query_map = shared_strategy.get('query_strategy_map', {})
-        return query_map.get(query_id, _get_active_strategy())
+        return query_map.get(query_id, current_active_strategy)
 
 
 def _cleanup_query_strategy(query_id):
@@ -445,7 +447,7 @@ class Connection(object):
                         if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                             _set_pending_strategy(authenticate_response.new_strategy)
                     except _InactiveRpcError as e:
-                        if '456' in e.details() or 'status: 456' in e.details():
+                        if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                             # Strategy changed, clear cache and retry
                             _clear_strategy_cache()
                             active_strategy = None
@@ -459,7 +461,6 @@ class Connection(object):
                     
                     for strategy in strategies:
                         try:
-                            _logger.info(f"Trying authentication with strategy: {strategy}")
                             authenticate_response = self._client.authenticate(
                                 authenticate_request,
                                 metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=strategy)
@@ -474,9 +475,8 @@ class Connection(object):
                                     _set_pending_strategy(authenticate_response.new_strategy)
                                 break
                         except _InactiveRpcError as e:
-                            if '456' in e.details() or 'status: 456' in e.details():
+                            if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                                 # Wrong strategy, try the next one
-                                _logger.info(f"Strategy {strategy} failed with 456 error, trying next...")
                                 last_error = e
                                 continue
                             else:
@@ -1081,13 +1081,14 @@ class Cursor(DBAPICursor):
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
-            
+
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
                 _set_pending_strategy(prepare_statement_response.new_strategy)
             
             # Register this query with the current strategy
             current_strategy = _get_active_strategy()
+
             if current_strategy:
                 _register_query_strategy(self._query_id, current_strategy)
 
@@ -1100,7 +1101,7 @@ class Cursor(DBAPICursor):
                 execute_statement_request,
                 metadata=self.metadata
             )
-            
+
             # Check for new strategy in execute response
             if hasattr(execute_response, 'new_strategy') and execute_response.new_strategy:
                 _set_pending_strategy(execute_response.new_strategy)

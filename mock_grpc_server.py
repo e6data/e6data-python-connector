@@ -17,10 +17,7 @@ from io import BytesIO
 
 from e6data_python_connector.server import e6x_engine_pb2, e6x_engine_pb2_grpc
 from e6data_python_connector.datainputstream import DataInputStream
-from e6data_python_connector.typeId import (
-    TYPE_BOOLEAN, TYPE_LONG, TYPE_DOUBLE, TYPE_STRING, 
-    TYPE_TIMESTAMP, TYPE_INTERVAL_DAY_TIME, TYPE_DATE
-)
+from e6data_python_connector.typeId import TypeId
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -173,7 +170,7 @@ def create_mock_metadata(query_string):
         
         # Column info
         write_string(buffer, "value")  # column name
-        write_long(buffer, TYPE_LONG)  # column type
+        write_long(buffer, TypeId.BIGINT_TYPE)  # column type
     else:
         # Multi-column result
         write_long(buffer, 50)  # total row count
@@ -181,10 +178,10 @@ def create_mock_metadata(query_string):
         
         # Column info
         columns = [
-            ("id", TYPE_LONG),
-            ("name", TYPE_STRING),
-            ("amount", TYPE_DOUBLE),
-            ("created_at", TYPE_TIMESTAMP)
+            ("id", TypeId.BIGINT_TYPE),
+            ("name", TypeId.STRING_TYPE),
+            ("amount", TypeId.DOUBLE_TYPE),
+            ("created_at", TypeId.TIMESTAMP_TYPE)
         ]
         
         for col_name, col_type in columns:
@@ -589,8 +586,8 @@ def serve():
         MockQueryEngineService(), server
     )
     
-    # Listen on port 50051
-    port = 50051
+    # Listen on port 50052
+    port = 50052
     server.add_insecure_port(f'[::]:{port}')
     server.start()
     
