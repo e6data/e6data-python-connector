@@ -32,6 +32,7 @@ apilevel = '2.0'
 threadsafety = 2  # Threads may share the e6xdb and connections.
 paramstyle = 'pyformat'  # Python extended format codes, e.g. ...WHERE name=%(name)s
 
+logging.basicConfig(level=logging.DEBUG)
 _logger = logging.getLogger(__name__)
 
 _TIMESTAMP_PATTERN = re.compile(r'(\d+-\d+-\d+ \d+:\d+:\d+(\.\d{,6})?)')
@@ -127,7 +128,9 @@ _local_strategy_cache = {
     'active_strategy': None, 
     'last_check_time': 0,
     'pending_strategy': None,  # Strategy to use for next query
-    'query_strategy_map': {}   # Map of query_id to strategy used
+    'query_strategy_map': {},   # Map of query_id to strategy used
+    'last_transition_time': 0,  # Timestamp of last strategy transition
+    'session_invalidated': False  # Flag to invalidate all sessions
 }
 
 # Strategy cache timeout in seconds (5 minutes)
@@ -146,6 +149,8 @@ def _get_shared_strategy():
             _shared_strategy['last_check_time'] = 0
             _shared_strategy['pending_strategy'] = None
             _shared_strategy['query_strategy_map'] = _strategy_manager.dict()
+            _shared_strategy['last_transition_time'] = 0
+            _shared_strategy['session_invalidated'] = False
         return _shared_strategy
     except:
         # Fall back to thread-local storage if Manager fails
@@ -156,7 +161,7 @@ def _get_active_strategy():
     """Get the active deployment strategy (blue or green) from shared memory."""
     with _strategy_lock:
         shared_strategy = _get_shared_strategy()
-        current_time = time.time()
+        # current_time = time.time()
         # Check if strategy is cached and not expired
         # if (shared_strategy['active_strategy'] is not None and
         #     current_time - shared_strategy['last_check_time'] < STRATEGY_CACHE_TIMEOUT):
@@ -167,11 +172,25 @@ def _get_active_strategy():
 
 def _set_active_strategy(strategy):
     """Set the active deployment strategy in shared memory."""
+    if not strategy:
+        return
+    # Normalize strategy to lowercase and validate
+    normalized_strategy = strategy.lower()
+    if normalized_strategy not in ['blue', 'green']:
+        _logger.warning(f"Invalid strategy value: {strategy}. Must be 'blue' or 'green'.")
+        return
+    
     with _strategy_lock:
         shared_strategy = _get_shared_strategy()
-        shared_strategy['active_strategy'] = strategy
-        shared_strategy['last_check_time'] = time.time()
-        _logger.info(f"Active deployment strategy set to: {strategy}")
+        current_time = time.time()
+        
+        # Only update transition time if strategy actually changed
+        if shared_strategy['active_strategy'] != normalized_strategy:
+            shared_strategy['last_transition_time'] = current_time
+            
+        shared_strategy['active_strategy'] = normalized_strategy
+        shared_strategy['last_check_time'] = current_time
+        _logger.info(f"Active deployment strategy set to: {normalized_strategy}")
 
 
 def _clear_strategy_cache():
@@ -188,11 +207,19 @@ def _set_pending_strategy(strategy):
     """Set the pending strategy to be used for the next query."""
     if not strategy:
         return
+    # Normalize strategy to lowercase and validate
+    normalized_strategy = strategy.lower()
+    if normalized_strategy not in ['blue', 'green']:
+        _logger.warning(f"Invalid strategy value: {strategy}. Must be 'blue' or 'green'.")
+        return
+    
     with _strategy_lock:
         shared_strategy = _get_shared_strategy()
-        if strategy != shared_strategy['active_strategy']:
-            shared_strategy['pending_strategy'] = strategy
-            _logger.info(f"Pending deployment strategy set to: {strategy}")
+        current_active = shared_strategy['active_strategy']
+        
+        if normalized_strategy != current_active:
+            shared_strategy['pending_strategy'] = normalized_strategy
+            _logger.info(f"Pending deployment strategy set to: {normalized_strategy}")
 
 
 def _apply_pending_strategy():
@@ -201,21 +228,42 @@ def _apply_pending_strategy():
         shared_strategy = _get_shared_strategy()
         if shared_strategy['pending_strategy']:
             old_strategy = shared_strategy['active_strategy']
-            shared_strategy['active_strategy'] = shared_strategy['pending_strategy']
+            new_strategy = shared_strategy['pending_strategy']
+            current_time = time.time()
+            
+            shared_strategy['active_strategy'] = new_strategy
             shared_strategy['pending_strategy'] = None
-            shared_strategy['last_check_time'] = time.time()
-            _logger.info(f"Strategy transition completed: {old_strategy} -> {shared_strategy['active_strategy']}")
+            shared_strategy['last_check_time'] = current_time
+            shared_strategy['last_transition_time'] = current_time
+            shared_strategy['session_invalidated'] = True  # Invalidate all sessions
+            
+            _logger.info(f"Strategy transition completed: {old_strategy} -> {new_strategy}")
+            return new_strategy
+        return None
+
+
+def _invalidate_all_sessions():
+    """Invalidate all existing sessions to force fresh connections with new strategy."""
+    # This is a global flag that all connections will check
+    shared_strategy = _get_shared_strategy()
+    shared_strategy['session_invalidated'] = True
+    _logger.info("All sessions invalidated due to strategy change")
 
 
 def _register_query_strategy(query_id, strategy):
     """Register the strategy used for a specific query."""
-    print('_register_query_strategy', query_id, strategy, _get_shared_strategy())
     if not query_id or not strategy:
         return
+    # Normalize strategy to lowercase and validate
+    normalized_strategy = strategy.lower()
+    if normalized_strategy not in ['blue', 'green']:
+        _logger.warning(f"Invalid strategy value: {strategy}. Must be 'blue' or 'green'.")
+        return
+    
     with _strategy_lock:
         shared_strategy = _get_shared_strategy()
         query_map = shared_strategy.get('query_strategy_map', {})
-        query_map[query_id] = strategy
+        query_map[query_id] = normalized_strategy
         shared_strategy['query_strategy_map'] = query_map
 
 
@@ -242,6 +290,20 @@ def _cleanup_query_strategy(query_id):
             shared_strategy['query_strategy_map'] = query_map
 
 
+def _get_strategy_debug_info():
+    """Get debug information about current strategy state."""
+    with _strategy_lock:
+        shared_strategy = _get_shared_strategy()
+        return {
+            'active_strategy': shared_strategy.get('active_strategy'),
+            'pending_strategy': shared_strategy.get('pending_strategy'),
+            'last_check_time': shared_strategy.get('last_check_time', 0),
+            'last_transition_time': shared_strategy.get('last_transition_time', 0),
+            'query_count': len(shared_strategy.get('query_strategy_map', {})),
+            'current_time': time.time()
+        }
+
+
 def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
     metadata = []
     if engine_ip:
@@ -249,7 +311,12 @@ def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
     if cluster:
         metadata.append(('cluster-uuid', cluster))
     if strategy:
-        metadata.append(('strategy', strategy))
+        # Normalize strategy to lowercase
+        normalized_strategy = strategy.lower() if isinstance(strategy, str) else strategy
+        if normalized_strategy in ['blue', 'green']:
+            metadata.append(('strategy', normalized_strategy))
+        else:
+            _logger.warning(f"Invalid strategy value in header: {strategy}. Must be 'blue' or 'green'.")
     return metadata
 
 
@@ -423,19 +490,60 @@ class Connection(object):
         To get the session id, if user is not authorised, first authenticate the user.
         Also detects the active deployment strategy (blue/green) on first authentication.
         """
+        # Check if we need a fresh connection due to strategy change
+        shared_strategy = _get_shared_strategy()
+        pending_strategy = shared_strategy.get('pending_strategy')
+        active_strategy = shared_strategy.get('active_strategy')
+        session_invalidated = shared_strategy.get('session_invalidated', False)
+
+        print('self._session_id', self._session_id, pending_strategy, active_strategy, 'invalidated:', session_invalidated)
+        
+        # Check if session was invalidated globally
+        if self._session_id and session_invalidated:
+            _logger.info("*** Session invalidated due to strategy change, forcing fresh connection")
+            self._session_id = None
+            self.close()
+            self._create_client()
+            # Clear the invalidation flag
+            shared_strategy['session_invalidated'] = False
+        
+        # Only create fresh connection if we have no active queries
+        elif self._session_id and pending_strategy and pending_strategy != active_strategy:
+            query_map = shared_strategy.get('query_strategy_map', {})
+            if len(query_map) == 0:
+                _logger.info(
+                    f"*** Pending strategy detected ({pending_strategy}), "
+                    f"creating fresh connection for new strategy"
+                )
+                # Apply the pending strategy immediately since no queries are active
+                _apply_pending_strategy()
+                # Force complete reconnection with new strategy
+                self._session_id = None
+                self.close()
+                self._create_client()
+            else:
+                _logger.info(
+                    f"*** Pending strategy detected ({pending_strategy}), "
+                    f"but keeping current session due to active queries: {len(query_map)}"
+                )
+
         if not self._session_id:
             try:
                 authenticate_request = e6x_engine_pb2.AuthenticateRequest(
                     user=self.__username,
                     password=self.__password
                 )
-                
+
                 # Check if we have a cached strategy
                 active_strategy = _get_active_strategy()
+                shared_strategy = _get_shared_strategy()
+                pending_strategy = shared_strategy.get('pending_strategy')
+                _logger.info(f"Authentication - Active strategy: {active_strategy}, Pending strategy: {pending_strategy}")
                 
-                if active_strategy:
-                    # Use cached strategy
+                if active_strategy and not pending_strategy:
+                    # Use cached strategy only if there's no pending strategy
                     try:
+                        _logger.info(f"Using cached strategy: {active_strategy}")
                         authenticate_response = self._client.authenticate(
                             authenticate_request,
                             metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=active_strategy)
@@ -445,22 +553,41 @@ class Connection(object):
                             raise ValueError("Invalid credentials.")
                         # Check for new strategy in authenticate response
                         if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
-                            _set_pending_strategy(authenticate_response.new_strategy)
+                            new_strategy = authenticate_response.new_strategy.lower()
+                            print('1', new_strategy)
+                            if new_strategy != active_strategy:
+                                _logger.info(f"Server indicated new strategy: {new_strategy} (different from current: {active_strategy})")
+                                _set_pending_strategy(new_strategy)
+                                # Don't apply immediately - let new queries use fresh connections
                     except _InactiveRpcError as e:
                         if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                             # Strategy changed, clear cache and retry
+                            _logger.info("456 error detected, clearing strategy cache")
                             _clear_strategy_cache()
                             active_strategy = None
                         else:
                             raise e
+                elif pending_strategy:
+                    # If there's a pending strategy, force re-authentication with new strategy
+                    _logger.info(f"Pending strategy detected, forcing re-authentication")
+                    active_strategy = None
                 
                 if not active_strategy:
-                    # Try to detect the correct strategy
-                    strategies = ['blue', 'green']
+                    # Check if we have a pending strategy to use
+                    if pending_strategy:
+                        # Use pending strategy and apply it immediately
+                        _logger.info(f"Using pending strategy: {pending_strategy}")
+                        _apply_pending_strategy()
+                        active_strategy = _get_active_strategy()
+                        strategies = [active_strategy]
+                    else:
+                        # Always try blue first, then green if it fails with 456
+                        strategies = ['blue', 'green']
                     last_error = None
-                    
+                    print('all strategies', strategies)
                     for strategy in strategies:
                         try:
+                            _logger.info(f"Trying strategy: {strategy}")
                             authenticate_response = self._client.authenticate(
                                 authenticate_request,
                                 metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=strategy)
@@ -470,13 +597,20 @@ class Connection(object):
                                 # Success! Cache this strategy
                                 _set_active_strategy(strategy)
                                 _logger.info(f"Successfully authenticated with strategy: {strategy}")
+                                
                                 # Check for new strategy in authenticate response
                                 if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
-                                    _set_pending_strategy(authenticate_response.new_strategy)
+                                    new_strategy = authenticate_response.new_strategy.lower()
+                                    print('2', new_strategy)
+                                    if new_strategy != strategy:
+                                        _logger.info(f"Server indicated new strategy: {new_strategy} (different from current: {strategy})")
+                                        _set_pending_strategy(new_strategy)
+                                        # Don't apply immediately - let new queries use fresh connections
                                 break
                         except _InactiveRpcError as e:
                             if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                                 # Wrong strategy, try the next one
+                                _logger.info(f"Strategy {strategy} failed with 456, trying next")
                                 last_error = e
                                 continue
                             else:
@@ -513,7 +647,12 @@ class Connection(object):
                             self._session_id = authenticate_response.sessionId
                             # Check for new strategy in authenticate response
                             if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
-                                _set_pending_strategy(authenticate_response.new_strategy)
+                                new_strategy = authenticate_response.new_strategy.lower()
+                                print('3', new_strategy)
+                                if new_strategy != _get_active_strategy():
+                                    _logger.info(f"Server indicated new strategy during auto-resume: {new_strategy}")
+                                    _set_pending_strategy(new_strategy)
+                                    # Don't apply immediately - let new queries use fresh connections
                         else:
                             raise e
                     else:
@@ -569,6 +708,44 @@ class Connection(object):
         """
         return self._channel is not None
 
+    def check_strategy_change(self):
+        """
+        Checks if there's a pending strategy change and applies it if no queries are active.
+        
+        Returns:
+            bool: True if strategy was changed, False otherwise.
+        """
+        shared_strategy = _get_shared_strategy()
+        pending_strategy = shared_strategy.get('pending_strategy')
+        active_strategy = shared_strategy.get('active_strategy')
+        query_map = shared_strategy.get('query_strategy_map', {})
+        
+        if pending_strategy and pending_strategy != active_strategy and len(query_map) == 0:
+            _logger.info(f"Applying pending strategy change: {active_strategy} -> {pending_strategy}")
+            _apply_pending_strategy()
+            # Force new authentication with new strategy
+            self._session_id = None
+            return True
+        return False
+
+    def _should_create_new_connection(self):
+        """
+        Determines if a new connection should be created based on strategy changes.
+        
+        Returns:
+            bool: True if a new connection should be created.
+        """
+        shared_strategy = _get_shared_strategy()
+        pending_strategy = shared_strategy.get('pending_strategy')
+        active_strategy = shared_strategy.get('active_strategy')
+        query_map = shared_strategy.get('query_strategy_map', {})
+        
+        # Create new connection if:
+        # 1. No session exists
+        # 2. There's a pending strategy change and no active queries
+        return (not self._session_id or 
+                (pending_strategy and pending_strategy != active_strategy and len(query_map) == 0))
+
     def clear(self, query_id, engine_ip=None):
         """
         Clears the query results from the server.
@@ -589,6 +766,7 @@ class Connection(object):
         
         # Check for new strategy in clear response
         if hasattr(clear_response, 'new_strategy') and clear_response.new_strategy:
+            print('4', clear_response.new_strategy)
             _set_pending_strategy(clear_response.new_strategy)
 
     def reopen(self):
@@ -620,6 +798,7 @@ class Connection(object):
         
         # Check for new strategy in cancel response
         if hasattr(cancel_response, 'new_strategy') and cancel_response.new_strategy:
+            print('5', cancel_response.new_strategy)
             _set_pending_strategy(cancel_response.new_strategy)
 
     def dry_run(self, query):
@@ -667,7 +846,7 @@ class Connection(object):
         # Check for new strategy in get tables response
         if hasattr(get_table_response, 'new_strategy') and get_table_response.new_strategy:
             _set_pending_strategy(get_table_response.new_strategy)
-            
+            print('6', get_table_response.new_strategy)
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
@@ -696,7 +875,7 @@ class Connection(object):
         # Check for new strategy in get columns response
         if hasattr(get_columns_response, 'new_strategy') and get_columns_response.new_strategy:
             _set_pending_strategy(get_columns_response.new_strategy)
-            
+            print('7', get_columns_response.new_strategy)
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
@@ -720,6 +899,7 @@ class Connection(object):
         
         # Check for new strategy in get schema names response
         if hasattr(get_schema_response, 'new_strategy') and get_schema_response.new_strategy:
+            print('8', get_schema_response.new_strategy)
             _set_pending_strategy(get_schema_response.new_strategy)
             
         return list(get_schema_response.schemas)
@@ -946,25 +1126,33 @@ class Cursor(DBAPICursor):
         """
         if not query_id:
             query_id = self._query_id
-        
-        # Clean up query strategy mapping
-        if query_id:
-            _cleanup_query_strategy(query_id)
-            
-        # Apply any pending strategy changes now that the query is complete
-        _apply_pending_strategy()
             
         clear_request = e6x_engine_pb2.ClearOrCancelQueryRequest(
             sessionId=self.connection.get_session_id,
             queryId=query_id,
             engineIP=self._engine_ip
         )
-        clear_response = self.connection.client.clearOrCancelQuery(clear_request, metadata=self.metadata)
+        # Get fresh client after session access (may have been invalidated)
+        client = self.connection.client
+        clear_response = client.clearOrCancelQuery(clear_request, metadata=self.metadata)
         
         # Check for new strategy in clear response
         if hasattr(clear_response, 'new_strategy') and clear_response.new_strategy:
             _set_pending_strategy(clear_response.new_strategy)
-            
+
+        # Clean up query strategy mapping
+        if query_id:
+            _cleanup_query_strategy(query_id)
+
+        # Check if this was the last query and we have a pending strategy
+        shared_strategy = _get_shared_strategy()
+        pending_strategy = shared_strategy.get('pending_strategy')
+        query_map = shared_strategy.get('query_strategy_map', {})
+        
+        if pending_strategy and len(query_map) == 0:
+            _logger.info(f"Last query completed, applying pending strategy: {pending_strategy}")
+            _apply_pending_strategy()
+
         return clear_response
 
     def cancel(self, query_id):
@@ -975,13 +1163,19 @@ class Cursor(DBAPICursor):
             query_id (str): The ID of the query to be canceled.
         """
         # Clean up query strategy mapping for cancelled query
+        self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
+
         if query_id:
             _cleanup_query_strategy(query_id)
-            
-        self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
+
+        # Check if this was the last query and we have a pending strategy
+        shared_strategy = _get_shared_strategy()
+        pending_strategy = shared_strategy.get('pending_strategy')
+        query_map = shared_strategy.get('query_strategy_map', {})
         
-        # Apply any pending strategy changes
-        _apply_pending_strategy()
+        if pending_strategy and len(query_map) == 0:
+            _logger.info(f"Last query cancelled, applying pending strategy: {pending_strategy}")
+            _apply_pending_strategy()
 
     def status(self, query_id):
         """
@@ -1002,11 +1196,12 @@ class Cursor(DBAPICursor):
         
         # Check for new strategy in status response
         if hasattr(status_response, 'new_strategy') and status_response.new_strategy:
+            print('9', status_response.new_strategy)
             _set_pending_strategy(status_response.new_strategy)
             
         return status_response
 
-    @re_auth
+    # @re_auth
     def execute(self, operation, parameters=None, **kwargs):
         """
         Prepare and execute a database operation (query or command).
@@ -1029,13 +1224,14 @@ class Cursor(DBAPICursor):
         else:
             sql = operation % _escaper.escape_args(parameters)
 
-        client = self.connection.client
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
                 sessionId=self.connection.get_session_id,
                 schema=self._database,
                 queryString=sql
             )
+            # Get fresh client after session access (may have been invalidated)
+            client = self.connection.client
             prepare_statement_response = client.prepareStatement(
                 prepare_statement_request,
                 metadata=self.metadata
@@ -1043,13 +1239,18 @@ class Cursor(DBAPICursor):
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
+
             
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
-                _set_pending_strategy(prepare_statement_response.new_strategy)
+                new_strategy = prepare_statement_response.new_strategy.lower()
+                if new_strategy != _get_active_strategy():
+                    _logger.info(f"Server indicated new strategy during prepare: {new_strategy}")
+                    _set_pending_strategy(new_strategy)
             
             # Register this query with the current strategy
             current_strategy = _get_active_strategy()
+            _logger.info(f"Query {self._query_id} using strategy: {current_strategy}")
             if current_strategy:
                 _register_query_strategy(self._query_id, current_strategy)
                 
@@ -1058,6 +1259,8 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id,
             )
+            # Get fresh client after session access (may have been invalidated)
+            client = self.connection.client
             execute_response = client.executeStatement(
                 execute_statement_request,
                 metadata=self.metadata
@@ -1065,7 +1268,10 @@ class Cursor(DBAPICursor):
             
             # Check for new strategy in execute response
             if hasattr(execute_response, 'new_strategy') and execute_response.new_strategy:
-                _set_pending_strategy(execute_response.new_strategy)
+                new_strategy = execute_response.new_strategy.lower()
+                if new_strategy != _get_active_strategy():
+                    _logger.info(f"Server indicated new strategy during execute: {new_strategy}")
+                    _set_pending_strategy(new_strategy)
         else:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
                 sessionId=self.connection.get_session_id,
@@ -1073,6 +1279,8 @@ class Cursor(DBAPICursor):
                 catalog=self._catalog_name,
                 queryString=sql
             )
+            # Get fresh client after session access (may have been invalidated)
+            client = self.connection.client
             prepare_statement_response = client.prepareStatementV2(
                 prepare_statement_request,
                 metadata=self.metadata,
@@ -1084,7 +1292,11 @@ class Cursor(DBAPICursor):
 
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
-                _set_pending_strategy(prepare_statement_response.new_strategy)
+                new_strategy = prepare_statement_response.new_strategy.lower()
+                print('10', new_strategy)
+                if new_strategy != _get_active_strategy():
+                    _logger.info(f"Server indicated new strategy during prepare: {new_strategy}")
+                    _set_pending_strategy(new_strategy)
             
             # Register this query with the current strategy
             current_strategy = _get_active_strategy()
@@ -1097,6 +1309,8 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id
             )
+            # Get fresh client after session access (may have been invalidated)
+            client = self.connection.client
             execute_response = client.executeStatementV2(
                 execute_statement_request,
                 metadata=self.metadata
@@ -1104,7 +1318,11 @@ class Cursor(DBAPICursor):
 
             # Check for new strategy in execute response
             if hasattr(execute_response, 'new_strategy') and execute_response.new_strategy:
-                _set_pending_strategy(execute_response.new_strategy)
+                new_strategy = execute_response.new_strategy.lower()
+                print('11', new_strategy)
+                if new_strategy != _get_active_strategy():
+                    _logger.info(f"Server indicated new strategy during execute: {new_strategy}")
+                    _set_pending_strategy(new_strategy)
         self.update_mete_data()
         return self._query_id
 
@@ -1128,14 +1346,20 @@ class Cursor(DBAPICursor):
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
-        get_result_metadata_response = self.connection.client.getResultMetadata(
+        # Get fresh client after session access (may have been invalidated)
+        client = self.connection.client
+        get_result_metadata_response = client.getResultMetadata(
             result_meta_data_request,
             metadata=self.metadata
         )
         
         # Check for new strategy in metadata response
         if hasattr(get_result_metadata_response, 'new_strategy') and get_result_metadata_response.new_strategy:
-            _set_pending_strategy(get_result_metadata_response.new_strategy)
+            new_strategy = get_result_metadata_response.new_strategy.lower()
+            print('13', new_strategy)
+            if new_strategy != _get_active_strategy():
+                _logger.info(f"Server indicated new strategy during metadata: {new_strategy}")
+                _set_pending_strategy(new_strategy)
             
         buffer = BytesIO(get_result_metadata_response.resultMetaData)
         self._rowcount, self._query_columns_description = get_query_columns_info(buffer)
@@ -1199,12 +1423,13 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of rows fetched from the server.
         """
-        client = self.connection.client
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
+        # Get fresh client after session access (may have been invalidated)
+        client = self.connection.client
         get_next_result_batch_response = client.getNextResultBatch(
             get_next_result_batch_request,
             metadata=self.metadata
@@ -1212,7 +1437,11 @@ class Cursor(DBAPICursor):
         
         # Check for new strategy in batch response
         if hasattr(get_next_result_batch_response, 'new_strategy') and get_next_result_batch_response.new_strategy:
-            _set_pending_strategy(get_next_result_batch_response.new_strategy)
+            new_strategy = get_next_result_batch_response.new_strategy.lower()
+            print('14', new_strategy)
+            if new_strategy != _get_active_strategy():
+                _logger.info(f"Server indicated new strategy during batch: {new_strategy}")
+                _set_pending_strategy(new_strategy)
             
         buffer = get_next_result_batch_response.resultBatch
         if not self._is_metadata_updated:
@@ -1300,13 +1529,16 @@ class Cursor(DBAPICursor):
             sessionId=self.connection.get_session_id,
             queryId=self._query_id
         )
-        explain_analyze_response = self.connection.client.explainAnalyze(
+        # Get fresh client after session access (may have been invalidated)
+        client = self.connection.client
+        explain_analyze_response = client.explainAnalyze(
             explain_analyze_request,
             metadata=self.metadata
         )
         
         # Check for new strategy in explain analyze response
         if hasattr(explain_analyze_response, 'new_strategy') and explain_analyze_response.new_strategy:
+            print('15', explain_analyze_response.new_strategy)
             _set_pending_strategy(explain_analyze_response.new_strategy)
             
         return dict(

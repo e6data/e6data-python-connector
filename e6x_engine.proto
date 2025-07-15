@@ -52,7 +52,8 @@ message CancelQueryRequest{
 }
 
 message CancelQueryResponse{
-  optional string new_strategy = 1;
+  string sessionId = 1;
+  optional string new_strategy = 2;
 }
 
 message ExplainRequest{
@@ -63,7 +64,8 @@ message ExplainRequest{
 
 message ExplainResponse{
   string explain = 1;
-  optional string new_strategy = 2;
+  string sessionId = 2;
+  optional string new_strategy = 3;
 }
 
 message DryRunRequest{
@@ -97,7 +99,8 @@ message ExplainAnalyzeResponse{
   bool isCached = 2;
   sint64 parsingTime = 3;
   sint64 queueingTime = 4;
-  optional string new_strategy = 5;
+  string sessionId = 5;
+  optional string new_strategy = 6;
 }
 
 message PrepareStatementRequest{
@@ -117,7 +120,8 @@ message PrepareStatementV2Request{
 message PrepareStatementResponse{
   string engineIP = 1;
   string queryId = 2;
-  optional string new_strategy = 3;
+  string sessionId = 3;
+  optional string new_strategy = 4;
 }
 
 message UserAccessInfo
@@ -142,7 +146,8 @@ message ExecuteStatementV2Request{
 }
 
 message ExecuteStatementResponse{
-  optional string new_strategy = 1;
+  string sessionId = 1;
+  optional string new_strategy = 2;
 }
 
 message GetNextResultRowRequest{
@@ -165,7 +170,8 @@ message GetNextResultBatchRequest{
 
 message GetNextResultBatchResponse{
   bytes resultBatch = 2;
-  optional string new_strategy = 3;
+  string sessionId = 3;
+  optional string new_strategy = 4;
 }
 
 message GetResultMetadataRequest{
@@ -176,7 +182,8 @@ message GetResultMetadataRequest{
 
 message GetResultMetadataResponse{
   bytes resultMetaData = 1;
-  optional string new_strategy = 2;
+  string sessionId = 2;
+  optional string new_strategy = 3;
 }
 
 message AuthenticateRequest{
@@ -201,7 +208,8 @@ message GetTablesV2Request{
 }
 message GetTablesResponse{
   repeated string tables = 1;
-  optional string new_strategy = 2;
+  string sessionId = 2;
+  optional string new_strategy = 3;
 }
 
 message GetSchemaNamesRequest{
@@ -215,7 +223,8 @@ message GetSchemaNamesV2Request{
 
 message GetSchemaNamesResponse{
   repeated string schemas = 1;
-  optional string new_strategy = 2;
+  string sessionId = 2;
+  optional string new_strategy = 3;
 }
 
 message GetColumnsRequest{
@@ -232,7 +241,8 @@ message GetColumnsV2Request{
 
 message GetColumnsResponse{
   repeated GFieldInfo fieldInfo = 1;
-  optional string new_strategy = 2;
+  string sessionId = 2;
+  optional string new_strategy = 3;
 }
 
 message StatusRequest{
@@ -310,7 +320,8 @@ message ClearOrCancelQueryRequest{
 }
 
 message ClearOrCancelQueryResponse{
-  optional string new_strategy = 1;
+  string sessionId = 1;
+  optional string new_strategy = 2;
 }
 
 service QueryEngineService {
