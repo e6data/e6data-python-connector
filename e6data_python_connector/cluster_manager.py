@@ -5,28 +5,32 @@ import e6data_python_connector.cluster_server.cluster_pb2_grpc as cluster_pb2_gr
 import grpc
 from grpc._channel import _InactiveRpcError
 import multiprocessing
+import logging
+
+# Import strategy management functions
+from e6data_python_connector.strategy import _get_active_strategy, _set_active_strategy, _set_pending_strategy, _get_grpc_header as _get_strategy_header
+
+# Set up logging
+_logger = logging.getLogger(__name__)
 
 
-def _get_grpc_header(engine_ip=None, cluster=None):
+def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
     """
     Generate gRPC metadata headers for the request.
 
     This function creates a list of metadata headers to be used in gRPC requests.
-    It includes optional headers for the engine IP and cluster UUID.
+    It includes optional headers for the engine IP, cluster UUID, and deployment strategy.
 
     Args:
         engine_ip (str, optional): The IP address of the engine. Defaults to None.
         cluster (str, optional): The UUID of the cluster. Defaults to None.
+        strategy (str, optional): The deployment strategy (blue/green). Defaults to None.
 
     Returns:
         list: A list of tuples representing the gRPC metadata headers.
     """
-    metadata = []
-    if engine_ip:
-        metadata.append(('plannerip', engine_ip))
-    if cluster:
-        metadata.append(('cluster-uuid', cluster))
-    return metadata
+    # Use the strategy module's implementation
+    return _get_strategy_header(engine_ip=engine_ip, cluster=cluster, strategy=strategy)
 
 
 class _StatusLock:
@@ -187,22 +191,162 @@ class ClusterManager:
             )
         return cluster_pb2_grpc.ClusterServiceStub(self._channel)
 
-    def _check_cluster_status(self):
-        while True:
-            try:
-                # Create a status request payload with user credentials
-                status_payload = cluster_pb2.ClusterStatusRequest(
+    def _try_cluster_request(self, request_type, payload=None):
+        """
+        Execute a cluster request with strategy fallback for 456 errors.
+        
+        For efficiency:
+        - If we have an active strategy, use it first
+        - Only try authentication sequence (blue -> green) if no active strategy
+        - On 456 error, switch to alternative strategy and update active strategy
+        
+        Args:
+            request_type: Type of request ('status' or 'resume')
+            payload: Request payload (optional, will be created if not provided)
+            
+        Returns:
+            The response from the successful request
+        """
+        current_strategy = _get_active_strategy()
+        
+        # Create payload if not provided
+        if payload is None:
+            if request_type == "status":
+                payload = cluster_pb2.ClusterStatusRequest(
                     user=self._user,
                     password=self._password
                 )
-                # Send the status request to the cluster service
-                response = self._get_connection.status(
-                    status_payload,
-                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
+            elif request_type == "resume":
+                payload = cluster_pb2.ResumeRequest(
+                    user=self._user,
+                    password=self._password
                 )
-                # Yield the current status
-                yield response.status
+        
+        # If we have an active strategy, use it first
+        if current_strategy is not None:
+            try:
+                _logger.info(f"ClusterManager: Trying {request_type} with established strategy: {current_strategy}")
+                
+                if request_type == "status":
+                    response = self._get_connection.status(
+                        payload,
+                        metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=current_strategy)
+                    )
+                elif request_type == "resume":
+                    response = self._get_connection.resume(
+                        payload,
+                        metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=current_strategy)
+                    )
+                else:
+                    raise ValueError(f"Unknown request type: {request_type}")
+                
+                # Check for new strategy in response
+                if hasattr(response, 'new_strategy') and response.new_strategy:
+                    new_strategy = response.new_strategy.lower()
+                    if new_strategy != current_strategy:
+                        _logger.info(f"ClusterManager: Server indicated new strategy during {request_type}: {new_strategy}")
+                        _set_pending_strategy(new_strategy)
+                
+                return response
+                
             except _InactiveRpcError as e:
+                if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
+                    # 456 error - switch to alternative strategy
+                    alternative_strategy = 'green' if current_strategy == 'blue' else 'blue'
+                    _logger.info(f"ClusterManager: {request_type} failed with 456 error on {current_strategy}, switching to: {alternative_strategy}")
+                    
+                    try:
+                        if request_type == "status":
+                            response = self._get_connection.status(
+                                payload,
+                                metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=alternative_strategy)
+                            )
+                        elif request_type == "resume":
+                            response = self._get_connection.resume(
+                                payload,
+                                metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=alternative_strategy)
+                            )
+                        
+                        # Update active strategy since the alternative worked
+                        _set_active_strategy(alternative_strategy)
+                        _logger.info(f"ClusterManager: {request_type} succeeded with alternative strategy: {alternative_strategy}")
+                        
+                        # Check for new strategy in response
+                        if hasattr(response, 'new_strategy') and response.new_strategy:
+                            new_strategy = response.new_strategy.lower()
+                            if new_strategy != alternative_strategy:
+                                _logger.info(f"ClusterManager: Server indicated new strategy during {request_type}: {new_strategy}")
+                                _set_pending_strategy(new_strategy)
+                        
+                        return response
+                        
+                    except _InactiveRpcError as e2:
+                        _logger.error(f"ClusterManager: Both strategies failed for {request_type}. Original error: {e}, Alternative error: {e2}")
+                        raise e  # Raise the original error
+                else:
+                    # Non-456 error - don't retry
+                    _logger.error(f"ClusterManager: {request_type} failed with non-456 error: {e}")
+                    raise e
+        
+        # No active strategy - start with authentication logic (blue first, then green)
+        _logger.info(f"ClusterManager: No active strategy, starting authentication sequence for {request_type}")
+        strategies_to_try = ['blue', 'green']
+        
+        for i, strategy in enumerate(strategies_to_try):
+            try:
+                _logger.info(f"ClusterManager: Trying {request_type} with strategy: {strategy}")
+                
+                if request_type == "status":
+                    response = self._get_connection.status(
+                        payload,
+                        metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=strategy)
+                    )
+                elif request_type == "resume":
+                    response = self._get_connection.resume(
+                        payload,
+                        metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=strategy)
+                    )
+                else:
+                    raise ValueError(f"Unknown request type: {request_type}")
+                
+                # Set the working strategy as active
+                _set_active_strategy(strategy)
+                _logger.info(f"ClusterManager: {request_type} succeeded with strategy: {strategy}")
+                
+                # Check for new strategy in response
+                if hasattr(response, 'new_strategy') and response.new_strategy:
+                    new_strategy = response.new_strategy.lower()
+                    if new_strategy != strategy:
+                        _logger.info(f"ClusterManager: Server indicated new strategy during {request_type}: {new_strategy}")
+                        _set_pending_strategy(new_strategy)
+                
+                return response
+                
+            except _InactiveRpcError as e:
+                if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
+                    # 456 error - try next strategy
+                    if i < len(strategies_to_try) - 1:
+                        _logger.info(f"ClusterManager: {request_type} failed with 456 error on {strategy}, trying next strategy: {strategies_to_try[i + 1]}")
+                        continue
+                    else:
+                        _logger.error(f"ClusterManager: {request_type} failed with 456 error on all strategies")
+                        raise e
+                else:
+                    # Non-456 error - don't retry
+                    _logger.error(f"ClusterManager: {request_type} failed with non-456 error: {e}")
+                    raise e
+        
+        # If we get here, all strategies failed
+        _logger.error(f"ClusterManager: All strategies failed for {request_type}")
+        raise e
+
+    def _check_cluster_status(self):
+        while True:
+            try:
+                # Use the unified strategy-aware request method
+                response = self._try_cluster_request("status")
+                yield response.status
+            except _InactiveRpcError:
                 yield None
 
     def resume(self) -> bool:
@@ -237,25 +381,17 @@ class ClusterManager:
             if lock.is_active:
                 return True
 
-            # Retrieve the current cluster status
-            status_payload = cluster_pb2.ClusterStatusRequest(
-                user=self._user,
-                password=self._password
-            )
-            current_status = self._get_connection.status(
-                status_payload,
-                metadata=_get_grpc_header(cluster=self.cluster_uuid)
-            )
+            # Retrieve the current cluster status with strategy header
+            try:
+                current_status = self._try_cluster_request("status")
+            except _InactiveRpcError:
+                return False
             if current_status.status == 'suspended':
-                # Send the resume request
-                payload = cluster_pb2.ResumeRequest(
-                    user=self._user,
-                    password=self._password
-                )
-                response = self._get_connection.resume(
-                    payload,
-                    metadata=_get_grpc_header(cluster=self.cluster_uuid)
-                )
+                # Send the resume request with strategy header
+                try:
+                    response = self._try_cluster_request("resume")
+                except _InactiveRpcError:
+                    return False
             elif current_status.status == 'active':
                 return True
             elif current_status.status != 'resuming':

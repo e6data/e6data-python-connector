@@ -22,6 +22,7 @@ import grpc
 from grpc._channel import _InactiveRpcError
 
 from e6data_python_connector.cluster_manager import ClusterManager
+from e6data_python_connector.strategy import _get_grpc_header as _get_strategy_header
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
@@ -305,19 +306,9 @@ def _get_strategy_debug_info():
 
 
 def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
-    metadata = []
-    if engine_ip:
-        metadata.append(('plannerip', engine_ip))
-    if cluster:
-        metadata.append(('cluster-uuid', cluster))
-    if strategy:
-        # Normalize strategy to lowercase
-        normalized_strategy = strategy.lower() if isinstance(strategy, str) else strategy
-        if normalized_strategy in ['blue', 'green']:
-            metadata.append(('strategy', normalized_strategy))
-        else:
-            _logger.warning(f"Invalid strategy value in header: {strategy}. Must be 'blue' or 'green'.")
-    return metadata
+    """Generate gRPC metadata headers for the request."""
+    # Use the strategy module's implementation
+    return _get_strategy_header(engine_ip=engine_ip, cluster=cluster, strategy=strategy)
 
 
 def connect(*args, **kwargs):
@@ -636,23 +627,25 @@ class Connection(object):
                             timeout=self.grpc_auto_resume_timeout_seconds
                         ).resume()
                         if status:
-                            authenticate_request = e6x_engine_pb2.AuthenticateRequest(
-                                user=self.__username,
-                                password=self.__password
-                            )
-                            authenticate_response = self._client.authenticate(
-                                authenticate_request,
-                                metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
-                            )
-                            self._session_id = authenticate_response.sessionId
-                            # Check for new strategy in authenticate response
-                            if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
-                                new_strategy = authenticate_response.new_strategy.lower()
-                                print('3', new_strategy)
-                                if new_strategy != _get_active_strategy():
-                                    _logger.info(f"Server indicated new strategy during auto-resume: {new_strategy}")
-                                    _set_pending_strategy(new_strategy)
-                                    # Don't apply immediately - let new queries use fresh connections
+                            return self.get_session_id
+                            # authenticate_request = e6x_engine_pb2.AuthenticateRequest(
+                            #     user=self.__username,
+                            #     password=self.__password
+                            # )
+                            # print('_get_active_strategy()', _get_active_strategy())
+                            # authenticate_response = self._client.authenticate(
+                            #     authenticate_request,
+                            #     metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
+                            # )
+                            # self._session_id = authenticate_response.sessionId
+                            # # Check for new strategy in authenticate response
+                            # if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
+                            #     new_strategy = authenticate_response.new_strategy.lower()
+                            #     print('3', new_strategy)
+                            #     if new_strategy != _get_active_strategy():
+                            #         _logger.info(f"Server indicated new strategy during auto-resume: {new_strategy}")
+                            #         _set_pending_strategy(new_strategy)
+                            #         # Don't apply immediately - let new queries use fresh connections
                         else:
                             raise e
                     else:
