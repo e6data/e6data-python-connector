@@ -87,7 +87,7 @@ def re_auth(func):
                     _logger.info(f'RE_AUTH: Function Name: {func}')
                     _logger.info(f'RE_AUTH: Error Found {e}')
                     self.connection.get_re_authenticate_session_id()
-                elif '456' in e.details() or 'status: 456' in e.details():
+                elif 'status: 456' in e.details():
                     # Strategy changed, clear cache and retry
                     _logger.info(f'STRATEGY_CHANGE: Function Name: {func}')
                     _logger.info(f'STRATEGY_CHANGE: Clearing strategy cache due to 456 error')
