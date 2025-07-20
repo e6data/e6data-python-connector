@@ -487,8 +487,6 @@ class Connection(object):
         active_strategy = shared_strategy.get('active_strategy')
         session_invalidated = shared_strategy.get('session_invalidated', False)
 
-        print('self._session_id', self._session_id, pending_strategy, active_strategy, 'invalidated:', session_invalidated)
-        
         # Check if session was invalidated globally
         if self._session_id and session_invalidated:
             _logger.info("*** Session invalidated due to strategy change, forcing fresh connection")
@@ -545,7 +543,6 @@ class Connection(object):
                         # Check for new strategy in authenticate response
                         if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                             new_strategy = authenticate_response.new_strategy.lower()
-                            print('1', new_strategy)
                             if new_strategy != active_strategy:
                                 _logger.info(f"Server indicated new strategy: {new_strategy} (different from current: {active_strategy})")
                                 _set_pending_strategy(new_strategy)
@@ -575,7 +572,6 @@ class Connection(object):
                         # Always try blue first, then green if it fails with 456
                         strategies = ['blue', 'green']
                     last_error = None
-                    print('all strategies', strategies)
                     for strategy in strategies:
                         try:
                             _logger.info(f"Trying strategy: {strategy}")
@@ -592,7 +588,6 @@ class Connection(object):
                                 # Check for new strategy in authenticate response
                                 if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                                     new_strategy = authenticate_response.new_strategy.lower()
-                                    print('2', new_strategy)
                                     if new_strategy != strategy:
                                         _logger.info(f"Server indicated new strategy: {new_strategy} (different from current: {strategy})")
                                         _set_pending_strategy(new_strategy)
@@ -632,7 +627,6 @@ class Connection(object):
                             #     user=self.__username,
                             #     password=self.__password
                             # )
-                            # print('_get_active_strategy()', _get_active_strategy())
                             # authenticate_response = self._client.authenticate(
                             #     authenticate_request,
                             #     metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
@@ -641,7 +635,6 @@ class Connection(object):
                             # # Check for new strategy in authenticate response
                             # if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                             #     new_strategy = authenticate_response.new_strategy.lower()
-                            #     print('3', new_strategy)
                             #     if new_strategy != _get_active_strategy():
                             #         _logger.info(f"Server indicated new strategy during auto-resume: {new_strategy}")
                             #         _set_pending_strategy(new_strategy)
@@ -759,7 +752,6 @@ class Connection(object):
         
         # Check for new strategy in clear response
         if hasattr(clear_response, 'new_strategy') and clear_response.new_strategy:
-            print('4', clear_response.new_strategy)
             _set_pending_strategy(clear_response.new_strategy)
 
     def reopen(self):
@@ -791,7 +783,6 @@ class Connection(object):
         
         # Check for new strategy in cancel response
         if hasattr(cancel_response, 'new_strategy') and cancel_response.new_strategy:
-            print('5', cancel_response.new_strategy)
             _set_pending_strategy(cancel_response.new_strategy)
 
     def dry_run(self, query):
@@ -839,7 +830,6 @@ class Connection(object):
         # Check for new strategy in get tables response
         if hasattr(get_table_response, 'new_strategy') and get_table_response.new_strategy:
             _set_pending_strategy(get_table_response.new_strategy)
-            print('6', get_table_response.new_strategy)
         return list(get_table_response.tables)
 
     def get_columns(self, catalog, database, table):
@@ -868,7 +858,6 @@ class Connection(object):
         # Check for new strategy in get columns response
         if hasattr(get_columns_response, 'new_strategy') and get_columns_response.new_strategy:
             _set_pending_strategy(get_columns_response.new_strategy)
-            print('7', get_columns_response.new_strategy)
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
     def get_schema_names(self, catalog):
@@ -892,7 +881,6 @@ class Connection(object):
         
         # Check for new strategy in get schema names response
         if hasattr(get_schema_response, 'new_strategy') and get_schema_response.new_strategy:
-            print('8', get_schema_response.new_strategy)
             _set_pending_strategy(get_schema_response.new_strategy)
             
         return list(get_schema_response.schemas)
@@ -1189,7 +1177,6 @@ class Cursor(DBAPICursor):
         
         # Check for new strategy in status response
         if hasattr(status_response, 'new_strategy') and status_response.new_strategy:
-            print('9', status_response.new_strategy)
             _set_pending_strategy(status_response.new_strategy)
             
         return status_response
@@ -1286,7 +1273,6 @@ class Cursor(DBAPICursor):
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
                 new_strategy = prepare_statement_response.new_strategy.lower()
-                print('10', new_strategy)
                 if new_strategy != _get_active_strategy():
                     _logger.info(f"Server indicated new strategy during prepare: {new_strategy}")
                     _set_pending_strategy(new_strategy)
@@ -1312,7 +1298,6 @@ class Cursor(DBAPICursor):
             # Check for new strategy in execute response
             if hasattr(execute_response, 'new_strategy') and execute_response.new_strategy:
                 new_strategy = execute_response.new_strategy.lower()
-                print('11', new_strategy)
                 if new_strategy != _get_active_strategy():
                     _logger.info(f"Server indicated new strategy during execute: {new_strategy}")
                     _set_pending_strategy(new_strategy)
@@ -1349,7 +1334,6 @@ class Cursor(DBAPICursor):
         # Check for new strategy in metadata response
         if hasattr(get_result_metadata_response, 'new_strategy') and get_result_metadata_response.new_strategy:
             new_strategy = get_result_metadata_response.new_strategy.lower()
-            print('13', new_strategy)
             if new_strategy != _get_active_strategy():
                 _logger.info(f"Server indicated new strategy during metadata: {new_strategy}")
                 _set_pending_strategy(new_strategy)
@@ -1431,7 +1415,6 @@ class Cursor(DBAPICursor):
         # Check for new strategy in batch response
         if hasattr(get_next_result_batch_response, 'new_strategy') and get_next_result_batch_response.new_strategy:
             new_strategy = get_next_result_batch_response.new_strategy.lower()
-            print('14', new_strategy)
             if new_strategy != _get_active_strategy():
                 _logger.info(f"Server indicated new strategy during batch: {new_strategy}")
                 _set_pending_strategy(new_strategy)
@@ -1531,7 +1514,6 @@ class Cursor(DBAPICursor):
         
         # Check for new strategy in explain analyze response
         if hasattr(explain_analyze_response, 'new_strategy') and explain_analyze_response.new_strategy:
-            print('15', explain_analyze_response.new_strategy)
             _set_pending_strategy(explain_analyze_response.new_strategy)
             
         return dict(
