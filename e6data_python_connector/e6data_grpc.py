@@ -1181,7 +1181,7 @@ class Cursor(DBAPICursor):
             
         return status_response
 
-    # @re_auth
+    @re_auth
     def execute(self, operation, parameters=None, **kwargs):
         """
         Prepare and execute a database operation (query or command).
