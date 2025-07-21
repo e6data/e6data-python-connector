@@ -10,7 +10,7 @@ from grpc._channel import _InactiveRpcError
 import grpc
 
 # Add the project root to the path
-sys.path.insert(0, '.')
+sys.path.insert(0, '..')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

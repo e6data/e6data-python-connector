@@ -8,7 +8,7 @@ import multiprocessing
 import time
 
 # Add the project root to the path
-sys.path.insert(0, '.')
+sys.path.insert(0, '..')
 
 
 def test_import_in_subprocess():
