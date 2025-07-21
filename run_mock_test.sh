@@ -50,6 +50,6 @@ echo ""
 sleep 2
 
 # Run the test client (this will run in foreground)
-python3 test_mock_server.py
+python3 test/test_mock_server.py
 
 # Script will exit and cleanup when client exits
