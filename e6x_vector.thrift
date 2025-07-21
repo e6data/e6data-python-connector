@@ -17,7 +17,8 @@ enum VectorType
     MAP,
     ARRAY,
     NULL,
-    TIMESTAMP_TZ
+    TIMESTAMP_TZ,
+    DECIMAL128
 }
 
 struct Vector
@@ -49,6 +50,8 @@ union Data
     14: TimeConstantData timeConstantData
     15: VarcharConstantData varcharConstantData
     16: TimeData timeData
+    17: Decimal128Data decimal128Data
+    18: NumericDecimal128ConstantData numericDecimal128ConstantData
 }
 
 struct BoolData
@@ -81,6 +84,12 @@ struct Float64Data
     1: list<double> data
 }
 
+// TODO: Is binary (or two longs and convert it to BigInt or BigDecimal in the JDBC end) the right representation for Decimal128?
+struct Decimal128Data
+{
+    1: list<binary> data
+}
+
 struct VarcharData
 {
     1: list<string> data
@@ -109,6 +118,11 @@ struct NumericConstantData
 struct NumericDecimalConstantData
 {
     1: double data
+}
+
+struct NumericDecimal128ConstantData
+{
+    1: binary data
 }
 
 struct TemporalIntervalConstantData
