@@ -30,9 +30,16 @@ This documentation covers technical details of the connector, including architec
    - Automatically retries with re-authentication for common gRPC errors (e.g., access denied).
    - Provides graceful handling of connection errors and retries.
 
-6. **Testing Suite**:
+6. **Blue-Green Deployment Support**:
+   - Automatic detection of active deployment strategy (blue/green).
+   - Graceful strategy transitions without query interruption.
+   - Thread-safe and process-safe strategy caching.
+   - Handles 456 errors for strategy mismatches with automatic retry.
+
+7. **Testing Suite**:
    - Offers multiple layers of testing using Python's `unittest` framework.
    - Includes integration tests for connection, query execution, and fetching logic.
+   - Mock gRPC server for testing blue-green deployment scenarios.
 
 ---
 
@@ -354,8 +361,91 @@ assert isinstance(test_data, list)
 
 With Python 3.12's adaptive optimizations, your application can achieve better memory utilization, faster data processing, and smoother user experience overall for `e6Data` Python Connector-based solutions.
 
+---
+
+## **Blue-Green Deployment Strategy Implementation**
+
+### **Overview**
+The connector implements automatic blue-green deployment strategy detection and handling to ensure zero-downtime during server updates.
+
+### **Architecture**
+1. **Strategy Storage**:
+   - Thread-safe and process-safe shared memory storage
+   - Uses `threading.Lock` and `multiprocessing.Manager`
+   - Falls back to thread-local storage if Manager unavailable
+   
+2. **Strategy Detection**:
+   - Initial detection on first authentication
+   - Tries both "blue" and "green" strategies
+   - Caches successful strategy for 5 minutes
+
+3. **gRPC Headers**:
+   - All requests include "strategy" header
+   - Server validates and returns 456 error for mismatches
+   - Error triggers automatic retry with correct strategy
+
+4. **Graceful Transitions**:
+   - Server sends `new_strategy` in response when switching
+   - Current queries continue with original strategy
+   - New strategy applied after query completion (clear/cancel)
+   - Per-query strategy tracking ensures consistency
+
+### **API Response Handling**
+All gRPC responses check for `new_strategy` field:
+- AuthenticateResponse
+- PrepareStatementResponse
+- ExecuteStatementResponse
+- GetNextResultBatchResponse
+- GetResultMetadataResponse
+- StatusResponse
+- ClearResponse/ClearOrCancelQueryResponse
+- CancelQueryResponse
+- GetTablesResponse/GetSchemaNamesResponse/GetColumnsResponse
+- ExplainResponse/ExplainAnalyzeResponse
+
+### **Implementation Details**
+
+#### **Key Functions**:
+```python
+# Get current active strategy
+_get_active_strategy() -> Optional[str]
+
+# Set active strategy with timestamp
+_set_active_strategy(strategy: str) -> None
+
+# Clear strategy cache (forces re-detection)
+_clear_strategy_cache() -> None
+
+# Set pending strategy for next query
+_set_pending_strategy(strategy: str) -> None
+
+# Apply pending strategy after query completion
+_apply_pending_strategy() -> None
+
+# Track strategy per query
+_register_query_strategy(query_id: str, strategy: str) -> None
+_get_query_strategy(query_id: str) -> str
+_cleanup_query_strategy(query_id: str) -> None
+```
+
+#### **Error Handling**:
+The `re_auth` decorator handles both authentication and strategy errors:
+- Access denied: Re-authenticates and retries
+- 456 error: Clears strategy cache and re-detects
+
+### **Testing**
+1. **Unit Tests**: `test_strategy.py` covers all scenarios
+2. **Mock Server**: `mock_grpc_server.py` simulates strategy switching
+3. **Test Client**: `test_mock_server.py` demonstrates behavior
+
+### **Best Practices**
+1. No code changes required in applications
+2. Strategy handled transparently by connector
+3. Monitor logs for strategy transitions
+4. Test with mock server before production deployment
+
 ----
 
 ## **Summary**
 
-The `e6Data Python Connector` is a scalable and efficient interface for gRPC-based database interactions. It is optimized for robust performance, enhanced with error-handling mechanisms, and is PEP-249 compliant, making it easy to integrate into Python-based applications. With tests and metrics in place, it ensures reliable operations and performance tuning.
+The `e6Data Python Connector` is a scalable and efficient interface for gRPC-based database interactions. It is optimized for robust performance, enhanced with error-handling mechanisms, and is PEP-249 compliant, making it easy to integrate into Python-based applications. With comprehensive blue-green deployment support, tests and metrics in place, it ensures reliable operations and performance tuning.
