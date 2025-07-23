@@ -121,7 +121,7 @@ connection = Connection(
     password='your-token',
     catalog='your-catalog',
     database='your-database',
-    cluster_uuid='your-cluster-uuid',
+    cluster_name='your-cluster-name',
     secure=True,
     auto_resume=True
 )

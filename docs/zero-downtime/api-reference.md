@@ -244,7 +244,7 @@ The `Cursor.metadata` property dynamically selects the appropriate strategy:
 @property
 def metadata(self):
     strategy = _get_query_strategy(self._query_id) if self._query_id else _get_active_strategy()
-    return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_uuid, strategy=strategy)
+    return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_name, strategy=strategy)
 ```
 
 ## Error Handling
