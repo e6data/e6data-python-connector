@@ -312,10 +312,9 @@ class Connection(object):
             port: int,
             username: str,
             password: str,
-            scheme: str = 'e6data',
             catalog: str = None,
             database: str = None,
-            cluster_uuid: str = None,
+            cluster_name: str = None,
             secure: bool = False,
             auto_resume: bool = True,
             grpc_options: dict = None,
@@ -331,14 +330,12 @@ class Connection(object):
                 Your e6data Email ID
             password: str
                 Access Token generated in the e6data console
-            scheme: str
-                e6data
             catalog: str
                 Catalog name
             database: str
                 Database to perform the query on
-            cluster_uuid: str
-                Cluster's uuid
+            cluster_name: str
+                Cluster's name
             secure: bool, Optional
                 Flag to use a secure channel for data transfer
             auto_resume: bool, Optional
@@ -358,7 +355,7 @@ class Connection(object):
         self.__username = username
         self.__password = password
         self.database = database
-        self.cluster_uuid = cluster_uuid
+        self.cluster_name = cluster_name
         self._session_id = None
         self._host = host
         self._port = port
@@ -508,7 +505,7 @@ class Connection(object):
                     try:
                         authenticate_response = self._client.authenticate(
                             authenticate_request,
-                            metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=active_strategy)
+                            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=active_strategy)
                         )
                         self._session_id = authenticate_response.sessionId
                         if not self._session_id:
@@ -545,7 +542,7 @@ class Connection(object):
                         try:
                             authenticate_response = self._client.authenticate(
                                 authenticate_request,
-                                metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=strategy)
+                                metadata=_get_grpc_header(cluster=self.cluster_name, strategy=strategy)
                             )
                             self._session_id = authenticate_response.sessionId
                             if self._session_id:
@@ -584,7 +581,7 @@ class Connection(object):
                             user=self.__username,
                             password=self.__password,
                             secure_channel=self._secure_channel,
-                            cluster_uuid=self.cluster_uuid,
+                            cluster_uuid=self.cluster_name,
                             timeout=self.grpc_auto_resume_timeout_seconds
                         ).resume()
                         if status:
@@ -711,7 +708,7 @@ class Connection(object):
         )
         clear_response = self._client.clear(
             clear_request,
-            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid, strategy=_get_active_strategy())
+            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in clear response
@@ -742,7 +739,7 @@ class Connection(object):
         )
         cancel_response = self._client.cancelQuery(
             cancel_query_request,
-            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_uuid, strategy=_get_active_strategy())
+            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in cancel response
@@ -766,7 +763,7 @@ class Connection(object):
         )
         dry_run_response = self._client.dryRun(
             dry_run_request,
-            metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
+            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
         )
         return dry_run_response.dryrunValue
 
@@ -788,7 +785,7 @@ class Connection(object):
         )
         get_table_response = self._client.getTablesV2(
             get_table_request,
-            metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
+            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in get tables response
@@ -816,7 +813,7 @@ class Connection(object):
         )
         get_columns_response = self._client.getColumnsV2(
             get_columns_request,
-            metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
+            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in get columns response
@@ -840,7 +837,7 @@ class Connection(object):
         )
         get_schema_response = self._client.getSchemaNamesV2(
             get_schema_request,
-            metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
+            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in get schema names response
@@ -937,7 +934,7 @@ class Cursor(DBAPICursor):
         """
         # Use query-specific strategy if available, otherwise use active strategy
         strategy = _get_query_strategy(self._query_id) if self._query_id else _get_active_strategy()
-        return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_uuid, strategy=strategy)
+        return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_name, strategy=strategy)
 
     @property
     def arraysize(self):

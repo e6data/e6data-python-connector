@@ -190,7 +190,7 @@ def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
     if engine_ip:
         metadata.append(('plannerip', engine_ip))
     if cluster:
-        metadata.append(('cluster-uuid', cluster))
+        metadata.append(('cluster-name', cluster))
     if strategy:
         # Normalize strategy to lowercase
         normalized_strategy = strategy.lower() if isinstance(strategy, str) else strategy
