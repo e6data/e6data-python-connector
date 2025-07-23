@@ -317,6 +317,7 @@ class Connection(object):
             cluster_name: str = None,
             secure: bool = False,
             auto_resume: bool = True,
+            scheme: str = 'e6data',
             grpc_options: dict = None,
     ):
         """
@@ -340,6 +341,8 @@ class Connection(object):
                 Flag to use a secure channel for data transfer
             auto_resume: bool, Optional
                 Flag to enable auto resume of the cluster before the query execution
+            scheme: string, Optional
+                e6data supported scheme
             grpc_options: dict, Optional
                 Specify gRPC configuration
                 - keepalive_timeout_ms: This parameter defines the time, in milliseconds, that a gRPC connection should remain idle before sending a keepalive ping to check if the connection is still alive.

@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.3.7-blue.svg)
+![version](https://img.shields.io/badge/version-2.3.8-blue.svg)
 
 ## Introduction
 
@@ -52,6 +52,55 @@ conn = Connection(
     username=username,
     database=database,
     password=password
+)
+```
+
+#### Connection Parameters
+
+The `Connection` class supports the following parameters:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `host` | str | Yes | - | IP address or hostname of the e6data cluster |
+| `port` | int | Yes | - | Port of the e6data engine (typically 80) |
+| `username` | str | Yes | - | Your e6data Email ID |
+| `password` | str | Yes | - | Access Token generated in the e6data console |
+| `database` | str | No | None | Database to perform queries on |
+| `catalog` | str | No | None | Catalog name |
+| `cluster_name` | str | No | None | Name of the cluster for cluster-specific operations |
+| `secure` | bool | No | False | Enable SSL/TLS for secure connections |
+| `auto_resume` | bool | No | True | Automatically resume cluster if suspended |
+| `grpc_options` | dict | No | None | Additional gRPC configuration options |
+
+#### Secure Connection Example
+
+To establish a secure connection using SSL/TLS:
+
+```python
+conn = Connection(
+    host=host,
+    port=443,  # Typically 443 for secure connections
+    username=username,
+    password=password,
+    database=database,
+    cluster_name='production-cluster',
+    secure=True  # Enable SSL/TLS
+)
+```
+
+#### Cluster-Specific Connection
+
+When working with multiple clusters, specify the cluster name:
+
+```python
+conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
+    cluster_name='analytics-cluster-01',  # Specify cluster name
+    secure=True
 )
 ```
 
