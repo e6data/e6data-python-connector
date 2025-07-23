@@ -210,7 +210,7 @@ class E6dataDialect(default.DefaultDialect):
     driver = 'e6data'
     scheme = 'e6data'
     catalog_name = None
-    cluster_uuid = None
+    cluster_name = None
     secure = False
     auto_resume = False
 
@@ -226,7 +226,7 @@ class E6dataDialect(default.DefaultDialect):
         if url.query.get("schema"):
             database = url.query.get("schema")
         self.catalog_name = url.query.get("catalog")
-        self.cluster_uuid = url.query.get("cluster-uuid")
+        self.cluster_name = url.query.get("cluster-name")
         self.secure = url.query.get("secure") == "true"
         self.auto_resume = url.query.get("auto-resume", "true") == "true"  # default to True
         if not self.catalog_name:
@@ -247,7 +247,7 @@ class E6dataDialect(default.DefaultDialect):
             "password": url.password or None,
             "database": database,
             "catalog": self.catalog_name,
-            "cluster_uuid": self.cluster_uuid,
+            "cluster_name": self.cluster_name,
             'secure': self.secure,
             'auto_resume': self.auto_resume,
             'grpc_options': grpc_options
