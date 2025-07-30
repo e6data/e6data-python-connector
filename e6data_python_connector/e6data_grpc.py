@@ -162,8 +162,8 @@ def _get_active_strategy():
         # Check if strategy is cached and not expired
         # if (shared_strategy['active_strategy'] is not None and
         #     current_time - shared_strategy['last_check_time'] < STRATEGY_CACHE_TIMEOUT):
-        if shared_strategy['active_strategy'] is not None:
-            return shared_strategy['active_strategy']
+        if shared_strategy.get('active_strategy') is not None:
+            return shared_strategy.get('active_strategy')
         return None
 
 
