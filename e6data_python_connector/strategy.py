@@ -41,23 +41,23 @@ def _initialize_shared_state():
         if _shared_strategy is not None:
             return _shared_strategy
         
-        try:
-            # Try to create multiprocessing Manager
-            _manager = multiprocessing.Manager()
-            _shared_strategy = _manager.dict({
-                'active_strategy': None,
-                'last_check_time': 0,
-                'pending_strategy': None,
-                'query_strategy_map': _manager.dict(),
-                'last_transition_time': 0,
-                'session_invalidated': False
-            })
-            _logger.debug("Successfully initialized multiprocessing Manager for strategy sharing")
-            return _shared_strategy
-        except Exception as e:
-            # Fall back to thread-local storage if Manager fails
-            _logger.warning(f"Failed to initialize multiprocessing Manager: {e}. Using thread-local storage.")
-            return _local_strategy_cache
+        # try:
+        #     # Try to create multiprocessing Manager
+        #     _manager = multiprocessing.Manager()
+        #     _shared_strategy = _manager.dict({
+        #         'active_strategy': None,
+        #         'last_check_time': 0,
+        #         'pending_strategy': None,
+        #         'query_strategy_map': _manager.dict(),
+        #         'last_transition_time': 0,
+        #         'session_invalidated': False
+        #     })
+        #     _logger.debug("Successfully initialized multiprocessing Manager for strategy sharing")
+        #     return _shared_strategy
+        # except Exception as e:
+        #     # Fall back to thread-local storage if Manager fails
+        #     _logger.warning(f"Failed to initialize multiprocessing Manager: {e}. Using thread-local storage.")
+    return _local_strategy_cache
 
 
 def _get_shared_strategy():
@@ -85,8 +85,14 @@ def _set_active_strategy(strategy):
         _logger.warning(f"Invalid strategy value: {strategy}. Must be 'blue' or 'green'.")
         return
     
+    old_strategy = shared_strategy.get('active_strategy')
     shared_strategy['active_strategy'] = normalized_strategy
     shared_strategy['last_check_time'] = time.time()
+    
+    # Debug log for strategy switches
+    if old_strategy != normalized_strategy:
+        _logger.debug(f"Strategy switched from {old_strategy} to {normalized_strategy}")
+    
     _logger.info(f"Active deployment strategy set to: {normalized_strategy}")
 
 
@@ -105,7 +111,13 @@ def _set_pending_strategy(strategy):
     
     current_active = shared_strategy.get('active_strategy')
     if normalized_strategy != current_active:
+        old_pending = shared_strategy.get('pending_strategy')
         shared_strategy['pending_strategy'] = normalized_strategy
+        
+        # Debug log for pending strategy changes
+        if old_pending != normalized_strategy:
+            _logger.debug(f"Pending strategy changed from {old_pending} to {normalized_strategy}")
+        
         _logger.info(f"Pending deployment strategy set to: {normalized_strategy}")
 
 
@@ -160,11 +172,15 @@ def _apply_pending_strategy():
         if len(query_map) == 0:
             # No active queries, safe to transition
             _logger.info(f"Last query completed, applying pending strategy: {pending_strategy}")
+            _logger.debug(f"Strategy transition initiated: {active_strategy} -> {pending_strategy}")
+            
             shared_strategy['active_strategy'] = pending_strategy
             shared_strategy['pending_strategy'] = None
             shared_strategy['last_transition_time'] = time.time()
             shared_strategy['session_invalidated'] = True  # Invalidate all sessions
+            
             _logger.info(f"Strategy transition completed: {active_strategy} -> {pending_strategy}")
+            _logger.debug(f"Strategy successfully applied and sessions invalidated")
 
 
 def _is_strategy_cache_valid():

@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import datetime
+import logging
 import re
 import sys
 import time
@@ -26,6 +27,9 @@ from e6data_python_connector.constants import *
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 apilevel = '2.0'
 threadsafety = 2  # Threads may share the e6xdb and connections.
@@ -134,20 +138,20 @@ def _get_shared_strategy():
     global _strategy_manager, _shared_strategy
 
     # Try to use multiprocessing.Manager for process-safe storage
-    try:
-        if _strategy_manager is None:
-            _strategy_manager = multiprocessing.Manager()
-            _shared_strategy = _strategy_manager.dict()
-            _shared_strategy['active_strategy'] = None
-            _shared_strategy['last_check_time'] = 0
-            _shared_strategy['pending_strategy'] = None
-            _shared_strategy['query_strategy_map'] = _strategy_manager.dict()
-            _shared_strategy['last_transition_time'] = 0
-            _shared_strategy['session_invalidated'] = False
-        return _shared_strategy
-    except:
-        # Fall back to thread-local storage if Manager fails
-        return _local_strategy_cache
+    # try:
+    #     if _strategy_manager is None:
+    #         _strategy_manager = multiprocessing.Manager()
+    #         _shared_strategy = _strategy_manager.dict()
+    #         _shared_strategy['active_strategy'] = None
+    #         _shared_strategy['last_check_time'] = 0
+    #         _shared_strategy['pending_strategy'] = None
+    #         _shared_strategy['query_strategy_map'] = _strategy_manager.dict()
+    #         _shared_strategy['last_transition_time'] = 0
+    #         _shared_strategy['session_invalidated'] = False
+    #     return _shared_strategy
+    # except:
+    #     # Fall back to thread-local storage if Manager fails
+    return _local_strategy_cache
 
 
 def _get_active_strategy():
@@ -177,8 +181,11 @@ def _set_active_strategy(strategy):
         current_time = time.time()
 
         # Only update transition time if strategy actually changed
-        if shared_strategy['active_strategy'] != normalized_strategy:
+        old_strategy = shared_strategy['active_strategy']
+        if old_strategy != normalized_strategy:
             shared_strategy['last_transition_time'] = current_time
+            # Debug log for strategy switches
+            logger.debug(f"Strategy switched from {old_strategy} to {normalized_strategy}")
 
         shared_strategy['active_strategy'] = normalized_strategy
         shared_strategy['last_check_time'] = current_time
@@ -207,7 +214,12 @@ def _set_pending_strategy(strategy):
         current_active = shared_strategy['active_strategy']
 
         if normalized_strategy != current_active:
+            old_pending = shared_strategy.get('pending_strategy')
             shared_strategy['pending_strategy'] = normalized_strategy
+            
+            # Debug log for pending strategy changes
+            if old_pending != normalized_strategy:
+                logger.debug(f"Pending strategy changed from {old_pending} to {normalized_strategy}")
 
 
 def _apply_pending_strategy():
@@ -219,12 +231,15 @@ def _apply_pending_strategy():
             new_strategy = shared_strategy['pending_strategy']
             current_time = time.time()
 
+            logger.debug(f"Strategy transition initiated: {old_strategy} -> {new_strategy}")
+            
             shared_strategy['active_strategy'] = new_strategy
             shared_strategy['pending_strategy'] = None
             shared_strategy['last_check_time'] = current_time
             shared_strategy['last_transition_time'] = current_time
             shared_strategy['session_invalidated'] = True  # Invalidate all sessions
 
+            logger.debug(f"Strategy successfully applied and sessions invalidated")
             return new_strategy
         return None
 
