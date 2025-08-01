@@ -519,6 +519,8 @@ class Connection(object):
                                 _set_pending_strategy(new_strategy)
                                 _apply_pending_strategy()
                                 self._session_id = None
+                                self.close()
+                                self._create_client()
                                 return self.get_session_id
                     except _InactiveRpcError as e:
                         if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
@@ -559,6 +561,8 @@ class Connection(object):
                                     if new_strategy != strategy:
                                         _set_pending_strategy(new_strategy)
                                         _apply_pending_strategy()
+                                        self.close()
+                                        self._create_client()
                                         self._session_id = None
                                         return self.get_session_id
                                 break
