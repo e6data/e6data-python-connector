@@ -40,24 +40,7 @@ def _initialize_shared_state():
     with _initialization_lock:
         if _shared_strategy is not None:
             return _shared_strategy
-        
-        try:
-            # Try to create multiprocessing Manager
-            _manager = multiprocessing.Manager()
-            _shared_strategy = _manager.dict({
-                'active_strategy': None,
-                'last_check_time': 0,
-                'pending_strategy': None,
-                'query_strategy_map': _manager.dict(),
-                'last_transition_time': 0,
-                'session_invalidated': False
-            })
-            _logger.debug("Successfully initialized multiprocessing Manager for strategy sharing")
-            return _shared_strategy
-        except Exception as e:
-            # Fall back to thread-local storage if Manager fails
-            _logger.warning(f"Failed to initialize multiprocessing Manager: {e}. Using thread-local storage.")
-            return _local_strategy_cache
+        return _local_strategy_cache
 
 
 def _get_shared_strategy():

@@ -229,6 +229,7 @@ class E6dataDialect(default.DefaultDialect):
         self.cluster_name = url.query.get("cluster-name")
         self.secure = url.query.get("secure") == "true"
         self.auto_resume = url.query.get("auto-resume", "true") == "true"  # default to True
+        self.debug = url.query.get("debug", "false") == "true"  # default to True
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
 
@@ -250,7 +251,8 @@ class E6dataDialect(default.DefaultDialect):
             "cluster_name": self.cluster_name,
             'secure': self.secure,
             'auto_resume': self.auto_resume,
-            'grpc_options': grpc_options
+            'grpc_options': grpc_options,
+            'debug': self.debug
         }
         return [], kwargs
 
