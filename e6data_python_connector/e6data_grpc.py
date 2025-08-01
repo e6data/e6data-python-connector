@@ -215,7 +215,6 @@ def _apply_pending_strategy():
     with _strategy_lock:
         shared_strategy = _get_shared_strategy()
         if shared_strategy['pending_strategy']:
-            old_strategy = shared_strategy['active_strategy']
             new_strategy = shared_strategy['pending_strategy']
             current_time = time.time()
 
@@ -518,7 +517,9 @@ class Connection(object):
                             new_strategy = authenticate_response.new_strategy.lower()
                             if new_strategy != active_strategy:
                                 _set_pending_strategy(new_strategy)
-                                # Don't apply immediately - let new queries use fresh connections
+                                _apply_pending_strategy()
+                                self._session_id = None
+                                return self.get_session_id
                     except _InactiveRpcError as e:
                         if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                             # Strategy changed, clear cache and retry
@@ -553,12 +554,13 @@ class Connection(object):
                                 _set_active_strategy(strategy)
 
                                 # Check for new strategy in authenticate response
-                                if hasattr(authenticate_response,
-                                           'new_strategy') and authenticate_response.new_strategy:
+                                if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                                     new_strategy = authenticate_response.new_strategy.lower()
                                     if new_strategy != strategy:
                                         _set_pending_strategy(new_strategy)
-                                        # Don't apply immediately - let new queries use fresh connections
+                                        _apply_pending_strategy()
+                                        self._session_id = None
+                                        return self.get_session_id
                                 break
                         except _InactiveRpcError as e:
                             if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
@@ -589,21 +591,6 @@ class Connection(object):
                         ).resume()
                         if status:
                             return self.get_session_id
-                            # authenticate_request = e6x_engine_pb2.AuthenticateRequest(
-                            #     user=self.__username,
-                            #     password=self.__password
-                            # )
-                            # authenticate_response = self._client.authenticate(
-                            #     authenticate_request,
-                            #     metadata=_get_grpc_header(cluster=self.cluster_uuid, strategy=_get_active_strategy())
-                            # )
-                            # self._session_id = authenticate_response.sessionId
-                            # # Check for new strategy in authenticate response
-                            # if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
-                            #     new_strategy = authenticate_response.new_strategy.lower()
-                            #     if new_strategy != _get_active_strategy():
-                            #         _set_pending_strategy(new_strategy)
-                            #         # Don't apply immediately - let new queries use fresh connections
                         else:
                             raise e
                     else:
