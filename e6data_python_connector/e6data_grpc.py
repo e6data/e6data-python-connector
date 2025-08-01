@@ -1254,7 +1254,6 @@ class Cursor(DBAPICursor):
 
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
-                print(f"@@@@@@ New strategy: {prepare_statement_response.new_strategy}")
                 new_strategy = prepare_statement_response.new_strategy.lower()
                 if new_strategy != _get_active_strategy():
                     _set_pending_strategy(new_strategy)
