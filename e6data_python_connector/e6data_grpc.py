@@ -14,7 +14,7 @@ from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 import threading
-import multiprocessing
+import logging
 
 import grpc
 from grpc._channel import _InactiveRpcError
@@ -39,6 +39,8 @@ ssl_cert_parameter_map = {
     "required": CERT_REQUIRED,
 }
 
+
+_logger = logging.getLogger()
 
 def _parse_timestamp(value):
     if value:
@@ -134,7 +136,17 @@ _debug_connections = set()
 def _strategy_debug_log(message):
     """Log strategy debug messages if any connection has debug enabled."""
     if _debug_connections:
-        print(f"[E6DATA_STRATEGY_DEBUG] {time.strftime('%Y-%m-%d %H:%M:%S')} - {message}")
+        _logger.debug(f"[E6DATA_STRATEGY_DEBUG] {time.strftime('%Y-%m-%d %H:%M:%S')} - {message}")
+
+
+def _get_normalised_strategy_with_validate(strategy):
+    if not strategy:
+        return False
+    # Normalize strategy to lowercase and validate
+    normalized_strategy = strategy.lower()
+    if normalized_strategy not in ['blue', 'green']:
+        return False
+    return normalized_strategy
 
 
 def _get_shared_strategy():
@@ -157,11 +169,8 @@ def _get_active_strategy():
 
 def _set_active_strategy(strategy):
     """Set the active deployment strategy in shared memory."""
-    if not strategy:
-        return
-    # Normalize strategy to lowercase and validate
-    normalized_strategy = strategy.lower()
-    if normalized_strategy not in ['blue', 'green']:
+    normalized_strategy = _get_normalised_strategy_with_validate(strategy)
+    if not normalized_strategy:
         return
 
     with _strategy_lock:
@@ -194,11 +203,8 @@ def _clear_strategy_cache():
 
 def _set_pending_strategy(strategy):
     """Set the pending strategy to be used for the next query."""
-    if not strategy:
-        return
-    # Normalize strategy to lowercase and validate
-    normalized_strategy = strategy.lower()
-    if normalized_strategy not in ['blue', 'green']:
+    normalized_strategy = _get_normalised_strategy_with_validate(strategy)
+    if not normalized_strategy:
         return
 
     with _strategy_lock:
@@ -243,11 +249,8 @@ def _invalidate_all_sessions():
 
 def _register_query_strategy(query_id, strategy):
     """Register the strategy used for a specific query."""
-    if not query_id or not strategy:
-        return
-    # Normalize strategy to lowercase and validate
-    normalized_strategy = strategy.lower()
-    if normalized_strategy not in ['blue', 'green']:
+    normalized_strategy = _get_normalised_strategy_with_validate(strategy)
+    if not normalized_strategy:
         return
 
     with _strategy_lock:
@@ -536,8 +539,9 @@ class Connection(object):
                         # Check for new strategy in authenticate response
                         if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                             new_strategy = authenticate_response.new_strategy.lower()
-                            if new_strategy != active_strategy:
-                                _set_pending_strategy(new_strategy)
+                            normalized_strategy = _get_normalised_strategy_with_validate(new_strategy)
+                            if normalized_strategy and normalized_strategy != active_strategy:
+                                _set_pending_strategy(normalized_strategy)
                                 _apply_pending_strategy()
                                 self._session_id = None
                                 self.close()
@@ -583,7 +587,8 @@ class Connection(object):
                                 # Check for new strategy in authenticate response
                                 if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                                     new_strategy = authenticate_response.new_strategy.lower()
-                                    if new_strategy != strategy:
+                                    normalized_strategy = _get_normalised_strategy_with_validate(new_strategy)
+                                    if normalized_strategy and normalized_strategy != active_strategy:
                                         _set_pending_strategy(new_strategy)
                                         _apply_pending_strategy()
                                         self.close()

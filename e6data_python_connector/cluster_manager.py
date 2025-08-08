@@ -365,7 +365,7 @@ class ClusterManager:
             # Retrieve the current cluster status with strategy header
             try:
                 current_status = self._try_cluster_request("status")
-            except _InactiveRpcError:
+            except _InactiveRpcError as e:
                 return False
             if current_status.status == 'suspended':
                 # Send the resume request with strategy header

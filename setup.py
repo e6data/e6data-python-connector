@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = (2, 3, 9,)
+VERSION = (2, 3, 10,)
 
 
 def get_long_desc():
@@ -49,7 +49,7 @@ setuptools.setup(
         'pycryptodome==3.19.1',
         'pytz==2024.1',
         'thrift==0.20.0',
-        'grpcio==1.65.1',
+        'grpcio>=1.74.0',
         'grpcio-tools',
     ],
     classifiers=[
