@@ -11,8 +11,24 @@
 # limitations under the License.
 
 import setuptools
+import sys
+import os
 
 VERSION = (2, 3, 10,)
+
+# Check if Cython is available and user wants to build extensions
+BUILD_CYTHON = os.environ.get('BUILD_CYTHON', '0') == '1'
+CYTHON_AVAILABLE = False
+
+if BUILD_CYTHON:
+    try:
+        from Cython.Build import cythonize
+        import numpy as np
+        CYTHON_AVAILABLE = True
+        print("Cython extensions will be built")
+    except ImportError:
+        print("Warning: Cython or NumPy not available. Skipping Cython extensions.")
+        BUILD_CYTHON = False
 
 
 def get_long_desc():
@@ -30,20 +46,29 @@ def get_long_desc():
         return "Client for the e6data distributed SQL Engine."
 
 
-setuptools.setup(
-    name="e6data-python-connector",
-    version=".".join(map(str, VERSION)),  # More Pythonic way to convert tuple to string.
-    author="e6data, Inc.",
-    author_email="info@e6data.com",
-    description="Client for the e6data distributed SQL Engine.",
-    long_description=get_long_desc(),
-    long_description_content_type="text/markdown",
-    url='https://github.com/e6x-labs/e6data-python-connector',
-    packages=setuptools.find_packages(),  # Automatically detects all packages in the source tree.
-    license="Apache 2.0",
-    include_package_data=True,  # Includes non-Python files specified in MANIFEST.in.
-    python_requires='>=3.9',
-    install_requires=[
+def get_extensions():
+    """Get Cython extensions if enabled."""
+    extensions = []
+    if BUILD_CYTHON and CYTHON_AVAILABLE:
+        from setup_cython import get_cython_extensions
+        extensions = get_cython_extensions()
+    return extensions
+
+
+setup_kwargs = {
+    "name": "e6data-python-connector",
+    "version": ".".join(map(str, VERSION)),  # More Pythonic way to convert tuple to string.
+    "author": "e6data, Inc.",
+    "author_email": "info@e6data.com",
+    "description": "Client for the e6data distributed SQL Engine.",
+    "long_description": get_long_desc(),
+    "long_description_content_type": "text/markdown",
+    "url": 'https://github.com/e6x-labs/e6data-python-connector',
+    "packages": setuptools.find_packages(),  # Automatically detects all packages in the source tree.
+    "license": "Apache 2.0",
+    "include_package_data": True,  # Includes non-Python files specified in MANIFEST.in.
+    "python_requires": '>=3.9',
+    "install_requires": [
         'sqlalchemy>=2.0.42',
         'future==1.0.0',
         'python-dateutil==2.9.0.post0',
@@ -53,7 +78,7 @@ setuptools.setup(
         'grpcio>=1.74.0',
         'grpcio-tools>=1.74.0',
     ],
-    classifiers=[
+    "classifiers": [
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS",
         "Operating System :: Microsoft :: Windows",
@@ -68,9 +93,21 @@ setuptools.setup(
         "Topic :: Database",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-    entry_points={
+    "entry_points": {
         'sqlalchemy.dialects': [
             'e6data = e6data_python_connector.dialect:E6dataDialect'
         ],
     }
-)
+}
+
+# Add Cython extensions if enabled
+extensions = get_extensions()
+if extensions:
+    setup_kwargs["ext_modules"] = extensions
+    # Add optional dependencies for Cython builds
+    setup_kwargs["install_requires"].extend([
+        'cython>=0.29.0',
+        'numpy>=1.19.0',
+    ])
+
+setuptools.setup(**setup_kwargs)
