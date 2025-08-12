@@ -372,6 +372,7 @@ class Connection(object):
         self.database = database
         self.cluster_name = cluster_name
         self._session_id = None
+        self._session_strategy = None  # Track which strategy was used for current session
         self._host = host
         self._port = port
 
@@ -494,6 +495,7 @@ class Connection(object):
         # Check if session was invalidated globally
         if self._session_id and session_invalidated:
             self._session_id = None
+            self._session_strategy = None
             self.close()
             self._create_client()
             # Clear the invalidation flag
@@ -507,8 +509,18 @@ class Connection(object):
                 _apply_pending_strategy()
                 # Force complete reconnection with new strategy
                 self._session_id = None
+                self._session_strategy = None
                 self.close()
                 self._create_client()
+        
+        # Check if session strategy matches current active strategy
+        elif self._session_id and self._session_strategy and self._session_strategy != _get_active_strategy():
+            # Session was created with different strategy, need to re-authenticate
+            _strategy_debug_log(f"Session strategy mismatch: session created with {self._session_strategy}, current active is {_get_active_strategy()}")
+            self._session_id = None
+            self._session_strategy = None
+            self.close()
+            self._create_client()
 
         if not self._session_id:
             try:
@@ -533,6 +545,8 @@ class Connection(object):
                         self._session_id = authenticate_response.sessionId
                         if not self._session_id:
                             raise ValueError("Invalid credentials.")
+                        # Track which strategy was used for this session
+                        self._session_strategy = active_strategy
                         # Check for new strategy in authenticate response
                         if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                             new_strategy = authenticate_response.new_strategy.lower()
@@ -540,6 +554,7 @@ class Connection(object):
                                 _set_pending_strategy(new_strategy)
                                 _apply_pending_strategy()
                                 self._session_id = None
+                                self._session_strategy = None
                                 self.close()
                                 self._create_client()
                                 return self.get_session_id
@@ -579,6 +594,8 @@ class Connection(object):
                                 # Success! Cache this strategy
                                 _strategy_debug_log(f"Authentication successful with strategy: {strategy}")
                                 _set_active_strategy(strategy)
+                                # Track which strategy was used for this session
+                                self._session_strategy = strategy
 
                                 # Check for new strategy in authenticate response
                                 if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
@@ -589,6 +606,7 @@ class Connection(object):
                                         self.close()
                                         self._create_client()
                                         self._session_id = None
+                                        self._session_strategy = None
                                         return self.get_session_id
                                 break
                         except _InactiveRpcError as e:
@@ -666,6 +684,7 @@ class Connection(object):
             self._channel.close()
             self._channel = None
         self._session_id = None
+        self._session_strategy = None
         
         # Remove from debug connections if debug was enabled
         if self._debug:
@@ -957,8 +976,14 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of tuples containing gRPC metadata.
         """
-        # Use query-specific strategy if available, otherwise use active strategy
-        strategy = _get_query_strategy(self._query_id) if self._query_id else _get_active_strategy()
+        # Use query-specific strategy if available, otherwise use session strategy, otherwise use active strategy
+        if self._query_id:
+            strategy = _get_query_strategy(self._query_id)
+        elif self.connection._session_strategy:
+            # Use the strategy that was used to create the current session
+            strategy = self.connection._session_strategy
+        else:
+            strategy = _get_active_strategy()
         return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_name, strategy=strategy)
 
     @property
