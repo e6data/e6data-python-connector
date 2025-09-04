@@ -9,6 +9,10 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch, PropertyMock
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from e6data_python_connector.connection_pool import ConnectionPool, PooledConnection
 from e6data_python_connector.e6data_grpc import Connection
 
