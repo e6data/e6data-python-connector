@@ -11,6 +11,15 @@
 # limitations under the License.
 
 import setuptools
+import os
+
+# Import Cython build support
+try:
+    from setup_cython import get_cython_extensions, print_build_info
+    CYTHON_AVAILABLE = True
+except ImportError:
+    CYTHON_AVAILABLE = False
+    print("Warning: setup_cython.py not found, Cython extensions disabled")
 
 VERSION = (2, 3, 10, 'rc6')
 
@@ -29,6 +38,16 @@ def get_long_desc():
         # Fallback if README.md is missing.
         return "Client for the e6data distributed SQL Engine."
 
+
+# Get Cython extensions if available
+ext_modules = []
+if CYTHON_AVAILABLE and os.environ.get('BUILD_CYTHON'):
+    print_build_info()
+    ext_modules = get_cython_extensions()
+    if ext_modules:
+        print(f"Building {len(ext_modules)} Cython extension(s)")
+    else:
+        print("No Cython extensions to build")
 
 setuptools.setup(
     name="e6data-python-connector",
@@ -68,5 +87,7 @@ setuptools.setup(
         'sqlalchemy.dialects': [
             'e6data = e6data_python_connector.dialect:E6dataDialect'
         ],
-    }
+    },
+    ext_modules=ext_modules,
+    zip_safe=False  # Required for Cython extensions
 )

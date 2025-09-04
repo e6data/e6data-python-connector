@@ -1,0 +1,7 @@
+{
+  "optimization": {
+    "mode": "python",
+    "enabled": true,
+    "test_load": "success"
+  }
+}
