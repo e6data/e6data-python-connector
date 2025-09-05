@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = (2, 3, 10, 'rc6')
+VERSION = (2, 3, 10, 'rc7')
 
 
 def get_long_desc():
@@ -63,6 +63,7 @@ setuptools.setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
     entry_points={
         'sqlalchemy.dialects': [
