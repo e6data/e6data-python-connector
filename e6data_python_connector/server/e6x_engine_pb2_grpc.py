@@ -39,40 +39,15 @@ class QueryEngineServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.clear = channel.unary_unary(
-                '/QueryEngineService/clear',
-                request_serializer=e6x__engine__pb2.ClearRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.ClearResponse.FromString,
+        self.authenticate = channel.unary_unary(
+                '/QueryEngineService/authenticate',
+                request_serializer=e6x__engine__pb2.AuthenticateRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.AuthenticateResponse.FromString,
                 _registered_method=True)
-        self.cancelQuery = channel.unary_unary(
-                '/QueryEngineService/cancelQuery',
-                request_serializer=e6x__engine__pb2.CancelQueryRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.CancelQueryResponse.FromString,
-                _registered_method=True)
-        self.clearOrCancelQuery = channel.unary_unary(
-                '/QueryEngineService/clearOrCancelQuery',
-                request_serializer=e6x__engine__pb2.ClearOrCancelQueryRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.ClearOrCancelQueryResponse.FromString,
-                _registered_method=True)
-        self.explain = channel.unary_unary(
-                '/QueryEngineService/explain',
-                request_serializer=e6x__engine__pb2.ExplainRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.ExplainResponse.FromString,
-                _registered_method=True)
-        self.dryRun = channel.unary_unary(
-                '/QueryEngineService/dryRun',
-                request_serializer=e6x__engine__pb2.DryRunRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.DryRunResponse.FromString,
-                _registered_method=True)
-        self.dryRunV2 = channel.unary_unary(
-                '/QueryEngineService/dryRunV2',
-                request_serializer=e6x__engine__pb2.DryRunRequestV2.SerializeToString,
-                response_deserializer=e6x__engine__pb2.DryRunResponse.FromString,
-                _registered_method=True)
-        self.explainAnalyze = channel.unary_unary(
-                '/QueryEngineService/explainAnalyze',
-                request_serializer=e6x__engine__pb2.ExplainAnalyzeRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.ExplainAnalyzeResponse.FromString,
+        self.identifyPlanner = channel.unary_unary(
+                '/QueryEngineService/identifyPlanner',
+                request_serializer=e6x__engine__pb2.IdentifyPlannerRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.IdentifyPlannerResponse.FromString,
                 _registered_method=True)
         self.prepareStatement = channel.unary_unary(
                 '/QueryEngineService/prepareStatement',
@@ -94,35 +69,85 @@ class QueryEngineServiceStub(object):
                 request_serializer=e6x__engine__pb2.ExecuteStatementV2Request.SerializeToString,
                 response_deserializer=e6x__engine__pb2.ExecuteStatementResponse.FromString,
                 _registered_method=True)
-        self.getNextResultRow = channel.unary_unary(
-                '/QueryEngineService/getNextResultRow',
-                request_serializer=e6x__engine__pb2.GetNextResultRowRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.GetNextResultRowResponse.FromString,
+        self.getResultMetadata = channel.unary_unary(
+                '/QueryEngineService/getResultMetadata',
+                request_serializer=e6x__engine__pb2.GetResultMetadataRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetResultMetadataResponse.FromString,
+                _registered_method=True)
+        self.getDynamicParams = channel.unary_unary(
+                '/QueryEngineService/getDynamicParams',
+                request_serializer=e6x__engine__pb2.GetDynamicParamsRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetDynamicParamsResponse.FromString,
                 _registered_method=True)
         self.getNextResultBatch = channel.unary_unary(
                 '/QueryEngineService/getNextResultBatch',
                 request_serializer=e6x__engine__pb2.GetNextResultBatchRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.GetNextResultBatchResponse.FromString,
                 _registered_method=True)
-        self.getResultMetadata = channel.unary_unary(
-                '/QueryEngineService/getResultMetadata',
-                request_serializer=e6x__engine__pb2.GetResultMetadataRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.GetResultMetadataResponse.FromString,
+        self.explainAnalyze = channel.unary_unary(
+                '/QueryEngineService/explainAnalyze',
+                request_serializer=e6x__engine__pb2.ExplainAnalyzeRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ExplainAnalyzeResponse.FromString,
                 _registered_method=True)
-        self.authenticate = channel.unary_unary(
-                '/QueryEngineService/authenticate',
-                request_serializer=e6x__engine__pb2.AuthenticateRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.AuthenticateResponse.FromString,
+        self.clear = channel.unary_unary(
+                '/QueryEngineService/clear',
+                request_serializer=e6x__engine__pb2.ClearRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ClearResponse.FromString,
                 _registered_method=True)
-        self.getTables = channel.unary_unary(
-                '/QueryEngineService/getTables',
-                request_serializer=e6x__engine__pb2.GetTablesRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.GetTablesResponse.FromString,
+        self.cancelQuery = channel.unary_unary(
+                '/QueryEngineService/cancelQuery',
+                request_serializer=e6x__engine__pb2.CancelQueryRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.CancelQueryResponse.FromString,
                 _registered_method=True)
-        self.getTablesV2 = channel.unary_unary(
-                '/QueryEngineService/getTablesV2',
-                request_serializer=e6x__engine__pb2.GetTablesV2Request.SerializeToString,
-                response_deserializer=e6x__engine__pb2.GetTablesResponse.FromString,
+        self.clearOrCancelQuery = channel.unary_unary(
+                '/QueryEngineService/clearOrCancelQuery',
+                request_serializer=e6x__engine__pb2.ClearOrCancelQueryRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ClearOrCancelQueryResponse.FromString,
+                _registered_method=True)
+        self.syncSchemas = channel.unary_unary(
+                '/QueryEngineService/syncSchemas',
+                request_serializer=e6x__engine__pb2.SyncSchemaRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.SyncSchemaResponse.FromString,
+                _registered_method=True)
+        self.healthCheck = channel.unary_unary(
+                '/QueryEngineService/healthCheck',
+                request_serializer=e6x__engine__pb2.HealthCheckRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.HealthCheckResponse.FromString,
+                _registered_method=True)
+        self.analyzeQuery = channel.unary_unary(
+                '/QueryEngineService/analyzeQuery',
+                request_serializer=e6x__engine__pb2.AnalyzeQueryRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.AnalyzeQueryResponse.FromString,
+                _registered_method=True)
+        self.explain = channel.unary_unary(
+                '/QueryEngineService/explain',
+                request_serializer=e6x__engine__pb2.ExplainRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ExplainResponse.FromString,
+                _registered_method=True)
+        self.status = channel.unary_unary(
+                '/QueryEngineService/status',
+                request_serializer=e6x__engine__pb2.StatusRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.addCatalogs = channel.unary_unary(
+                '/QueryEngineService/addCatalogs',
+                request_serializer=e6x__engine__pb2.AddCatalogsRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.AddCatalogsResponse.FromString,
+                _registered_method=True)
+        self.refreshCatalogs = channel.unary_unary(
+                '/QueryEngineService/refreshCatalogs',
+                request_serializer=e6x__engine__pb2.RefreshCatalogsRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.RefreshCatalogsResponse.FromString,
+                _registered_method=True)
+        self.getAddCatalogsResponse = channel.unary_unary(
+                '/QueryEngineService/getAddCatalogsResponse',
+                request_serializer=e6x__engine__pb2.GetAddCatalogsRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetAddCatalogsResponse.FromString,
+                _registered_method=True)
+        self.getCataloges = channel.unary_unary(
+                '/QueryEngineService/getCataloges',
+                request_serializer=e6x__engine__pb2.GetCatalogesRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetCatalogesResponse.FromString,
                 _registered_method=True)
         self.getSchemaNames = channel.unary_unary(
                 '/QueryEngineService/getSchemaNames',
@@ -133,6 +158,16 @@ class QueryEngineServiceStub(object):
                 '/QueryEngineService/getSchemaNamesV2',
                 request_serializer=e6x__engine__pb2.GetSchemaNamesV2Request.SerializeToString,
                 response_deserializer=e6x__engine__pb2.GetSchemaNamesResponse.FromString,
+                _registered_method=True)
+        self.getTables = channel.unary_unary(
+                '/QueryEngineService/getTables',
+                request_serializer=e6x__engine__pb2.GetTablesRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetTablesResponse.FromString,
+                _registered_method=True)
+        self.getTablesV2 = channel.unary_unary(
+                '/QueryEngineService/getTablesV2',
+                request_serializer=e6x__engine__pb2.GetTablesV2Request.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetTablesResponse.FromString,
                 _registered_method=True)
         self.getColumns = channel.unary_unary(
                 '/QueryEngineService/getColumns',
@@ -154,80 +189,77 @@ class QueryEngineServiceStub(object):
                 request_serializer=e6x__engine__pb2.SetPropsRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.SetPropsResponse.FromString,
                 _registered_method=True)
-        self.status = channel.unary_unary(
-                '/QueryEngineService/status',
-                request_serializer=e6x__engine__pb2.StatusRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.StatusResponse.FromString,
+        self.dryRun = channel.unary_unary(
+                '/QueryEngineService/dryRun',
+                request_serializer=e6x__engine__pb2.DryRunRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.DryRunResponse.FromString,
                 _registered_method=True)
-        self.addCatalogs = channel.unary_unary(
-                '/QueryEngineService/addCatalogs',
-                request_serializer=e6x__engine__pb2.AddCatalogsRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.AddCatalogsResponse.FromString,
-                _registered_method=True)
-        self.getAddCatalogsResponse = channel.unary_unary(
-                '/QueryEngineService/getAddCatalogsResponse',
-                request_serializer=e6x__engine__pb2.GetAddCatalogsRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.GetAddCatalogsResponse.FromString,
-                _registered_method=True)
-        self.getCataloges = channel.unary_unary(
-                '/QueryEngineService/getCataloges',
-                request_serializer=e6x__engine__pb2.GetCatalogesRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.GetCatalogesResponse.FromString,
+        self.dryRunV2 = channel.unary_unary(
+                '/QueryEngineService/dryRunV2',
+                request_serializer=e6x__engine__pb2.DryRunRequestV2.SerializeToString,
+                response_deserializer=e6x__engine__pb2.DryRunResponse.FromString,
                 _registered_method=True)
         self.getNextRemoteCachedChunk = channel.unary_unary(
                 '/QueryEngineService/getNextRemoteCachedChunk',
                 request_serializer=e6x__engine__pb2.RemoteChunkRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.RemoteChunkResponse.FromString,
                 _registered_method=True)
-        self.refreshCatalogs = channel.unary_unary(
-                '/QueryEngineService/refreshCatalogs',
-                request_serializer=e6x__engine__pb2.RefreshCatalogsRequest.SerializeToString,
-                response_deserializer=e6x__engine__pb2.RefreshCatalogsResponse.FromString,
+        self.createDataFrame = channel.unary_unary(
+                '/QueryEngineService/createDataFrame',
+                request_serializer=e6x__engine__pb2.CreateDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.CreateDataFrameResponse.FromString,
+                _registered_method=True)
+        self.projectionOnDataFrame = channel.unary_unary(
+                '/QueryEngineService/projectionOnDataFrame',
+                request_serializer=e6x__engine__pb2.ProjectionOnDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ProjectionOnDataFrameResponse.FromString,
+                _registered_method=True)
+        self.aggregateOnDataFrame = channel.unary_unary(
+                '/QueryEngineService/aggregateOnDataFrame',
+                request_serializer=e6x__engine__pb2.AggregateOnDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.AggregateOnDataFrameResponse.FromString,
+                _registered_method=True)
+        self.filterOnDataFrame = channel.unary_unary(
+                '/QueryEngineService/filterOnDataFrame',
+                request_serializer=e6x__engine__pb2.FilterOnDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.FilterOnDataFrameResponse.FromString,
+                _registered_method=True)
+        self.orderByOnDataFrame = channel.unary_unary(
+                '/QueryEngineService/orderByOnDataFrame',
+                request_serializer=e6x__engine__pb2.OrderByOnDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.OrderByOnDataFrameResponse.FromString,
+                _registered_method=True)
+        self.limitOnDataFrame = channel.unary_unary(
+                '/QueryEngineService/limitOnDataFrame',
+                request_serializer=e6x__engine__pb2.LimitOnDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.LimitOnDataFrameResponse.FromString,
+                _registered_method=True)
+        self.executeDataFrame = channel.unary_unary(
+                '/QueryEngineService/executeDataFrame',
+                request_serializer=e6x__engine__pb2.ExecuteDataFrameRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.ExecuteDataFrameResponse.FromString,
+                _registered_method=True)
+        self.dropUserContext = channel.unary_unary(
+                '/QueryEngineService/dropUserContext',
+                request_serializer=e6x__engine__pb2.DropUserContextRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.DropUserContextResponse.FromString,
                 _registered_method=True)
 
 
 class QueryEngineServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def clear(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+    def authenticate(self, request, context):
+        """Client sided API
 
-    def cancelQuery(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def clearOrCancelQuery(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def explain(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def dryRun(self, request, context):
-        """Executor, Engine
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def dryRunV2(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def explainAnalyze(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def identifyPlanner(self, request, context):
+        """This is a stateless call
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -256,7 +288,13 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getNextResultRow(self, request, context):
+    def getResultMetadata(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getDynamicParams(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -268,25 +306,81 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getResultMetadata(self, request, context):
+    def explainAnalyze(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def authenticate(self, request, context):
+    def clear(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getTables(self, request, context):
+    def cancelQuery(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getTablesV2(self, request, context):
+    def clearOrCancelQuery(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def syncSchemas(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def healthCheck(self, request, context):
+        """Platform sided API
+
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def analyzeQuery(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def explain(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def status(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def addCatalogs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def refreshCatalogs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getAddCatalogsResponse(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getCataloges(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -299,6 +393,18 @@ class QueryEngineServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getSchemaNamesV2(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTables(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTablesV2(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -328,25 +434,16 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def status(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def dryRun(self, request, context):
+        """Not implemented / Not in use / Deprecated
+
+        Executor, Engine
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def addCatalogs(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getAddCatalogsResponse(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def getCataloges(self, request, context):
+    def dryRunV2(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -358,7 +455,51 @@ class QueryEngineServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def refreshCatalogs(self, request, context):
+    def createDataFrame(self, request, context):
+        """dataframe
+
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def projectionOnDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def aggregateOnDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def filterOnDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def orderByOnDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def limitOnDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def executeDataFrame(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def dropUserContext(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -367,40 +508,15 @@ class QueryEngineServiceServicer(object):
 
 def add_QueryEngineServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'clear': grpc.unary_unary_rpc_method_handler(
-                    servicer.clear,
-                    request_deserializer=e6x__engine__pb2.ClearRequest.FromString,
-                    response_serializer=e6x__engine__pb2.ClearResponse.SerializeToString,
+            'authenticate': grpc.unary_unary_rpc_method_handler(
+                    servicer.authenticate,
+                    request_deserializer=e6x__engine__pb2.AuthenticateRequest.FromString,
+                    response_serializer=e6x__engine__pb2.AuthenticateResponse.SerializeToString,
             ),
-            'cancelQuery': grpc.unary_unary_rpc_method_handler(
-                    servicer.cancelQuery,
-                    request_deserializer=e6x__engine__pb2.CancelQueryRequest.FromString,
-                    response_serializer=e6x__engine__pb2.CancelQueryResponse.SerializeToString,
-            ),
-            'clearOrCancelQuery': grpc.unary_unary_rpc_method_handler(
-                    servicer.clearOrCancelQuery,
-                    request_deserializer=e6x__engine__pb2.ClearOrCancelQueryRequest.FromString,
-                    response_serializer=e6x__engine__pb2.ClearOrCancelQueryResponse.SerializeToString,
-            ),
-            'explain': grpc.unary_unary_rpc_method_handler(
-                    servicer.explain,
-                    request_deserializer=e6x__engine__pb2.ExplainRequest.FromString,
-                    response_serializer=e6x__engine__pb2.ExplainResponse.SerializeToString,
-            ),
-            'dryRun': grpc.unary_unary_rpc_method_handler(
-                    servicer.dryRun,
-                    request_deserializer=e6x__engine__pb2.DryRunRequest.FromString,
-                    response_serializer=e6x__engine__pb2.DryRunResponse.SerializeToString,
-            ),
-            'dryRunV2': grpc.unary_unary_rpc_method_handler(
-                    servicer.dryRunV2,
-                    request_deserializer=e6x__engine__pb2.DryRunRequestV2.FromString,
-                    response_serializer=e6x__engine__pb2.DryRunResponse.SerializeToString,
-            ),
-            'explainAnalyze': grpc.unary_unary_rpc_method_handler(
-                    servicer.explainAnalyze,
-                    request_deserializer=e6x__engine__pb2.ExplainAnalyzeRequest.FromString,
-                    response_serializer=e6x__engine__pb2.ExplainAnalyzeResponse.SerializeToString,
+            'identifyPlanner': grpc.unary_unary_rpc_method_handler(
+                    servicer.identifyPlanner,
+                    request_deserializer=e6x__engine__pb2.IdentifyPlannerRequest.FromString,
+                    response_serializer=e6x__engine__pb2.IdentifyPlannerResponse.SerializeToString,
             ),
             'prepareStatement': grpc.unary_unary_rpc_method_handler(
                     servicer.prepareStatement,
@@ -422,35 +538,85 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     request_deserializer=e6x__engine__pb2.ExecuteStatementV2Request.FromString,
                     response_serializer=e6x__engine__pb2.ExecuteStatementResponse.SerializeToString,
             ),
-            'getNextResultRow': grpc.unary_unary_rpc_method_handler(
-                    servicer.getNextResultRow,
-                    request_deserializer=e6x__engine__pb2.GetNextResultRowRequest.FromString,
-                    response_serializer=e6x__engine__pb2.GetNextResultRowResponse.SerializeToString,
+            'getResultMetadata': grpc.unary_unary_rpc_method_handler(
+                    servicer.getResultMetadata,
+                    request_deserializer=e6x__engine__pb2.GetResultMetadataRequest.FromString,
+                    response_serializer=e6x__engine__pb2.GetResultMetadataResponse.SerializeToString,
+            ),
+            'getDynamicParams': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDynamicParams,
+                    request_deserializer=e6x__engine__pb2.GetDynamicParamsRequest.FromString,
+                    response_serializer=e6x__engine__pb2.GetDynamicParamsResponse.SerializeToString,
             ),
             'getNextResultBatch': grpc.unary_unary_rpc_method_handler(
                     servicer.getNextResultBatch,
                     request_deserializer=e6x__engine__pb2.GetNextResultBatchRequest.FromString,
                     response_serializer=e6x__engine__pb2.GetNextResultBatchResponse.SerializeToString,
             ),
-            'getResultMetadata': grpc.unary_unary_rpc_method_handler(
-                    servicer.getResultMetadata,
-                    request_deserializer=e6x__engine__pb2.GetResultMetadataRequest.FromString,
-                    response_serializer=e6x__engine__pb2.GetResultMetadataResponse.SerializeToString,
+            'explainAnalyze': grpc.unary_unary_rpc_method_handler(
+                    servicer.explainAnalyze,
+                    request_deserializer=e6x__engine__pb2.ExplainAnalyzeRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ExplainAnalyzeResponse.SerializeToString,
             ),
-            'authenticate': grpc.unary_unary_rpc_method_handler(
-                    servicer.authenticate,
-                    request_deserializer=e6x__engine__pb2.AuthenticateRequest.FromString,
-                    response_serializer=e6x__engine__pb2.AuthenticateResponse.SerializeToString,
+            'clear': grpc.unary_unary_rpc_method_handler(
+                    servicer.clear,
+                    request_deserializer=e6x__engine__pb2.ClearRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ClearResponse.SerializeToString,
             ),
-            'getTables': grpc.unary_unary_rpc_method_handler(
-                    servicer.getTables,
-                    request_deserializer=e6x__engine__pb2.GetTablesRequest.FromString,
-                    response_serializer=e6x__engine__pb2.GetTablesResponse.SerializeToString,
+            'cancelQuery': grpc.unary_unary_rpc_method_handler(
+                    servicer.cancelQuery,
+                    request_deserializer=e6x__engine__pb2.CancelQueryRequest.FromString,
+                    response_serializer=e6x__engine__pb2.CancelQueryResponse.SerializeToString,
             ),
-            'getTablesV2': grpc.unary_unary_rpc_method_handler(
-                    servicer.getTablesV2,
-                    request_deserializer=e6x__engine__pb2.GetTablesV2Request.FromString,
-                    response_serializer=e6x__engine__pb2.GetTablesResponse.SerializeToString,
+            'clearOrCancelQuery': grpc.unary_unary_rpc_method_handler(
+                    servicer.clearOrCancelQuery,
+                    request_deserializer=e6x__engine__pb2.ClearOrCancelQueryRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ClearOrCancelQueryResponse.SerializeToString,
+            ),
+            'syncSchemas': grpc.unary_unary_rpc_method_handler(
+                    servicer.syncSchemas,
+                    request_deserializer=e6x__engine__pb2.SyncSchemaRequest.FromString,
+                    response_serializer=e6x__engine__pb2.SyncSchemaResponse.SerializeToString,
+            ),
+            'healthCheck': grpc.unary_unary_rpc_method_handler(
+                    servicer.healthCheck,
+                    request_deserializer=e6x__engine__pb2.HealthCheckRequest.FromString,
+                    response_serializer=e6x__engine__pb2.HealthCheckResponse.SerializeToString,
+            ),
+            'analyzeQuery': grpc.unary_unary_rpc_method_handler(
+                    servicer.analyzeQuery,
+                    request_deserializer=e6x__engine__pb2.AnalyzeQueryRequest.FromString,
+                    response_serializer=e6x__engine__pb2.AnalyzeQueryResponse.SerializeToString,
+            ),
+            'explain': grpc.unary_unary_rpc_method_handler(
+                    servicer.explain,
+                    request_deserializer=e6x__engine__pb2.ExplainRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ExplainResponse.SerializeToString,
+            ),
+            'status': grpc.unary_unary_rpc_method_handler(
+                    servicer.status,
+                    request_deserializer=e6x__engine__pb2.StatusRequest.FromString,
+                    response_serializer=e6x__engine__pb2.StatusResponse.SerializeToString,
+            ),
+            'addCatalogs': grpc.unary_unary_rpc_method_handler(
+                    servicer.addCatalogs,
+                    request_deserializer=e6x__engine__pb2.AddCatalogsRequest.FromString,
+                    response_serializer=e6x__engine__pb2.AddCatalogsResponse.SerializeToString,
+            ),
+            'refreshCatalogs': grpc.unary_unary_rpc_method_handler(
+                    servicer.refreshCatalogs,
+                    request_deserializer=e6x__engine__pb2.RefreshCatalogsRequest.FromString,
+                    response_serializer=e6x__engine__pb2.RefreshCatalogsResponse.SerializeToString,
+            ),
+            'getAddCatalogsResponse': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddCatalogsResponse,
+                    request_deserializer=e6x__engine__pb2.GetAddCatalogsRequest.FromString,
+                    response_serializer=e6x__engine__pb2.GetAddCatalogsResponse.SerializeToString,
+            ),
+            'getCataloges': grpc.unary_unary_rpc_method_handler(
+                    servicer.getCataloges,
+                    request_deserializer=e6x__engine__pb2.GetCatalogesRequest.FromString,
+                    response_serializer=e6x__engine__pb2.GetCatalogesResponse.SerializeToString,
             ),
             'getSchemaNames': grpc.unary_unary_rpc_method_handler(
                     servicer.getSchemaNames,
@@ -461,6 +627,16 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     servicer.getSchemaNamesV2,
                     request_deserializer=e6x__engine__pb2.GetSchemaNamesV2Request.FromString,
                     response_serializer=e6x__engine__pb2.GetSchemaNamesResponse.SerializeToString,
+            ),
+            'getTables': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTables,
+                    request_deserializer=e6x__engine__pb2.GetTablesRequest.FromString,
+                    response_serializer=e6x__engine__pb2.GetTablesResponse.SerializeToString,
+            ),
+            'getTablesV2': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTablesV2,
+                    request_deserializer=e6x__engine__pb2.GetTablesV2Request.FromString,
+                    response_serializer=e6x__engine__pb2.GetTablesResponse.SerializeToString,
             ),
             'getColumns': grpc.unary_unary_rpc_method_handler(
                     servicer.getColumns,
@@ -482,35 +658,60 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     request_deserializer=e6x__engine__pb2.SetPropsRequest.FromString,
                     response_serializer=e6x__engine__pb2.SetPropsResponse.SerializeToString,
             ),
-            'status': grpc.unary_unary_rpc_method_handler(
-                    servicer.status,
-                    request_deserializer=e6x__engine__pb2.StatusRequest.FromString,
-                    response_serializer=e6x__engine__pb2.StatusResponse.SerializeToString,
+            'dryRun': grpc.unary_unary_rpc_method_handler(
+                    servicer.dryRun,
+                    request_deserializer=e6x__engine__pb2.DryRunRequest.FromString,
+                    response_serializer=e6x__engine__pb2.DryRunResponse.SerializeToString,
             ),
-            'addCatalogs': grpc.unary_unary_rpc_method_handler(
-                    servicer.addCatalogs,
-                    request_deserializer=e6x__engine__pb2.AddCatalogsRequest.FromString,
-                    response_serializer=e6x__engine__pb2.AddCatalogsResponse.SerializeToString,
-            ),
-            'getAddCatalogsResponse': grpc.unary_unary_rpc_method_handler(
-                    servicer.getAddCatalogsResponse,
-                    request_deserializer=e6x__engine__pb2.GetAddCatalogsRequest.FromString,
-                    response_serializer=e6x__engine__pb2.GetAddCatalogsResponse.SerializeToString,
-            ),
-            'getCataloges': grpc.unary_unary_rpc_method_handler(
-                    servicer.getCataloges,
-                    request_deserializer=e6x__engine__pb2.GetCatalogesRequest.FromString,
-                    response_serializer=e6x__engine__pb2.GetCatalogesResponse.SerializeToString,
+            'dryRunV2': grpc.unary_unary_rpc_method_handler(
+                    servicer.dryRunV2,
+                    request_deserializer=e6x__engine__pb2.DryRunRequestV2.FromString,
+                    response_serializer=e6x__engine__pb2.DryRunResponse.SerializeToString,
             ),
             'getNextRemoteCachedChunk': grpc.unary_unary_rpc_method_handler(
                     servicer.getNextRemoteCachedChunk,
                     request_deserializer=e6x__engine__pb2.RemoteChunkRequest.FromString,
                     response_serializer=e6x__engine__pb2.RemoteChunkResponse.SerializeToString,
             ),
-            'refreshCatalogs': grpc.unary_unary_rpc_method_handler(
-                    servicer.refreshCatalogs,
-                    request_deserializer=e6x__engine__pb2.RefreshCatalogsRequest.FromString,
-                    response_serializer=e6x__engine__pb2.RefreshCatalogsResponse.SerializeToString,
+            'createDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.createDataFrame,
+                    request_deserializer=e6x__engine__pb2.CreateDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.CreateDataFrameResponse.SerializeToString,
+            ),
+            'projectionOnDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.projectionOnDataFrame,
+                    request_deserializer=e6x__engine__pb2.ProjectionOnDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ProjectionOnDataFrameResponse.SerializeToString,
+            ),
+            'aggregateOnDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.aggregateOnDataFrame,
+                    request_deserializer=e6x__engine__pb2.AggregateOnDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.AggregateOnDataFrameResponse.SerializeToString,
+            ),
+            'filterOnDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.filterOnDataFrame,
+                    request_deserializer=e6x__engine__pb2.FilterOnDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.FilterOnDataFrameResponse.SerializeToString,
+            ),
+            'orderByOnDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.orderByOnDataFrame,
+                    request_deserializer=e6x__engine__pb2.OrderByOnDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.OrderByOnDataFrameResponse.SerializeToString,
+            ),
+            'limitOnDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.limitOnDataFrame,
+                    request_deserializer=e6x__engine__pb2.LimitOnDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.LimitOnDataFrameResponse.SerializeToString,
+            ),
+            'executeDataFrame': grpc.unary_unary_rpc_method_handler(
+                    servicer.executeDataFrame,
+                    request_deserializer=e6x__engine__pb2.ExecuteDataFrameRequest.FromString,
+                    response_serializer=e6x__engine__pb2.ExecuteDataFrameResponse.SerializeToString,
+            ),
+            'dropUserContext': grpc.unary_unary_rpc_method_handler(
+                    servicer.dropUserContext,
+                    request_deserializer=e6x__engine__pb2.DropUserContextRequest.FromString,
+                    response_serializer=e6x__engine__pb2.DropUserContextResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -524,7 +725,7 @@ class QueryEngineService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def clear(request,
+    def authenticate(request,
             target,
             options=(),
             channel_credentials=None,
@@ -537,9 +738,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/clear',
-            e6x__engine__pb2.ClearRequest.SerializeToString,
-            e6x__engine__pb2.ClearResponse.FromString,
+            '/QueryEngineService/authenticate',
+            e6x__engine__pb2.AuthenticateRequest.SerializeToString,
+            e6x__engine__pb2.AuthenticateResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -551,7 +752,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def cancelQuery(request,
+    def identifyPlanner(request,
             target,
             options=(),
             channel_credentials=None,
@@ -564,144 +765,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/cancelQuery',
-            e6x__engine__pb2.CancelQueryRequest.SerializeToString,
-            e6x__engine__pb2.CancelQueryResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def clearOrCancelQuery(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/clearOrCancelQuery',
-            e6x__engine__pb2.ClearOrCancelQueryRequest.SerializeToString,
-            e6x__engine__pb2.ClearOrCancelQueryResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def explain(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/explain',
-            e6x__engine__pb2.ExplainRequest.SerializeToString,
-            e6x__engine__pb2.ExplainResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def dryRun(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/dryRun',
-            e6x__engine__pb2.DryRunRequest.SerializeToString,
-            e6x__engine__pb2.DryRunResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def dryRunV2(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/dryRunV2',
-            e6x__engine__pb2.DryRunRequestV2.SerializeToString,
-            e6x__engine__pb2.DryRunResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def explainAnalyze(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/explainAnalyze',
-            e6x__engine__pb2.ExplainAnalyzeRequest.SerializeToString,
-            e6x__engine__pb2.ExplainAnalyzeResponse.FromString,
+            '/QueryEngineService/identifyPlanner',
+            e6x__engine__pb2.IdentifyPlannerRequest.SerializeToString,
+            e6x__engine__pb2.IdentifyPlannerResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -821,7 +887,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def getNextResultRow(request,
+    def getResultMetadata(request,
             target,
             options=(),
             channel_credentials=None,
@@ -834,9 +900,36 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/getNextResultRow',
-            e6x__engine__pb2.GetNextResultRowRequest.SerializeToString,
-            e6x__engine__pb2.GetNextResultRowResponse.FromString,
+            '/QueryEngineService/getResultMetadata',
+            e6x__engine__pb2.GetResultMetadataRequest.SerializeToString,
+            e6x__engine__pb2.GetResultMetadataResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def getDynamicParams(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/getDynamicParams',
+            e6x__engine__pb2.GetDynamicParamsRequest.SerializeToString,
+            e6x__engine__pb2.GetDynamicParamsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -875,7 +968,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def getResultMetadata(request,
+    def explainAnalyze(request,
             target,
             options=(),
             channel_credentials=None,
@@ -888,9 +981,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/getResultMetadata',
-            e6x__engine__pb2.GetResultMetadataRequest.SerializeToString,
-            e6x__engine__pb2.GetResultMetadataResponse.FromString,
+            '/QueryEngineService/explainAnalyze',
+            e6x__engine__pb2.ExplainAnalyzeRequest.SerializeToString,
+            e6x__engine__pb2.ExplainAnalyzeResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -902,7 +995,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def authenticate(request,
+    def clear(request,
             target,
             options=(),
             channel_credentials=None,
@@ -915,9 +1008,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/authenticate',
-            e6x__engine__pb2.AuthenticateRequest.SerializeToString,
-            e6x__engine__pb2.AuthenticateResponse.FromString,
+            '/QueryEngineService/clear',
+            e6x__engine__pb2.ClearRequest.SerializeToString,
+            e6x__engine__pb2.ClearResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -929,7 +1022,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def getTables(request,
+    def cancelQuery(request,
             target,
             options=(),
             channel_credentials=None,
@@ -942,9 +1035,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/getTables',
-            e6x__engine__pb2.GetTablesRequest.SerializeToString,
-            e6x__engine__pb2.GetTablesResponse.FromString,
+            '/QueryEngineService/cancelQuery',
+            e6x__engine__pb2.CancelQueryRequest.SerializeToString,
+            e6x__engine__pb2.CancelQueryResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -956,7 +1049,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def getTablesV2(request,
+    def clearOrCancelQuery(request,
             target,
             options=(),
             channel_credentials=None,
@@ -969,9 +1062,252 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/getTablesV2',
-            e6x__engine__pb2.GetTablesV2Request.SerializeToString,
-            e6x__engine__pb2.GetTablesResponse.FromString,
+            '/QueryEngineService/clearOrCancelQuery',
+            e6x__engine__pb2.ClearOrCancelQueryRequest.SerializeToString,
+            e6x__engine__pb2.ClearOrCancelQueryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def syncSchemas(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/syncSchemas',
+            e6x__engine__pb2.SyncSchemaRequest.SerializeToString,
+            e6x__engine__pb2.SyncSchemaResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def healthCheck(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/healthCheck',
+            e6x__engine__pb2.HealthCheckRequest.SerializeToString,
+            e6x__engine__pb2.HealthCheckResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def analyzeQuery(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/analyzeQuery',
+            e6x__engine__pb2.AnalyzeQueryRequest.SerializeToString,
+            e6x__engine__pb2.AnalyzeQueryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def explain(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/explain',
+            e6x__engine__pb2.ExplainRequest.SerializeToString,
+            e6x__engine__pb2.ExplainResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def status(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/status',
+            e6x__engine__pb2.StatusRequest.SerializeToString,
+            e6x__engine__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def addCatalogs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/addCatalogs',
+            e6x__engine__pb2.AddCatalogsRequest.SerializeToString,
+            e6x__engine__pb2.AddCatalogsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def refreshCatalogs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/refreshCatalogs',
+            e6x__engine__pb2.RefreshCatalogsRequest.SerializeToString,
+            e6x__engine__pb2.RefreshCatalogsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def getAddCatalogsResponse(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/getAddCatalogsResponse',
+            e6x__engine__pb2.GetAddCatalogsRequest.SerializeToString,
+            e6x__engine__pb2.GetAddCatalogsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def getCataloges(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/getCataloges',
+            e6x__engine__pb2.GetCatalogesRequest.SerializeToString,
+            e6x__engine__pb2.GetCatalogesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1026,6 +1362,60 @@ class QueryEngineService(object):
             '/QueryEngineService/getSchemaNamesV2',
             e6x__engine__pb2.GetSchemaNamesV2Request.SerializeToString,
             e6x__engine__pb2.GetSchemaNamesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def getTables(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/getTables',
+            e6x__engine__pb2.GetTablesRequest.SerializeToString,
+            e6x__engine__pb2.GetTablesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def getTablesV2(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/getTablesV2',
+            e6x__engine__pb2.GetTablesV2Request.SerializeToString,
+            e6x__engine__pb2.GetTablesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1145,7 +1535,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def status(request,
+    def dryRun(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1158,9 +1548,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/status',
-            e6x__engine__pb2.StatusRequest.SerializeToString,
-            e6x__engine__pb2.StatusResponse.FromString,
+            '/QueryEngineService/dryRun',
+            e6x__engine__pb2.DryRunRequest.SerializeToString,
+            e6x__engine__pb2.DryRunResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1172,7 +1562,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def addCatalogs(request,
+    def dryRunV2(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1185,63 +1575,9 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/addCatalogs',
-            e6x__engine__pb2.AddCatalogsRequest.SerializeToString,
-            e6x__engine__pb2.AddCatalogsResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def getAddCatalogsResponse(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/getAddCatalogsResponse',
-            e6x__engine__pb2.GetAddCatalogsRequest.SerializeToString,
-            e6x__engine__pb2.GetAddCatalogsResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def getCataloges(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/QueryEngineService/getCataloges',
-            e6x__engine__pb2.GetCatalogesRequest.SerializeToString,
-            e6x__engine__pb2.GetCatalogesResponse.FromString,
+            '/QueryEngineService/dryRunV2',
+            e6x__engine__pb2.DryRunRequestV2.SerializeToString,
+            e6x__engine__pb2.DryRunResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1280,7 +1616,7 @@ class QueryEngineService(object):
             _registered_method=True)
 
     @staticmethod
-    def refreshCatalogs(request,
+    def createDataFrame(request,
             target,
             options=(),
             channel_credentials=None,
@@ -1293,9 +1629,198 @@ class QueryEngineService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/QueryEngineService/refreshCatalogs',
-            e6x__engine__pb2.RefreshCatalogsRequest.SerializeToString,
-            e6x__engine__pb2.RefreshCatalogsResponse.FromString,
+            '/QueryEngineService/createDataFrame',
+            e6x__engine__pb2.CreateDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.CreateDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def projectionOnDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/projectionOnDataFrame',
+            e6x__engine__pb2.ProjectionOnDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.ProjectionOnDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def aggregateOnDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/aggregateOnDataFrame',
+            e6x__engine__pb2.AggregateOnDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.AggregateOnDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def filterOnDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/filterOnDataFrame',
+            e6x__engine__pb2.FilterOnDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.FilterOnDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def orderByOnDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/orderByOnDataFrame',
+            e6x__engine__pb2.OrderByOnDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.OrderByOnDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def limitOnDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/limitOnDataFrame',
+            e6x__engine__pb2.LimitOnDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.LimitOnDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def executeDataFrame(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/executeDataFrame',
+            e6x__engine__pb2.ExecuteDataFrameRequest.SerializeToString,
+            e6x__engine__pb2.ExecuteDataFrameResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def dropUserContext(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/dropUserContext',
+            e6x__engine__pb2.DropUserContextRequest.SerializeToString,
+            e6x__engine__pb2.DropUserContextResponse.FromString,
             options,
             channel_credentials,
             insecure,
