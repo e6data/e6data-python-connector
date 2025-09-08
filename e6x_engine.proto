@@ -1,100 +1,145 @@
 syntax = "proto3";
 option java_multiple_files = true;
+option java_package = "io.e6x.engine.grpc";
 
+// REQUESTS AND RESPONSES //
 
-message GFieldInfo {
-  string fieldName = 1;
-  string fieldType = 2;
-}
-
-
-message FailedSchemaElement
+message AuthenticateRequest
 {
-  string name = 1;
-  string type = 2;
-  string reason = 3;
+  string  user = 1;
+  string  password = 2;
+  optional string  userNameForImpersonation = 3;
 }
 
-message GetAddCatalogsResponse
+// passing session IP as a session and session objects are local to planner
+// session is per connection not per statement
+// so to maintain stickiness in planner we will send session and the planner IP from which session is created
+message AuthenticateResponse
 {
-  string status = 1;
-  repeated FailedSchemaElement failures = 2;
+  string  sessionId = 1;
+  optional string new_strategy = 2;
+  optional string engineIP = 3;
 }
 
-message CatalogResponse
+message IdentifyPlannerRequest
 {
-  string name = 1;
-  bool isDefault = 2;
+  string sessionId = 1;
+  optional FirstTimeRequestPayload firstTimeRequestPayload = 2;
+  optional ExistingQuery existingQuery = 3;
+
+  message FirstTimeRequestPayload
+  {
+    string schema = 1;
+    string catalog = 2;
+    string queryString = 3;
+  }
 }
 
-
-message ParameterValue
+// This is exactly the same format as that of the thrift counter part
+message IdentifyPlannerResponse
 {
-  sint32 index = 1;
-  string type = 2;
-  string value = 3;
+  enum QueueMessage
+  {
+    GO_AHEAD = 0;
+    WAITING_ON_PLANNER_SCALEUP = 1;
+    RATE_LIMIT = 2;
+  }
+
+  ExistingQuery existingQuery = 1;
+  optional string plannerIp = 2;
+  QueueMessage queueMessage = 3;
+  string sessionId = 4;
 }
 
-message ClearRequest{
+message PrepareStatementRequest
+{
+  string sessionId = 1;
+  string schema = 2;
+  string queryString = 3;
+  string quoting = 4;
+  optional string plannerIp = 5;
+  optional ExistingQuery existingQuery = 6;
+}
+
+message PrepareStatementV2Request
+{
+  string sessionId = 1;
+  string schema = 2;
+  string catalog = 3;
+  string queryString = 4;
+  string quoting = 5;
+  optional string plannerIp = 6;
+  optional ExistingQuery existingQuery = 7;
+}
+
+message PrepareStatementResponse
+{
+  string engineIP = 1;
+  string queryId = 2;
+  string sessionId = 3;
+  optional string new_strategy = 4;
+}
+
+message ExecuteStatementRequest
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
+  bool shouldNotCache = 4;
 }
 
-message ClearResponse{
-  optional string new_strategy = 1;
-}
-
-message CancelQueryRequest{
+message ExecuteStatementV2Request
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
+  bool shouldNotCache = 4;
+  repeated ParameterValue params = 5;
 }
 
-message CancelQueryResponse{
+message ExecuteStatementResponse
+{
   string sessionId = 1;
   optional string new_strategy = 2;
 }
 
-message ExplainRequest{
+message GetResultMetadataRequest
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
 }
 
-message ExplainResponse{
-  string explain = 1;
+message GetResultMetadataResponse
+{
+  bytes resultMetaData = 1;
   string sessionId = 2;
   optional string new_strategy = 3;
 }
 
-message DryRunRequest{
-  string engineIP = 1;
-  string sessionId = 2;
-  string schema = 3;
-  string queryString = 4;
-}
-
-message DryRunResponse{
-  string dryrunValue = 1;
-  optional string new_strategy = 2;
-}
-
-message DryRunRequestV2{
-  string engineIP = 1;
-  string sessionId = 2;
-  string schema = 3;
-  string queryString = 4;
-  string catalog = 5;
-}
-
-message ExplainAnalyzeRequest{
+message GetNextResultBatchRequest
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
 }
 
-message ExplainAnalyzeResponse{
+message GetNextResultBatchResponse
+{
+  bytes resultBatch = 2;
+  string sessionId = 3;
+  optional string new_strategy = 4;
+}
+
+message ExplainAnalyzeRequest
+{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message ExplainAnalyzeResponse
+{
   string explainAnalyze = 1;
   bool isCached = 2;
   sint64 parsingTime = 3;
@@ -103,149 +148,72 @@ message ExplainAnalyzeResponse{
   optional string new_strategy = 6;
 }
 
-message PrepareStatementRequest{
-  string sessionId = 1;
-  string schema = 2;
-  string queryString = 3;
-  string quoting = 4;
-}
-
-message PrepareStatementV2Request{
-  string sessionId = 1;
-  string schema = 2;
-  string catalog = 3;
-  string queryString = 4;
-  string quoting = 5;
-}
-message PrepareStatementResponse{
-  string engineIP = 1;
-  string queryId = 2;
-  string sessionId = 3;
-  optional string new_strategy = 4;
-}
-
-message UserAccessInfo
+message ClearRequest
 {
-  string uuid = 1;
-  string userName = 2;
-  repeated string tokens = 3; // lIST
-}
-
-message ExecuteStatementRequest{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
-  bool shouldNotCache = 4;
-}
-message ExecuteStatementV2Request{
-  string engineIP = 1;
-  string sessionId = 2;
-  string queryId = 3;
-  bool shouldNotCache = 4;
-  repeated ParameterValue params = 5;
 }
 
-message ExecuteStatementResponse{
+message ClearResponse
+{
   string sessionId = 1;
   optional string new_strategy = 2;
 }
 
-message GetNextResultRowRequest{
+message CancelQueryRequest
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
 }
 
-message GetNextResultRowResponse{
-  bytes resultRow = 2;
-  optional string new_strategy = 3;
-}
-
-message GetNextResultBatchRequest{
-  string engineIP = 1;
-  string sessionId = 2;
-  string queryId = 3;
-  optional bool asRowData = 4; //This is false by default
-}
-
-message GetNextResultBatchResponse{
-  bytes resultBatch = 2;
-  string sessionId = 3;
-  optional string new_strategy = 4;
-}
-
-message GetResultMetadataRequest{
-  string engineIP = 1;
-  string sessionId = 2;
-  string queryId = 3;
-}
-
-message GetResultMetadataResponse{
-  bytes resultMetaData = 1;
-  string sessionId = 2;
-  optional string new_strategy = 3;
-}
-
-message AuthenticateRequest{
-  string  user = 1;
-  string  password = 2;
-}
-
-message AuthenticateResponse{
-  string  sessionId = 1;
+message CancelQueryResponse
+{
+  string sessionId = 1;
   optional string new_strategy = 2;
 }
 
-message GetTablesRequest{
-  string sessionId = 1;
-  string schema = 2;
+message ClearOrCancelQueryRequest
+{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+  optional bool isDone = 4;
 }
 
-message GetTablesV2Request{
+message ClearOrCancelQueryResponse
+{
   string sessionId = 1;
-  string schema = 2;
-  string catalog = 3;
+  optional string new_strategy = 2;
 }
-message GetTablesResponse{
-  repeated string tables = 1;
+
+message ExplainRequest
+{
+  string engineIP = 1;
+  string sessionId = 2;
+  string queryId = 3;
+}
+
+message ExplainResponse
+{
+  string explain = 1;
   string sessionId = 2;
   optional string new_strategy = 3;
 }
 
-message GetSchemaNamesRequest{
-  string sessionId = 1;
-}
-
-message GetSchemaNamesV2Request{
-  string sessionId = 1;
+message AnalyzeQueryRequest
+{
+  string query = 1;
   string catalog = 2;
+  string schema = 3;
 }
 
-message GetSchemaNamesResponse{
-  repeated string schemas = 1;
-  string sessionId = 2;
-  optional string new_strategy = 3;
-}
+message AnalyzeQueryResponse
+{}
 
-message GetColumnsRequest{
-  string sessionId = 1;
-  string schema = 2;
-  string table = 3;
-}
-message GetColumnsV2Request{
-  string sessionId = 1;
-  string schema = 2;
-  string table = 3;
-  string catalog = 4;
-}
-
-message GetColumnsResponse{
-  repeated GFieldInfo fieldInfo = 1;
-  string sessionId = 2;
-  optional string new_strategy = 3;
-}
-
-message StatusRequest{
+message StatusRequest
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
@@ -255,89 +223,349 @@ message StatusResponse
 {
   bool status = 2;
   sint64 rowCount = 3;
-  optional string new_strategy = 4;
+  string sessionId = 4;
+  optional string new_strategy = 5;
 }
 
-message AddCatalogsRequest{
+message AddCatalogsRequest
+{
   string sessionId = 1;
   string json = 2;
 }
 
-
-message UpdateUsersRequest{
-  bytes users = 1;
-}
-
-message UpdateUsersResponse{
-}
-
-message SetPropsRequest{
+message AddCatalogsResponse
+{
   string sessionId = 1;
-  string props = 2;
-}
-message SetPropsResponse{
 }
 
-message GetAddCatalogsRequest{
+message RefreshCatalogsRequest
+{
   string sessionId = 1;
-
 }
 
-message AddCatalogsResponse{
-
+message RefreshCatalogsResponse
+{
+  string sessionId = 1;
 }
 
-message GetCatalogesRequest{
-
+message GetAddCatalogsRequest
+{
+  string sessionId = 1;
 }
 
-message GetCatalogesResponse{
+message GetAddCatalogsResponse
+{
+  string status = 1;
+  repeated FailedSchemaElement failures = 2;
+  string sessionId = 3;
+}
+
+message GetCatalogesRequest
+{}
+
+message GetCatalogesResponse
+{
   repeated CatalogResponse catalogResponses = 1;
 }
 
-message RefreshCatalogsRequest{
+message GetSchemaNamesRequest
+{
   string sessionId = 1;
 }
 
-message RefreshCatalogsResponse{
+message GetSchemaNamesV2Request
+{
+  string sessionId = 1;
+  string catalog = 2;
 }
 
-message RemoteChunkRequest{
+message GetSchemaNamesResponse
+{
+  repeated string schemas = 1;
+  string sessionId = 2;
+  optional string new_strategy = 3;
+}
+
+message GetTablesRequest
+{
+  string sessionId = 1;
+  string schema = 2;
+}
+
+message GetTablesV2Request
+{
+  string sessionId = 1;
+  string schema = 2;
+  string catalog = 3;
+}
+
+message GetTablesResponse
+{
+  repeated string tables = 1;
+  string sessionId = 2;
+  optional string new_strategy = 3;
+}
+
+message GetColumnsRequest
+{
+  string sessionId = 1;
+  string schema = 2;
+  string table = 3;
+}
+message GetColumnsV2Request
+{
+  string sessionId = 1;
+  string schema = 2;
+  string table = 3;
+  string catalog = 4;
+}
+
+message GetColumnsResponse
+{
+  repeated GFieldInfo fieldInfo = 1;
+  string sessionId = 2;
+  optional string new_strategy = 3;
+}
+
+message UpdateUsersRequest
+{
+  bytes users = 1;
+}
+
+message UpdateUsersResponse
+{}
+
+message SetPropsRequest
+{
+  string sessionId = 1;
+  string props = 2;
+}
+
+message SetPropsResponse
+{}
+
+message DryRunRequest
+{
+  string engineIP = 1;
+  string sessionId = 2;
+  string schema = 3;
+  string queryString = 4;
+}
+
+message DryRunRequestV2
+{
+  string engineIP = 1;
+  string sessionId = 2;
+  string schema = 3;
+  string queryString = 4;
+  string catalog = 5;
+}
+
+message DryRunResponse
+{
+  string dryrunValue = 1;
+}
+
+message RemoteChunkRequest
+{
   string originalQueryId = 1;
   string remoteQueryId = 2;
   string sQueryHash = 3;
 }
 
-message RemoteChunkResponse{
+message RemoteChunkResponse
+{
   string error = 1;
   bytes chunk = 2;
 }
 
-message ClearOrCancelQueryRequest{
+message GetDynamicParamsRequest
+{
   string engineIP = 1;
   string sessionId = 2;
   string queryId = 3;
 }
 
-message ClearOrCancelQueryResponse{
-  string sessionId = 1;
-  optional string new_strategy = 2;
+message GetDynamicParamsResponse
+{
+  repeated ParameterValue params = 1;
+  string sessionId = 2;
 }
 
-service QueryEngineService {
-  rpc clear(ClearRequest) returns (ClearResponse);
+// DATA HOLDERS //
 
-  rpc cancelQuery(CancelQueryRequest) returns (CancelQueryResponse);
+message GFieldInfo
+{
+  string fieldName = 1;
+  string fieldType = 2;
+}
 
-  rpc clearOrCancelQuery(ClearOrCancelQueryRequest) returns (ClearOrCancelQueryResponse);
+message FailedSchemaElement
+{
+  string name = 1;
+  string type = 2;
+  string reason = 3;
+}
 
-  rpc explain(ExplainRequest) returns (ExplainResponse);
+message CatalogResponse
+{
+  string name = 1;
+  bool isDefault = 2;
+}
 
-  rpc dryRun(DryRunRequest) returns (DryRunResponse); // Executor, Engine
+message ParameterValue
+{
+  sint32 index = 1;
+  string type = 2;
+  string value = 3;
+}
 
-  rpc dryRunV2(DryRunRequestV2) returns (DryRunResponse);
+message UserAccessInfo
+{
+  string uuid = 1;
+  string userName = 2;
+  repeated string tokens = 3; // lIST
+}
 
-  rpc explainAnalyze(ExplainAnalyzeRequest) returns (ExplainAnalyzeResponse);
+// This is needed to ensure backward compatibility [This has been introduced in context of query queuing for planning]
+message ExistingQuery
+{
+  string queryId = 1;
+  int64 elapsedTimeMillis = 2;
+}
+
+message SyncSchemaRequest
+{
+  string catalog = 1;
+  string database = 2;
+  string queryId = 3;
+  bool isReplace = 4;
+}
+
+message SyncSchemaResponse
+{
+
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {}
+
+// DataFrame
+
+message CreateDataFrameRequest
+{
+  string parquetFilePath = 1;
+  string catalog = 2;
+  string schema = 3;
+  string table = 4;
+  string sessionId = 5;
+  string engineIP = 6;
+  int32 dataframeNumber = 7;
+  bool createFromParquet = 8;
+}
+
+message CreateDataFrameResponse
+{
+  string queryId = 1;
+}
+
+message ProjectionOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  repeated string field = 5;
+}
+
+message ProjectionOnDataFrameResponse {}
+
+message AggregateOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  map<string, AggregateFunction> aggregateFunctionMap = 5;
+  repeated string groupBy = 6;
+}
+
+enum AggregateFunction
+{
+  SUM = 0;
+  COUNT = 1;
+  COUNT_STAR = 2;
+  COUNT_DISTINCT = 3;
+}
+
+message AggregateOnDataFrameResponse {}
+
+message FilterOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  string whereClause = 5;
+}
+
+message FilterOnDataFrameResponse {}
+
+enum SortDirection
+{
+  ASC = 0;
+  DESC = 1;
+}
+
+message OrderByOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  map<string, SortDirection> orderByFieldMap = 5;
+}
+
+message OrderByOnDataFrameResponse {}
+
+message LimitOnDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+  int32 fetchLimit = 5;
+}
+
+message LimitOnDataFrameResponse {}
+
+message ExecuteDataFrameRequest
+{
+  string queryId = 1;
+  int32 dataframeNumber = 2;
+  string sessionId = 3;
+  string engineIP = 4;
+}
+
+message ExecuteDataFrameResponse {}
+
+message DropUserContextRequest
+{
+    string sessionId = 1;
+    string engineIP = 2;
+}
+
+message DropUserContextResponse {}
+
+service QueryEngineService
+{
+
+  // Client sided API
+
+  rpc authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+
+  rpc identifyPlanner(IdentifyPlannerRequest) returns (IdentifyPlannerResponse); // This is a stateless call
 
   rpc prepareStatement(PrepareStatementRequest) returns (PrepareStatementResponse);
 
@@ -347,21 +575,47 @@ service QueryEngineService {
 
   rpc executeStatementV2(ExecuteStatementV2Request) returns (ExecuteStatementResponse);
 
-  rpc getNextResultRow(GetNextResultRowRequest) returns (GetNextResultRowResponse);
+  rpc getResultMetadata(GetResultMetadataRequest) returns (GetResultMetadataResponse);
+
+  rpc getDynamicParams(GetDynamicParamsRequest) returns (GetDynamicParamsResponse);
 
   rpc getNextResultBatch(GetNextResultBatchRequest) returns (GetNextResultBatchResponse);
 
-  rpc getResultMetadata(GetResultMetadataRequest) returns (GetResultMetadataResponse);
+  rpc explainAnalyze(ExplainAnalyzeRequest) returns (ExplainAnalyzeResponse);
 
-  rpc authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  rpc clear(ClearRequest) returns (ClearResponse);
 
-  rpc getTables(GetTablesRequest) returns (GetTablesResponse);
+  rpc cancelQuery(CancelQueryRequest) returns (CancelQueryResponse);
 
-  rpc getTablesV2(GetTablesV2Request) returns (GetTablesResponse);
+  rpc clearOrCancelQuery(ClearOrCancelQueryRequest) returns (ClearOrCancelQueryResponse);
+
+  rpc syncSchemas(SyncSchemaRequest) returns (SyncSchemaResponse);
+
+  // Platform sided API
+
+  rpc healthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+
+  rpc analyzeQuery(AnalyzeQueryRequest) returns (AnalyzeQueryResponse);
+
+  rpc explain(ExplainRequest) returns (ExplainResponse);
+
+  rpc status(StatusRequest) returns (StatusResponse);
+
+  rpc addCatalogs(AddCatalogsRequest) returns (AddCatalogsResponse);
+
+  rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
+
+  rpc getAddCatalogsResponse(GetAddCatalogsRequest) returns (GetAddCatalogsResponse);
+
+  rpc getCataloges(GetCatalogesRequest) returns (GetCatalogesResponse);
 
   rpc getSchemaNames(GetSchemaNamesRequest) returns (GetSchemaNamesResponse);
 
   rpc getSchemaNamesV2(GetSchemaNamesV2Request) returns (GetSchemaNamesResponse);
+
+  rpc getTables(GetTablesRequest) returns (GetTablesResponse);
+
+  rpc getTablesV2(GetTablesV2Request) returns (GetTablesResponse);
 
   rpc getColumns(GetColumnsRequest) returns (GetColumnsResponse);
 
@@ -371,15 +625,30 @@ service QueryEngineService {
 
   rpc setProps(SetPropsRequest) returns (SetPropsResponse);
 
-  rpc status(StatusRequest) returns (StatusResponse);
+  // Not implemented / Not in use / Deprecated
 
-  rpc addCatalogs(AddCatalogsRequest) returns (AddCatalogsResponse);
+  rpc dryRun(DryRunRequest) returns (DryRunResponse); // Executor, Engine
 
-  rpc getAddCatalogsResponse(GetAddCatalogsRequest) returns (GetAddCatalogsResponse);
-
-  rpc getCataloges(GetCatalogesRequest) returns (GetCatalogesResponse);
+  rpc dryRunV2(DryRunRequestV2) returns (DryRunResponse);
 
   rpc getNextRemoteCachedChunk(RemoteChunkRequest) returns (RemoteChunkResponse);
 
-  rpc refreshCatalogs(RefreshCatalogsRequest) returns (RefreshCatalogsResponse);
+  // dataframe
+
+  rpc createDataFrame(CreateDataFrameRequest) returns (CreateDataFrameResponse);
+
+  rpc projectionOnDataFrame(ProjectionOnDataFrameRequest) returns (ProjectionOnDataFrameResponse);
+
+  rpc aggregateOnDataFrame(AggregateOnDataFrameRequest) returns (AggregateOnDataFrameResponse);
+
+  rpc filterOnDataFrame(FilterOnDataFrameRequest) returns (FilterOnDataFrameResponse);
+
+  rpc orderByOnDataFrame(OrderByOnDataFrameRequest) returns (OrderByOnDataFrameResponse);
+
+  rpc limitOnDataFrame(LimitOnDataFrameRequest) returns (LimitOnDataFrameResponse);
+
+  rpc executeDataFrame(ExecuteDataFrameRequest) returns (ExecuteDataFrameResponse);
+
+  rpc dropUserContext(DropUserContextRequest) returns (DropUserContextResponse);
+
 }
