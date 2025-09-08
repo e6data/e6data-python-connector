@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.3.9-blue.svg)
+![version](https://img.shields.io/badge/version-2.3.10-blue.svg)
 
 ## Introduction
 
@@ -37,6 +37,8 @@ Use your e6data Email ID as the username and your access token as the password.
 
 ```python
 from e6data_python_connector import Connection
+# For connection pooling (recommended for concurrent operations)
+from e6data_python_connector import ConnectionPool
 
 username = '<username>'  # Your e6data Email ID.
 password = '<password>'  # Access Token generated in the e6data console.
@@ -46,7 +48,19 @@ database = '<database>'  # Database to perform the query on.
 port = 80  # Port of the e6data engine.
 catalog_name = '<catalog_name>'
 
+# Single connection (for simple, single-threaded use)
 conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    database=database,
+    password=password
+)
+
+# Or use connection pool (for concurrent/multi-threaded use)
+pool = ConnectionPool(
+    min_size=2,
+    max_size=10,
     host=host,
     port=port,
     username=username,
@@ -401,8 +415,187 @@ For detailed migration instructions, see the [Migration Guide](docs/zero-downtim
 - Message size optimization for large queries
 
 ### Connection Management
-- Enable connection pooling for better resource utilization
+
+#### Connection Pooling
+
+The e6data Python connector now includes a built-in connection pool for efficient connection management and reuse across multiple threads. The `ConnectionPool` class provides:
+
+- **Thread-safe connection reuse**: Each thread automatically reuses its assigned connection
+- **Automatic lifecycle management**: Handles connection creation, health checks, and cleanup
+- **Overflow connections**: Creates temporary connections when pool is exhausted
+- **Connection health monitoring**: Automatic detection and replacement of broken connections
+- **Statistics tracking**: Monitor pool usage and performance
+
+##### Basic Connection Pool Usage
+
+```python
+from e6data_python_connector import ConnectionPool
+
+# Create a connection pool
+pool = ConnectionPool(
+    min_size=2,        # Minimum connections to maintain
+    max_size=10,       # Maximum connections in pool
+    max_overflow=5,    # Additional temporary connections allowed
+    timeout=30.0,      # Timeout for getting connection (seconds)
+    recycle=3600,      # Maximum age before recycling (seconds)
+    debug=False,       # Enable debug logging
+    pre_ping=True,     # Check connection health before use
+    # Connection parameters
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
+    catalog=catalog_name,
+    cluster_name=cluster_name,
+    secure=True
+)
+
+# Get connection and execute query
+conn = pool.get_connection()
+cursor = conn.cursor()
+cursor.execute("SELECT * FROM table")
+results = cursor.fetchall()
+
+# Return connection to pool (important!)
+pool.return_connection(conn)
+
+# Clean up when done
+pool.close_all()
+```
+
+##### Using Context Manager (Recommended)
+
+The context manager pattern ensures connections are automatically returned to the pool:
+
+```python
+from e6data_python_connector import ConnectionPool
+
+pool = ConnectionPool(
+    min_size=2,
+    max_size=10,
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database
+)
+
+# Connection automatically returned to pool after use
+with pool.get_connection_context() as conn:
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM table")
+    results = cursor.fetchall()
+    print(results)
+```
+
+##### Concurrent Query Execution
+
+Connection pooling is especially beneficial for concurrent query execution:
+
+```python
+import concurrent.futures
+from e6data_python_connector import ConnectionPool
+
+def execute_query(pool, query_id, query):
+    """Execute a query using a pooled connection."""
+    # Each thread will reuse its assigned connection
+    conn = pool.get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        results = cursor.fetchall()
+        return f"Query {query_id}: {len(results)} rows"
+    finally:
+        pool.return_connection(conn)
+
+# Create pool
+pool = ConnectionPool(
+    min_size=3,
+    max_size=10,
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database
+)
+
+# Execute multiple queries concurrently
+queries = [
+    "SELECT COUNT(*) FROM table1",
+    "SELECT AVG(value) FROM table2",
+    "SELECT MAX(date) FROM table3"
+]
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    futures = [
+        executor.submit(execute_query, pool, i, query)
+        for i, query in enumerate(queries)
+    ]
+    
+    for future in concurrent.futures.as_completed(futures):
+        print(future.result())
+
+# Clean up
+pool.close_all()
+```
+
+##### Connection Pool Configuration
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `min_size` | int | 2 | Minimum number of connections to maintain |
+| `max_size` | int | 10 | Maximum number of connections in pool |
+| `max_overflow` | int | 5 | Additional temporary connections allowed |
+| `timeout` | float | 30.0 | Timeout for getting connection (seconds) |
+| `recycle` | int | 3600 | Maximum connection age before recycling (seconds) |
+| `debug` | bool | False | Enable debug logging for pool operations |
+| `pre_ping` | bool | True | Check connection health before returning from pool |
+
+##### Monitoring Pool Statistics
+
+```python
+# Get pool statistics
+stats = pool.get_statistics()
+print(f"Active connections: {stats['active_connections']}")
+print(f"Idle connections: {stats['idle_connections']}")
+print(f"Total requests: {stats['total_requests']}")
+print(f"Failed connections: {stats['failed_connections']}")
+```
+
+##### When to Use Connection Pooling
+
+Connection pooling is recommended when:
+- Executing multiple queries concurrently
+- Building web applications or APIs
+- Running batch processing jobs
+- Reducing connection overhead
+- Improving application performance
+
+##### Direct Connection Usage (Without Pool)
+
+For simple, single-threaded applications, you can still use direct connections:
+
+```python
+from e6data_python_connector import Connection
+
+conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database
+)
+
+cursor = conn.cursor()
+cursor.execute("SELECT * FROM table")
+results = cursor.fetchall()
+conn.close()
+```
+
+#### Additional Connection Management Features
 - Automatic connection health monitoring
 - Graceful connection recovery and retry logic
+- Blue-green deployment support with automatic failover
 
 See [TECH_DOC.md](TECH_DOC.md) for detailed technical documentation.

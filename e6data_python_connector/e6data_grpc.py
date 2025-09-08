@@ -370,7 +370,7 @@ class Connection(object):
         self.__username = username
         self.__password = password
         self.database = database
-        self.cluster_name = cluster_name
+        self.cluster_name = cluster_name.lower() if cluster_name else cluster_name
         self._session_id = None
         self._host = host
         self._port = port
