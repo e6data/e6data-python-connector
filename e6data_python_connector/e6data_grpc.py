@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import datetime
+import logging
+import os
 import re
 import sys
 import time
@@ -396,8 +398,7 @@ class Connection(object):
         self._debug = debug
         if self._debug:
             _debug_connections.add(id(self))
-            _strategy_debug_log(f"Debug mode enabled for connection {id(self)}")
-        
+
         self._create_client()
 
     @property
@@ -449,6 +450,32 @@ class Connection(object):
         Raises:
             grpc.RpcError: If there is an error in creating the gRPC channel or client stub.
         """
+        # Enable comprehensive debugging if debug flag is set
+        if self._debug:
+            # Configure root logger for DEBUG level
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format='[%(name)s] %(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
+                force=True  # Force reconfiguration even if logging is already configured
+            )
+
+            # Enable gRPC debug logging
+            os.environ['GRPC_VERBOSITY'] = 'DEBUG'
+            os.environ['GRPC_TRACE'] = 'all'
+
+            # Ensure gRPC logger is at DEBUG level
+            grpc_logger = logging.getLogger('grpc')
+            grpc_logger.setLevel(logging.DEBUG)
+
+            # Set e6data connector logger to DEBUG
+            e6data_logger = logging.getLogger('e6data_python_connector')
+            e6data_logger.setLevel(logging.DEBUG)
+
+            _strategy_debug_log(f"Debug mode enabled for connection {id(self)}")
+            _strategy_debug_log(f"Root logger level: {logging.getLogger().level}")
+            _strategy_debug_log(f"gRPC debugging enabled with GRPC_VERBOSITY=DEBUG and GRPC_TRACE=all")
+
         if self._secure_channel:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
