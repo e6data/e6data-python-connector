@@ -88,6 +88,7 @@ struct Float64Data
 struct Decimal128Data
 {
     1: list<binary> data
+    2: i32 scale
 }
 
 struct VarcharData
@@ -123,6 +124,7 @@ struct NumericDecimalConstantData
 struct NumericDecimal128ConstantData
 {
     1: binary data
+    2: i32 scale
 }
 
 struct TemporalIntervalConstantData
