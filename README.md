@@ -85,6 +85,7 @@ The `Connection` class supports the following parameters:
 | `secure` | bool | No | False | Enable SSL/TLS for secure connections |
 | `auto_resume` | bool | No | True | Automatically resume cluster if suspended |
 | `grpc_options` | dict | No | None | Additional gRPC configuration options |
+| `debug` | bool | No | False | Enable debug logging for troubleshooting |
 
 #### Secure Connection Example
 
@@ -597,5 +598,59 @@ conn.close()
 - Automatic connection health monitoring
 - Graceful connection recovery and retry logic
 - Blue-green deployment support with automatic failover
+
+## Debugging and Troubleshooting
+
+### Enable Debug Mode
+
+Enable comprehensive debugging to troubleshoot connection and query issues:
+
+```python
+from e6data_python_connector import Connection
+
+conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
+    debug=True  # Enable debug logging
+)
+```
+
+When `debug=True`, the following features are enabled:
+- Python logging at DEBUG level for all operations
+- Blue-green strategy transition logging
+- Connection lifecycle logging
+- Query execution detailed logging
+
+### gRPC Network Tracing
+
+For low-level gRPC network debugging (HTTP/2 frames, TCP events), set environment variables **before** running your Python script:
+
+```bash
+# Enable gRPC network tracing
+export GRPC_VERBOSITY=DEBUG
+export GRPC_TRACE=client_channel,http2
+
+# For comprehensive tracing
+export GRPC_TRACE=api,call_error,channel,client_channel,connectivity_state,http,http2_stream,tcp,transport_security
+
+# Run your script
+python your_script.py
+```
+
+**Note**: These environment variables must be set before Python starts, as the gRPC C++ core reads them at module import time.
+
+### Common Issues and Solutions
+
+| Issue | Solution |
+|-------|----------|
+| Connection timeout | Check network connectivity, firewall rules, and ensure port 80/443 is open |
+| Authentication failure | Verify username (email) and access token are correct |
+| 503 Service Unavailable | Cluster may be suspended; enable `auto_resume=True` |
+| 456 Strategy Error | Automatic blue-green failover will handle this |
+| Memory issues with large results | Use `fetchall_buffer()` instead of `fetchall()` |
+| gRPC message size errors | Configure `grpc_options` with appropriate message size limits |
 
 See [TECH_DOC.md](TECH_DOC.md) for detailed technical documentation.
