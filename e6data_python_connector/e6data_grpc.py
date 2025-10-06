@@ -550,7 +550,12 @@ class Connection(object):
                             _clear_strategy_cache()
                             active_strategy = None
                         else:
-                            raise e
+                            if self._perform_auto_resume(e):
+                                # Cluster resumed, retry with cached strategy
+                                _strategy_debug_log(f"Cluster resumed, retrying with cached strategy {active_strategy}")
+                                active_strategy = None  # Force retry
+                            else:
+                                raise e
                 elif pending_strategy:
                     # If there's a pending strategy, force re-authentication with new strategy
                     active_strategy = None
@@ -568,7 +573,7 @@ class Connection(object):
                         _strategy_debug_log(f"No cached strategy, will try strategies in order: {strategies}")
                     last_error = None
                     for strategy in strategies:
-                        _strategy_debug_log(f"Attempting authentication with strategy: {strategy}")
+                        _strategy_debug_log(f"1Attempting authentication with strategy: {strategy}")
                         try:
                             authenticate_response = self._client.authenticate(
                                 authenticate_request,
@@ -598,8 +603,13 @@ class Connection(object):
                                 last_error = e
                                 continue
                             else:
-                                # Different error, handle it normally
-                                raise e
+                                if self._perform_auto_resume(e):
+                                    # Cluster resumed successfully, retry authentication with current strategy
+                                    _strategy_debug_log(f"Cluster resumed, retrying authentication with {strategy}")
+                                    continue
+                                else:
+                                    # Auto-resume failed, raise the error
+                                    raise e
 
                     if not self._session_id and last_error:
                         # Neither strategy worked
@@ -608,29 +618,30 @@ class Connection(object):
                 if not self._session_id:
                     raise ValueError("Invalid credentials.")
             except _InactiveRpcError as e:
-                if self._auto_resume:
-                    if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
-                        status = ClusterManager(
-                            host=self._host,
-                            port=self._port,
-                            user=self.__username,
-                            password=self.__password,
-                            secure_channel=self._secure_channel,
-                            cluster_uuid=self.cluster_name,
-                            timeout=self.grpc_auto_resume_timeout_seconds
-                        ).resume()
-                        if status:
-                            return self.get_session_id
-                        else:
-                            raise e
-                    else:
-                        raise e
-                else:
-                    raise e
+                self._perform_auto_resume(e)
             except Exception as e:
                 self._channel.close()
                 raise e
         return self._session_id
+
+    def _perform_auto_resume(self, e: _InactiveRpcError):
+        if self._auto_resume:
+            if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
+                status = ClusterManager(
+                    host=self._host,
+                    port=self._port,
+                    user=self.__username,
+                    password=self.__password,
+                    secure_channel=self._secure_channel,
+                    cluster_uuid=self.cluster_name,
+                    timeout=self.grpc_auto_resume_timeout_seconds,
+                    debug=self._debug
+                ).resume()
+                return status  # Return boolean status directly
+            else:
+                return False  # Non-503 error, cannot auto-resume
+        else:
+            return False  # Auto-resume disabled
 
     def __enter__(self):
         """
