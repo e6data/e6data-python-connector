@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import datetime
+import logging
 import re
 import sys
 import time
@@ -112,6 +113,9 @@ class HiveParamEscaper(ParamEscaper):
 
 _escaper = HiveParamEscaper()
 
+# Logger for the module
+logger = logging.getLogger(__name__)
+
 # Thread-safe and process-safe storage for active deployment strategy
 _strategy_lock = threading.Lock()
 _strategy_manager = None
@@ -134,7 +138,7 @@ _debug_connections = set()
 def _strategy_debug_log(message):
     """Log strategy debug messages if any connection has debug enabled."""
     if _debug_connections:
-        print(f"[E6DATA_STRATEGY_DEBUG] {time.strftime('%Y-%m-%d %H:%M:%S')} - {message}")
+        logger.info(f"[E6DATA_STRATEGY_DEBUG] {time.strftime('%Y-%m-%d %H:%M:%S')} - {message}")
 
 
 def _get_shared_strategy():
