@@ -577,7 +577,7 @@ class Connection(object):
                         _strategy_debug_log(f"No cached strategy, will try strategies in order: {strategies}")
                     last_error = None
                     for strategy in strategies:
-                        _strategy_debug_log(f"1Attempting authentication with strategy: {strategy}")
+                        _strategy_debug_log(f"Attempting authentication with strategy: {strategy}.")
                         try:
                             authenticate_response = self._client.authenticate(
                                 authenticate_request,
