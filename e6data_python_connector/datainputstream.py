@@ -26,16 +26,18 @@ except ImportError:
 _logger = logging.getLogger(__name__)
 
 
-def _binary_to_decimal128(binary_data):
+def _binary_to_decimal128(binary_data, scale=None):
     """
     Convert binary data to Decimal128.
-    
+
     The binary data represents a 128-bit decimal number in IEEE 754-2008 Decimal128 format.
     Based on the Java implementation from e6data's JDBC driver.
-    
+
     Args:
         binary_data (bytes): Binary representation of Decimal128
-        
+        scale (int, optional): Scale parameter for decimal precision. If None,
+                               attempts to decode from IEEE format or defaults to 0.
+
     Returns:
         Decimal: Python Decimal object
     """
@@ -59,7 +61,7 @@ def _binary_to_decimal128(binary_data):
 
             # Handle IEEE 754-2008 Decimal128 binary format
             if len(binary_data) == 16:  # Decimal128 should be exactly 16 bytes
-                return _decode_decimal128_binary_java_style(binary_data)
+                return _decode_decimal128_binary_java_style(binary_data, scale)
             else:
                 _logger.warning(f"Invalid Decimal128 binary length: {len(binary_data)} bytes, expected 16")
                 return Decimal('0')
@@ -73,16 +75,17 @@ def _binary_to_decimal128(binary_data):
         return Decimal('0')
 
 
-def _decode_decimal128_binary_java_style(binary_data):
+def _decode_decimal128_binary_java_style(binary_data, scale=None):
     """
     Decode IEEE 754-2008 Decimal128 binary format following Java implementation.
-    
+
     Based on the Java implementation from e6data's JDBC driver getFieldDataFromChunk method.
     This method follows the same logic as the Java BigDecimal creation from ByteBuffer.
-    
+
     Args:
         binary_data (bytes): 16-byte binary representation
-        
+        scale (int, optional): Scale parameter for decimal precision
+
     Returns:
         Decimal: Python Decimal object
     """
@@ -103,17 +106,21 @@ def _decode_decimal128_binary_java_style(binary_data):
         if big_int_value == 0:
             return Decimal('0')
 
-        # The Java code creates BigDecimal from BigInteger with scale 0
-        # This means we treat the integer value as the unscaled value
-        # However, for Decimal128, we need to handle the scaling properly
-
-        # Try to create decimal directly from the integer value
-        decimal_value = Decimal(big_int_value)
+        # The Java code creates BigDecimal from BigInteger with the provided scale
+        # If scale is provided, use it to create the properly scaled decimal
+        if scale is not None:
+            # Create decimal with the specified scale (like Java's BigDecimal constructor)
+            # This treats big_int_value as the unscaled value
+            decimal_value = Decimal(big_int_value) / (Decimal(10) ** scale)
+        else:
+            # Fallback: try to create decimal directly from the integer value
+            decimal_value = Decimal(big_int_value)
 
         # Check if this produces a reasonable decimal value
         # Decimal128 should represent normal decimal numbers
-        if abs(decimal_value) < Decimal('1E-6143') or abs(decimal_value) > Decimal(
-                '9.999999999999999999999999999999999E+6144'):
+        # Only check range if scale was not provided (backward compatibility)
+        if scale is None and (abs(decimal_value) < Decimal('1E-6143') or abs(decimal_value) > Decimal(
+                '9.999999999999999999999999999999999E+6144')):
             # Value is outside normal Decimal128 range, try alternative interpretation
             return _decode_decimal128_alternative(binary_data)
 
@@ -624,10 +631,12 @@ def get_column_from_chunk(vector: Vector) -> list:
             if vector.isConstantVector:
                 # For constant vectors, get the binary data and convert it once
                 binary_data = vector.data.numericDecimal128ConstantData.data
+                # Get scale with backward compatibility for older engines
+                scale = getattr(vector.data.numericDecimal128ConstantData, 'scale', None)
 
                 # Convert binary data to BigDecimal equivalent
                 if binary_data:
-                    decimal_value = _binary_to_decimal128(binary_data)
+                    decimal_value = _binary_to_decimal128(binary_data, scale)
                 else:
                     decimal_value = Decimal('0')
 
@@ -639,13 +648,16 @@ def get_column_from_chunk(vector: Vector) -> list:
                         value_array.append(decimal_value)
             else:
                 # For non-constant vectors, process each row individually
+                # Get scale from decimal128Data (with backward compatibility)
+                scale = getattr(vector.data.decimal128Data, 'scale', None)
+
                 for row in range(vector.size):
                     if get_null(vector, row):
                         value_array.append(None)
                         continue
                     # Get binary data for this row
                     binary_data = vector.data.decimal128Data.data[row]
-                    decimal_value = _binary_to_decimal128(binary_data)
+                    decimal_value = _binary_to_decimal128(binary_data, scale)
                     value_array.append(decimal_value)
         else:
             value_array.append(None)
