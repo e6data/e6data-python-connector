@@ -881,13 +881,15 @@ class Decimal128Data(object):
     """
     Attributes:
      - data
+     - scale
 
     """
     thrift_spec = None
 
 
-    def __init__(self, data = None,):
+    def __init__(self, data = None, scale = None,):
         self.data = data
+        self.scale = scale
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -908,6 +910,11 @@ class Decimal128Data(object):
                     iprot.readListEnd()
                 else:
                     iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.I32:
+                    self.scale = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -925,6 +932,10 @@ class Decimal128Data(object):
             for iter55 in self.data:
                 oprot.writeBinary(iter55)
             oprot.writeListEnd()
+            oprot.writeFieldEnd()
+        if self.scale is not None:
+            oprot.writeFieldBegin('scale', TType.I32, 2)
+            oprot.writeI32(self.scale)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1310,13 +1321,15 @@ class NumericDecimal128ConstantData(object):
     """
     Attributes:
      - data
+     - scale
 
     """
     thrift_spec = None
 
 
-    def __init__(self, data = None,):
+    def __init__(self, data = None, scale = None,):
         self.data = data
+        self.scale = scale
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -1330,6 +1343,11 @@ class NumericDecimal128ConstantData(object):
             if fid == 1:
                 if ftype == TType.STRING:
                     self.data = iprot.readBinary()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.I32:
+                    self.scale = iprot.readI32()
                 else:
                     iprot.skip(ftype)
             else:
@@ -1346,6 +1364,10 @@ class NumericDecimal128ConstantData(object):
         if self.data is not None:
             oprot.writeFieldBegin('data', TType.STRING, 1)
             oprot.writeBinary(self.data)
+            oprot.writeFieldEnd()
+        if self.scale is not None:
+            oprot.writeFieldBegin('scale', TType.I32, 2)
+            oprot.writeI32(self.scale)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1783,6 +1805,7 @@ all_structs.append(Decimal128Data)
 Decimal128Data.thrift_spec = (
     None,  # 0
     (1, TType.LIST, 'data', (TType.STRING, 'BINARY', False), None, ),  # 1
+    (2, TType.I32, 'scale', None, None, ),  # 2
 )
 all_structs.append(VarcharData)
 VarcharData.thrift_spec = (
@@ -1818,6 +1841,7 @@ all_structs.append(NumericDecimal128ConstantData)
 NumericDecimal128ConstantData.thrift_spec = (
     None,  # 0
     (1, TType.STRING, 'data', 'BINARY', None, ),  # 1
+    (2, TType.I32, 'scale', None, None, ),  # 2
 )
 all_structs.append(TemporalIntervalConstantData)
 TemporalIntervalConstantData.thrift_spec = (

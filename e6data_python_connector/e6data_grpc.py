@@ -7,6 +7,9 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import datetime
+import logging
+import os
+
 import re
 import sys
 import time
@@ -396,8 +399,51 @@ class Connection(object):
         self._debug = debug
         if self._debug:
             _debug_connections.add(id(self))
+
+        # Enable comprehensive debugging if debug flag is set
+        if self._debug:
+            # Configure root logger for DEBUG level
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format='[%(name)s] %(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
+                force=True  # Force reconfiguration even if logging is already configured
+            )
+
+            # Note: gRPC C++ core tracing (GRPC_VERBOSITY and GRPC_TRACE) must be set
+            # BEFORE the gRPC module is imported to take effect. Setting them at runtime
+            # will not enable HTTP/2 frame logs or low-level tracing.
+            #
+            # To enable full gRPC network tracing, set these environment variables
+            # before starting your Python script:
+            #   export GRPC_VERBOSITY=DEBUG
+            #   export GRPC_TRACE=client_channel,http2
+            #
+            # The following runtime settings only affect Python-level logging:
+
+            # Enable gRPC Python logging (this works at runtime)
+            os.environ['GRPC_PYTHON_LOG_LEVEL'] = 'DEBUG'
+            os.environ['GRPC_PYTHON_LOG_STDERR'] = '1'
+
+            # Ensure gRPC logger is at DEBUG level
+            grpc_logger = logging.getLogger('grpc')
+            grpc_logger.setLevel(logging.DEBUG)
+
+            # Enable gRPC transport logger
+            grpc_transport_logger = logging.getLogger('grpc._channel')
+            grpc_transport_logger.setLevel(logging.DEBUG)
+
+            # Enable gRPC server logger
+            grpc_server_logger = logging.getLogger('grpc._server')
+            grpc_server_logger.setLevel(logging.DEBUG)
+
+            # Set e6data connector logger to DEBUG
+            e6data_logger = logging.getLogger('e6data_python_connector')
+            e6data_logger.setLevel(logging.DEBUG)
+
             _strategy_debug_log(f"Debug mode enabled for connection {id(self)}")
-        
+            _strategy_debug_log(f"GRPC_TRACE={os.environ.get('GRPC_TRACE')}")
+
         self._create_client()
 
     @property
@@ -449,6 +495,7 @@ class Connection(object):
         Raises:
             grpc.RpcError: If there is an error in creating the gRPC channel or client stub.
         """
+
         if self._secure_channel:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
