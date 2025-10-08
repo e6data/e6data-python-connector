@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 import e6data_python_connector.cluster_server.cluster_pb2 as cluster_pb2
@@ -5,6 +6,8 @@ import e6data_python_connector.cluster_server.cluster_pb2_grpc as cluster_pb2_gr
 import grpc
 from grpc._channel import _InactiveRpcError
 import multiprocessing
+
+logger = logging.getLogger(__name__)
 
 from e6data_python_connector.strategy import _get_active_strategy, _set_active_strategy, _set_pending_strategy, \
     _get_grpc_header as _get_strategy_header
@@ -137,7 +140,7 @@ class ClusterManager:
     """
 
     def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 5,
-                 cluster_uuid=None, grpc_options=None):
+                 cluster_uuid=None, grpc_options=None, debug=False):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -152,6 +155,7 @@ class ClusterManager:
                 defaults to 5 minutes.
             cluster_uuid (str, optional): The unique identifier for the target cluster;
                 defaults to None.
+            debug (bool, optional): Enable debug logging; defaults to False.
         """
 
         self._host = host
@@ -164,6 +168,7 @@ class ClusterManager:
         self._grpc_options = grpc_options
         if grpc_options is None:
             self._grpc_options = dict()
+        self._debug = debug
 
     @property
     def _get_connection(self):
@@ -191,20 +196,22 @@ class ClusterManager:
     def _try_cluster_request(self, request_type, payload=None):
         """
         Execute a cluster request with strategy fallback for 456 errors.
-        
+
         For efficiency:
         - If we have an active strategy, use it first
         - Only try authentication sequence (blue -> green) if no active strategy
         - On 456 error, switch to alternative strategy and update active strategy
-        
+
         Args:
             request_type: Type of request ('status' or 'resume')
             payload: Request payload (optional, will be created if not provided)
-            
+
         Returns:
             The response from the successful request
         """
         current_strategy = _get_active_strategy()
+        if self._debug:
+            logger.info(f"Attempting {request_type} request with current strategy: {current_strategy}")
 
         # Create payload if not provided
         if payload is None:
@@ -222,6 +229,8 @@ class ClusterManager:
         # If we have an active strategy, use it first
         if current_strategy is not None:
             try:
+                if self._debug:
+                    logger.info(f"Executing {request_type} with strategy '{current_strategy}'")
                 if request_type == "status":
                     response = self._get_connection.status(
                         payload,
@@ -239,16 +248,24 @@ class ClusterManager:
                 if hasattr(response, 'new_strategy') and response.new_strategy:
                     new_strategy = response.new_strategy.lower()
                     if new_strategy != current_strategy:
+                        if self._debug:
+                            logger.info(f"Server indicated strategy transition from '{current_strategy}' to '{new_strategy}'")
                         _set_pending_strategy(new_strategy)
 
+                if self._debug:
+                    logger.info(f"{request_type} request successful with strategy '{current_strategy}'")
                 return response
 
             except _InactiveRpcError as e:
                 if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                     # 456 error - switch to alternative strategy
                     alternative_strategy = 'green' if current_strategy == 'blue' else 'blue'
+                    if self._debug:
+                        logger.info(f"Received 456 error with strategy '{current_strategy}', switching to '{alternative_strategy}'")
 
                     try:
+                        if self._debug:
+                            logger.info(f"Retrying {request_type} with alternative strategy '{alternative_strategy}'")
                         if request_type == "status":
                             response = self._get_connection.status(
                                 payload,
@@ -261,27 +278,39 @@ class ClusterManager:
                             )
 
                         # Update active strategy since the alternative worked
+                        if self._debug:
+                            logger.info(f"Successfully switched to strategy '{alternative_strategy}'")
                         _set_active_strategy(alternative_strategy)
 
                         # Check for new strategy in response
                         if hasattr(response, 'new_strategy') and response.new_strategy:
                             new_strategy = response.new_strategy.lower()
                             if new_strategy != alternative_strategy:
+                                if self._debug:
+                                    logger.info(f"Server indicated future strategy transition to '{new_strategy}'")
                                 _set_pending_strategy(new_strategy)
 
                         return response
 
                     except _InactiveRpcError as e2:
+                        if self._debug:
+                            logger.error(f"Failed with alternative strategy '{alternative_strategy}': {e2}")
                         raise e  # Raise the original error
                 else:
                     # Non-456 error - don't retry
+                    if self._debug:
+                        logger.info(f"Non-456 error received, not retrying: {e}")
                     raise e
 
         # No active strategy - start with authentication logic (blue first, then green)
         strategies_to_try = ['blue', 'green']
+        if self._debug:
+            logger.info("No active strategy found, trying authentication sequence: blue -> green")
 
         for i, strategy in enumerate(strategies_to_try):
             try:
+                if self._debug:
+                    logger.info(f"Trying {request_type} with strategy '{strategy}' (attempt {i+1}/{len(strategies_to_try)})")
 
                 if request_type == "status":
                     response = self._get_connection.status(
@@ -297,12 +326,16 @@ class ClusterManager:
                     raise ValueError(f"Unknown request type: {request_type}")
 
                 # Set the working strategy as active
+                if self._debug:
+                    logger.info(f"Successfully authenticated with strategy '{strategy}'")
                 _set_active_strategy(strategy)
 
                 # Check for new strategy in response
                 if hasattr(response, 'new_strategy') and response.new_strategy:
                     new_strategy = response.new_strategy.lower()
                     if new_strategy != strategy:
+                        if self._debug:
+                            logger.info(f"Server indicated strategy transition to '{new_strategy}'")
                         _set_pending_strategy(new_strategy)
 
                 return response
@@ -311,14 +344,22 @@ class ClusterManager:
                 if e.code() == grpc.StatusCode.UNKNOWN and 'status: 456' in e.details():
                     # 456 error - try next strategy
                     if i < len(strategies_to_try) - 1:
+                        if self._debug:
+                            logger.info(f"Strategy '{strategy}' returned 456 error, trying next strategy")
                         continue
                     else:
+                        if self._debug:
+                            logger.error(f"All strategies failed with 456 errors")
                         raise e
                 else:
                     # Non-456 error - don't retry
+                    if self._debug:
+                        logger.error(f"Strategy '{strategy}' failed with non-456 error: {e}")
                     raise e
 
         # If we get here, all strategies failed
+        if self._debug:
+            logger.error("All authentication strategies exhausted")
         raise e
 
     def _check_cluster_status(self):
@@ -326,8 +367,12 @@ class ClusterManager:
             try:
                 # Use the unified strategy-aware request method
                 response = self._try_cluster_request("status")
+                if self._debug:
+                    logger.info(f"Cluster status check returned: {response.status}")
                 yield response.status
-            except _InactiveRpcError:
+            except _InactiveRpcError as e:
+                if self._debug:
+                    logger.warning(f"Status check failed with error: {e}")
                 yield None
 
     def resume(self) -> bool:
@@ -357,38 +402,77 @@ class ClusterManager:
             - The operation is subject to the `_timeout` threshold;
               if the timeout expires, the method returns False.
         """
+        if self._debug:
+            logger.info(f"Starting auto-resume for cluster {self.cluster_uuid} at {self._host}:{self._port}")
 
         with status_lock as lock:
             if lock.is_active:
+                if self._debug:
+                    logger.info("Lock is already active, cluster appears to be running")
                 return True
 
             # Retrieve the current cluster status with strategy header
+            if self._debug:
+                logger.info("Checking current cluster status")
             try:
                 current_status = self._try_cluster_request("status")
-            except _InactiveRpcError:
+                if self._debug:
+                    logger.info(f"Current cluster status: {current_status.status}")
+            except _InactiveRpcError as e:
+                if self._debug:
+                    logger.error(f"Failed to get cluster status: {e}")
                 return False
+
             if current_status.status == 'suspended':
                 # Send the resume request with strategy header
+                if self._debug:
+                    logger.info("Cluster is suspended, sending resume request")
                 try:
                     response = self._try_cluster_request("resume")
-                except _InactiveRpcError:
+                    if self._debug:
+                        logger.info("Resume request sent successfully")
+                except _InactiveRpcError as e:
+                    if self._debug:
+                        logger.error(f"Failed to send resume request: {e}")
                     return False
             elif current_status.status == 'active':
+                if self._debug:
+                    logger.info("Cluster is already active, no action needed")
                 return True
             elif current_status.status != 'resuming':
                 """
-                 If cluster cannot be resumed due to its current state, 
+                 If cluster cannot be resumed due to its current state,
                  or already in a process of resuming, terminate the operation.
                  """
+                if self._debug:
+                    logger.warning(f"Cluster is in state '{current_status.status}' which cannot be resumed")
                 return False
 
+            if self._debug:
+                logger.info("Monitoring cluster status until it becomes active...")
+            check_count = 0
             for status in self._check_cluster_status():
+                check_count += 1
                 if status == 'active':
+                    if self._debug:
+                        logger.info(f"Cluster became active after {check_count} status checks")
                     return True
-                elif status == 'failed' or time.time() > self._timeout:
+                elif status == 'failed':
+                    if self._debug:
+                        logger.error(f"Cluster failed to resume after {check_count} status checks")
                     return False
+                elif time.time() > self._timeout:
+                    if self._debug:
+                        logger.error(f"Resume operation timed out after {check_count} status checks")
+                    return False
+
+                if self._debug:
+                    logger.info(f"Status check #{check_count}: {status}, waiting 5 seconds before next check")
                 # Wait for 5 seconds before the next status check
                 time.sleep(5)
+
+            if self._debug:
+                logger.warning("Resume operation completed without reaching active state")
             return False
 
     def suspend(self):
