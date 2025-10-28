@@ -335,6 +335,7 @@ class Connection(object):
             scheme: str = 'e6data',
             grpc_options: dict = None,
             debug: bool = False,
+            query_timeout: float = None,
     ):
         """
         Parameters
@@ -368,6 +369,10 @@ class Connection(object):
                 - keepalive_time_ms: This parameter defines the time, in milliseconds, Default to 30 seconds
             debug: bool, Optional
                 Flag to enable debug logging for blue-green deployment strategy changes
+            query_timeout: float, Optional
+                Global timeout in seconds for query execution. If specified, queries that exceed this timeout
+                will be automatically cleared on the server and a QueryTimeoutError will be raised.
+                If not specified (None), no timeout monitoring is performed.
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -397,7 +402,10 @@ class Connection(object):
             The default maximum time on client side to wait for the cluster to resume is 5 minutes.
             """
             self.grpc_auto_resume_timeout_seconds = self._grpc_options.pop('grpc_auto_resume_timeout_seconds')
-        
+
+        # Store query timeout configuration
+        self.query_timeout = query_timeout
+
         # Store debug flag and register with debug connections
         self._debug = debug
         if self._debug:
@@ -1005,10 +1013,82 @@ class Cursor(DBAPICursor):
         self._rowcount = 0
         self._database = self.connection.database if database is None else database
         self._catalog_name = catalog_name if catalog_name else self.connection.catalog_name
+        self._timeout_timer = None
+        self._timeout_occurred = False
+        self._timeout_lock = threading.Lock()
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
         pass
+
+    def _handle_timeout(self):
+        """
+        Handle timeout by setting the timeout flag and initiating cleanup.
+        This method is called by the timeout timer when the query exceeds the specified timeout.
+        The main thread will detect the timeout and raise QueryTimeoutError immediately.
+        Cleanup is performed in a background thread to avoid blocking the main thread.
+        """
+        with self._timeout_lock:
+            if self._timeout_occurred:
+                return  # Already handled
+            self._timeout_occurred = True
+
+        logger.warning(f"Query {self._query_id} exceeded timeout of {self.connection.query_timeout} seconds. "
+                      f"QueryTimeoutError will be raised on next fetch operation.")
+
+        # Start cleanup in a background thread to avoid blocking the main thread
+        cleanup_thread = threading.Thread(
+            target=self._cleanup_on_timeout,
+            daemon=True,
+            name=f"timeout-cleanup-{self._query_id}"
+        )
+        cleanup_thread.start()
+
+    def _cleanup_on_timeout(self):
+        """
+        Clean up the query on the server after a timeout.
+        This runs in a background thread to avoid blocking the main thread.
+        """
+        try:
+            if self._query_id and self._engine_ip:
+                logger.info(f"Clearing query {self._query_id} on server due to timeout.")
+                self.clear(self._query_id)
+                logger.info(f"Successfully cleared query {self._query_id} on server.")
+        except Exception as e:
+            logger.error(f"Error clearing query {self._query_id} on timeout: {e}")
+
+    def _start_timeout_timer(self, timeout_seconds):
+        """
+        Start the timeout timer for the current query.
+
+        Args:
+            timeout_seconds (float): The timeout duration in seconds.
+        """
+        self._cancel_timeout_timer()
+        with self._timeout_lock:
+            self._timeout_occurred = False
+            if timeout_seconds and timeout_seconds > 0:
+                self._timeout_timer = threading.Timer(timeout_seconds, self._handle_timeout)
+                self._timeout_timer.daemon = True
+                self._timeout_timer.start()
+                logger.info(f"Started timeout timer for query {self._query_id} with timeout {timeout_seconds} seconds.")
+
+    def _cancel_timeout_timer(self):
+        """Cancel the active timeout timer if one exists."""
+        if self._timeout_timer:
+            self._timeout_timer.cancel()
+            self._timeout_timer = None
+
+    def _check_timeout(self):
+        """
+        Check if a timeout has occurred and raise QueryTimeoutError if so.
+
+        Raises:
+            QueryTimeoutError: If the query has exceeded the specified timeout.
+        """
+        with self._timeout_lock:
+            if self._timeout_occurred:
+                raise QueryTimeoutError(f"Query {self._query_id} exceeded the specified timeout")
 
     @property
     def metadata(self):
@@ -1145,6 +1225,11 @@ class Cursor(DBAPICursor):
          """
         return self.connection.get_schema_names(catalog=self._catalog_name)
 
+    def __del__(self):
+        if self.connection.query_timeout:
+            # Cancel timeout timer when clearing the query
+            self._cancel_timeout_timer()
+
     def clear(self, query_id=None):
         """
         Clear the query results from the server.
@@ -1152,6 +1237,7 @@ class Cursor(DBAPICursor):
         Args:
             query_id (str, optional): The ID of the query to be cleared. Defaults to None.
         """
+
         if not query_id:
             query_id = self._query_id
 
@@ -1251,9 +1337,15 @@ class Cursor(DBAPICursor):
         else:
             sql = operation % _escaper.escape_args(parameters)
 
+        session_id = self.connection.get_session_id
+
+        # Start timeout timer if configured
+        if self.connection.query_timeout:
+            self._start_timeout_timer(self.connection.query_timeout)
+
         if not self._catalog_name:
             prepare_statement_request = e6x_engine_pb2.PrepareStatementRequest(
-                sessionId=self.connection.get_session_id,
+                sessionId=session_id,
                 schema=self._database,
                 queryString=sql
             )
@@ -1342,6 +1434,7 @@ class Cursor(DBAPICursor):
                 new_strategy = execute_response.new_strategy.lower()
                 if new_strategy != _get_active_strategy():
                     _set_pending_strategy(new_strategy)
+
         self.update_mete_data()
         return self._query_id
 
@@ -1360,6 +1453,9 @@ class Cursor(DBAPICursor):
         """
         Update the metadata for the current query.
         """
+        # Check if timeout occurred
+        self._check_timeout()
+
         result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -1440,6 +1536,9 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of rows fetched from the server.
         """
+        # Check if timeout occurred
+        self._check_timeout()
+
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -1447,10 +1546,18 @@ class Cursor(DBAPICursor):
         )
         # Get fresh client after session access (may have been invalidated)
         client = self.connection.client
-        get_next_result_batch_response = client.getNextResultBatch(
-            get_next_result_batch_request,
-            metadata=self.metadata
-        )
+
+        try:
+            get_next_result_batch_response = client.getNextResultBatch(
+                get_next_result_batch_request,
+                metadata=self.metadata
+            )
+        except _InactiveRpcError as e:
+            # If query was cancelled due to timeout, raise QueryTimeoutError instead
+            if self._timeout_occurred and 'Query cancelled' in str(e.details()):
+                raise QueryTimeoutError(f"Query {self._query_id} exceeded the specified timeout")
+            # Otherwise, re-raise the original error
+            raise
 
         # Check for new strategy in batch response
         if hasattr(get_next_result_batch_response, 'new_strategy') and get_next_result_batch_response.new_strategy:
@@ -1585,6 +1692,11 @@ def fetch_logs(self):
 
 
 class Error(Exception):
+    pass
+
+
+class QueryTimeoutError(Error):
+    """Exception raised when a query execution exceeds the specified timeout."""
     pass
 
 
