@@ -886,8 +886,7 @@ class Connection(object):
                 sessionId=self.get_session_id,
                 schema=schema_to_use if schema_to_use else "",
                 catalog=catalog_to_use if catalog_to_use else "",
-                queryString=query,
-                quoting="DOUBLE_QUOTE"
+                queryString=query
             )
             
             prepare_statement_response = self._client.prepareStatementV2(
