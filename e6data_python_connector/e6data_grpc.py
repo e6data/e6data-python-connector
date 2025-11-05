@@ -883,8 +883,8 @@ class Connection(object):
             
             prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
                 sessionId=self.get_session_id,
-                schema=schema_to_use if schema_to_use else "",
-                catalog=catalog_to_use if catalog_to_use else "",
+                schema=schema_to_use,
+                catalog=catalog_to_use,
                 queryString=query
             )
             
