@@ -893,16 +893,24 @@ class Connection(object):
                 metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy()),
                 timeout=self.grpc_prepare_timeout
             )
-                        
+            
+            query_id = prepare_statement_response.queryId
+            engine_ip = prepare_statement_response.engineIP
+            
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
                 new_strategy = prepare_statement_response.new_strategy.lower()
                 current_strategy = _get_active_strategy()
                 if new_strategy != current_strategy:
                     _set_pending_strategy(new_strategy)
             
+            try:
+                self.query_cancel(engine_ip, query_id)
+            except Exception:
+                # If cleanup fails, planner will auto-cleanup after timeout (15 min default)
+                pass
             
             return {
-                'success': True
+                'success': True,
             }
             
         except Exception as e:
