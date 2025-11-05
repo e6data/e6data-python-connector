@@ -853,6 +853,56 @@ class Connection(object):
         )
         return dry_run_response.dryrunValue
 
+    def get_logical_plan(self, query, catalog=None, schema=None):
+        """
+        Gets the logical execution plan for a query without executing it.
+        This method performs syntax, parsing, and plan compilation, then returns the logical plan.
+
+        Args:
+            query (str): The SQL query to get the plan for.
+            catalog (str, optional): Catalog name. Uses connection's catalog if not provided.
+            schema (str, optional): Schema/database name. Uses connection's database if not provided.
+
+        Returns:
+            dict: A dictionary with:
+                - 'success' (bool): True if plan generation succeeded, False otherwise
+                - 'plan' (str, optional): The logical plan string if successful
+                - 'error' (str, optional): Error message if plan generation failed
+
+        Example:
+            >>> result = conn.get_logical_plan("SELECT * FROM table")
+            >>> if result['success']:
+            ...     print(f"Plan: {result['plan']}")
+            >>> else:
+            ...     print(f"Error: {result['error']}")
+        """
+        catalog_to_use = catalog if catalog is not None else self.catalog_name
+        schema_to_use = schema if schema is not None else self.database
+        
+        try:
+            dry_run_request = e6x_engine_pb2.DryRunRequestV2(
+                sessionId=self.get_session_id,
+                schema=schema_to_use,
+                catalog=catalog_to_use,
+                queryString=query
+            )
+            
+            dry_run_response = self._client.dryRunV2(
+                dry_run_request,
+                metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
+            )
+            
+            return {
+                'success': True,
+                'plan': dry_run_response.dryrunValue
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            } 
+
     def get_tables(self, catalog, database):
         """
         Retrieves the list of tables from the specified catalog and database.
