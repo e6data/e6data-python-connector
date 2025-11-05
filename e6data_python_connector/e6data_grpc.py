@@ -866,7 +866,6 @@ class Connection(object):
         Returns:
             dict: A dictionary with:
                 - 'success' (bool): True if query is valid, False otherwise
-                - 'query_id' (str, optional): The query ID if validation succeeded
                 - 'error' (str, optional): Error message if validation failed
 
         Example:
