@@ -853,64 +853,49 @@ class Connection(object):
         )
         return dry_run_response.dryrunValue
 
-    def validate_query(self, query, catalog=None, schema=None):
+    def get_logical_plan(self, query, catalog=None, schema=None):
         """
-        Validates a query (plan-only, no execution).
-        This method performs syntax, parsing, and plan compilation validation.
+        Gets the logical execution plan for a query without executing it.
+        This method performs syntax, parsing, and plan compilation, then returns the logical plan.
 
         Args:
-            query (str): The SQL query to be validated.
+            query (str): The SQL query to get the plan for.
             catalog (str, optional): Catalog name. Uses connection's catalog if not provided.
             schema (str, optional): Schema/database name. Uses connection's database if not provided.
 
         Returns:
             dict: A dictionary with:
-                - 'success' (bool): True if query is valid, False otherwise
-                - 'error' (str, optional): Error message if validation failed
+                - 'success' (bool): True if plan generation succeeded, False otherwise
+                - 'plan' (str, optional): The logical plan string if successful
+                - 'error' (str, optional): Error message if plan generation failed
 
         Example:
-            >>> result = conn.validate_query("SELECT * FROM table")
+            >>> result = conn.get_logical_plan("SELECT * FROM table")
             >>> if result['success']:
-            ...     print(f"Query is valid! Query ID: {result['query_id']}")
+            ...     print(f"Plan: {result['plan']}")
             >>> else:
             ...     print(f"Error: {result['error']}")
         """
-
         catalog_to_use = catalog if catalog is not None else self.catalog_name
         schema_to_use = schema if schema is not None else self.database
         
         try:
-            
-            prepare_statement_request = e6x_engine_pb2.PrepareStatementV2Request(
+            dry_run_request = e6x_engine_pb2.DryRunRequestV2(
+                engineIP=self._engine_ip,
                 sessionId=self.get_session_id,
                 schema=schema_to_use,
                 catalog=catalog_to_use,
                 queryString=query
             )
             
-            prepare_statement_response = self._client.prepareStatementV2(
-                prepare_statement_request,
-                metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy()),
-                timeout=self.grpc_prepare_timeout
+            dry_run_response = self._client.dryRunV2(
+                dry_run_request,
+                metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
             )
-            
-            query_id = prepare_statement_response.queryId
-            engine_ip = prepare_statement_response.engineIP
-            
-            if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
-                new_strategy = prepare_statement_response.new_strategy.lower()
-                current_strategy = _get_active_strategy()
-                if new_strategy != current_strategy:
-                    _set_pending_strategy(new_strategy)
-            
-            try:
-                self.query_cancel(engine_ip, query_id)
-            except Exception:
-                # If cleanup fails, planner will auto-cleanup after timeout (15 min default)
-                pass
             
             return {
                 'success': True,
+                'plan': dry_run_response.dryrunValue
             }
             
         except Exception as e:
