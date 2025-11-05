@@ -881,7 +881,6 @@ class Connection(object):
         
         try:
             dry_run_request = e6x_engine_pb2.DryRunRequestV2(
-                engineIP=self._engine_ip,
                 sessionId=self.get_session_id,
                 schema=schema_to_use,
                 catalog=catalog_to_use,
