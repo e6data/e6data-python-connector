@@ -128,22 +128,22 @@ with open('/path/to/ca-cert.pem', 'rb') as f:
     ca_cert = f.read()
 
 conn = Connection(
-    host='haproxy-host',
-    port=8443,
-    username='your-email@example.com',
-    password='your-access-token',
-    database='your-database',
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
     secure=True,
     ssl_cert=ca_cert  # Certificate as bytes
 )
 
 # Option 3: System CA bundle (for publicly signed certificates)
 conn = Connection(
-    host='haproxy-host',
-    port=443,
-    username='your-email@example.com',
-    password='your-access-token',
-    database='your-database',
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
     secure=True  # Uses system CA bundle
 )
 ```
