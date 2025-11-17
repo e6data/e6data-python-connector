@@ -86,6 +86,7 @@ The `Connection` class supports the following parameters:
 | `auto_resume` | bool | No | True | Automatically resume cluster if suspended |
 | `grpc_options` | dict | No | None | Additional gRPC configuration options |
 | `debug` | bool | No | False | Enable debug logging for troubleshooting |
+| `ssl_cert` | str/bytes | No | None | Path to CA certificate (PEM) or certificate bytes for HTTPS connections |
 
 #### Secure Connection Example
 
@@ -102,6 +103,52 @@ conn = Connection(
     secure=True  # Enable SSL/TLS
 )
 ```
+
+#### HTTPS Connection with HAProxy
+
+When connecting through HAProxy with HTTPS/TLS and custom CA certificates:
+
+```python
+from e6data_python_connector import Connection
+
+# Option 1: Using CA certificate file path
+conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
+    cluster_name='analytics-cluster-01',  # Specify cluster name
+    secure=True,
+    ssl_cert='/path/to/ca-cert.pem'  # Path to CA certificate
+)
+
+# Option 2: Reading certificate content as bytes
+with open('/path/to/ca-cert.pem', 'rb') as f:
+    ca_cert = f.read()
+
+conn = Connection(
+    host='haproxy-host',
+    port=8443,
+    username='your-email@example.com',
+    password='your-access-token',
+    database='your-database',
+    secure=True,
+    ssl_cert=ca_cert  # Certificate as bytes
+)
+
+# Option 3: System CA bundle (for publicly signed certificates)
+conn = Connection(
+    host='haproxy-host',
+    port=443,
+    username='your-email@example.com',
+    password='your-access-token',
+    database='your-database',
+    secure=True  # Uses system CA bundle
+)
+```
+
+**Note:** Certificate verification is always enabled for security. For self-signed certificates, provide the CA certificate via the `ssl_cert` parameter.
 
 #### Cluster-Specific Connection
 
@@ -462,6 +509,35 @@ results = cursor.fetchall()
 pool.return_connection(conn)
 
 # Clean up when done
+pool.close_all()
+```
+
+##### Connection Pool with HTTPS (HAProxy)
+
+```python
+from e6data_python_connector import ConnectionPool
+
+# Connection pool with HTTPS and custom CA certificate
+pool = ConnectionPool(
+   min_size=2,
+    max_size=10,
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert='/path/to/ca-cert.pem'  # CA certificate for HTTPS
+)
+
+# Use the pool with context manager for automatic cleanup
+with pool.get_connection_context() as conn:
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM table")
+    results = cursor.fetchall()
+    print(f"Retrieved {len(results)} rows")
+
+# Clean up pool when done
 pool.close_all()
 ```
 

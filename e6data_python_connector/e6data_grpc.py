@@ -335,6 +335,7 @@ class Connection(object):
             scheme: str = 'e6data',
             grpc_options: dict = None,
             debug: bool = False,
+            ssl_cert: [str, bytes] = None,
     ):
         """
         Parameters
@@ -368,6 +369,14 @@ class Connection(object):
                 - keepalive_time_ms: This parameter defines the time, in milliseconds, Default to 30 seconds
             debug: bool, Optional
                 Flag to enable debug logging for blue-green deployment strategy changes
+            ssl_cert: str or bytes, Optional
+                Path to CA certificate file (PEM format) or certificate content as bytes.
+                Used when connecting via HTTPS .
+                If not provided and secure=True, system default CA bundle will be used.
+                For self-signed certificates, provide the CA certificate via this parameter.
+                Examples:
+                    - File path: ssl_cert='/path/to/ca-cert.pem'
+                    - Bytes: ssl_cert=open('/path/to/ca-cert.pem', 'rb').read()
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -382,6 +391,7 @@ class Connection(object):
         self._port = port
 
         self._secure_channel = secure
+        self._ssl_cert = ssl_cert
 
         self.catalog_name = catalog
 
@@ -483,6 +493,60 @@ class Connection(object):
 
         return self._cached_grpc_options
 
+    def _get_ssl_credentials(self):
+        """
+        Creates SSL/TLS credentials for secure gRPC connections.
+
+        This method handles loading CA certificates from various sources:
+        - File path (str): Reads the certificate from the specified file
+        - Bytes: Uses the certificate content directly
+        - None: Uses system default CA bundle
+
+        Returns:
+            grpc.ChannelCredentials: SSL credentials for secure channel creation
+
+        Raises:
+            FileNotFoundError: If ssl_cert is a file path and the file doesn't exist
+            ValueError: If ssl_cert format is invalid or file cannot be read
+        """
+        root_certificates = None
+
+        if self._ssl_cert:
+            # Custom CA certificate provided
+            if isinstance(self._ssl_cert, str):
+                # It's a file path - read the certificate
+                try:
+                    with open(self._ssl_cert, 'rb') as f:
+                        root_certificates = f.read()
+                    if self._debug:
+                        logger.info(f"Loaded CA certificate from file: {self._ssl_cert}")
+                except FileNotFoundError:
+                    raise FileNotFoundError(
+                        f"CA certificate file not found: {self._ssl_cert}. "
+                        f"Please ensure the file exists and the path is correct."
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to read CA certificate from {self._ssl_cert}: {str(e)}"
+                    )
+            elif isinstance(self._ssl_cert, bytes):
+                # Certificate content provided as bytes
+                root_certificates = self._ssl_cert
+                if self._debug:
+                    logger.info("Using CA certificate provided as bytes")
+            else:
+                raise ValueError(
+                    f"ssl_cert must be either a file path (str) or certificate content (bytes), "
+                    f"got {type(self._ssl_cert)}"
+                )
+        else:
+            # No custom CA certificate - use system default CA bundle
+            if self._debug:
+                logger.info("Using system default CA bundle for SSL/TLS")
+
+        # Create and return SSL credentials with certificate verification enabled
+        return grpc.ssl_channel_credentials(root_certificates=root_certificates)
+
     def _create_client(self):
         """
         Creates a gRPC client for the connection.
@@ -497,13 +561,19 @@ class Connection(object):
 
         Raises:
             grpc.RpcError: If there is an error in creating the gRPC channel or client stub.
+            FileNotFoundError: If ssl_cert is a file path and the file doesn't exist.
+            ValueError: If ssl_cert format is invalid.
         """
 
         if self._secure_channel:
+            # Get SSL credentials (handles CA cert loading and validation)
+            credentials = self._get_ssl_credentials()
+
+            # Create secure channel
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._get_grpc_options,
-                credentials=grpc.ssl_channel_credentials()
+                credentials=credentials
             )
         else:
             self._channel = grpc.insecure_channel(
