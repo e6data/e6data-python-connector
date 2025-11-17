@@ -16,6 +16,7 @@ import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
+from typing import Union, Optional
 import threading
 import multiprocessing
 
@@ -335,7 +336,7 @@ class Connection(object):
             scheme: str = 'e6data',
             grpc_options: dict = None,
             debug: bool = False,
-            ssl_cert: [str, bytes] = None,
+            ssl_cert: Optional[Union[str, bytes]] = None,
     ):
         """
         Parameters
@@ -755,7 +756,8 @@ class Connection(object):
                     secure_channel=self._secure_channel,
                     cluster_uuid=self.cluster_name,
                     timeout=self.grpc_auto_resume_timeout_seconds,
-                    debug=self._debug
+                    debug=self._debug,
+                    ssl_cert=self._ssl_cert
                 ).resume()
                 return status  # Return boolean status directly
             else:
