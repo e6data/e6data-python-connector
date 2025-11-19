@@ -15,6 +15,10 @@ yum install python3-devel gcc-c++ -y
 # Ubuntu/Debian dependencies
 apt install python3-dev g++ -y
 
+# Windows dependencies
+# Install Visual C++ Build Tools from:
+# https://visualstudio.microsoft.com/visual-cpp-build-tools/
+# Select the "Desktop Development with C++" option during installation.
 
 # Pip dependencies
 pip install wheel
