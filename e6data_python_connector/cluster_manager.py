@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from typing import Optional, Union
 import e6data_python_connector.cluster_server.cluster_pb2 as cluster_pb2
 import e6data_python_connector.cluster_server.cluster_pb2_grpc as cluster_pb2_grpc
 import grpc
@@ -140,7 +141,7 @@ class ClusterManager:
     """
 
     def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 5,
-                 cluster_uuid=None, grpc_options=None, debug=False):
+                 cluster_uuid=None, grpc_options=None, debug=False, ssl_cert: Optional[Union[str, bytes]] = None):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -155,7 +156,12 @@ class ClusterManager:
                 defaults to 5 minutes.
             cluster_uuid (str, optional): The unique identifier for the target cluster;
                 defaults to None.
+            grpc_options (dict, optional): Additional gRPC configuration options;
+                defaults to None.
             debug (bool, optional): Enable debug logging; defaults to False.
+            ssl_cert (str or bytes, optional): Path to CA certificate file (PEM format)
+                or certificate content as bytes. Used when secure_channel=True.
+                If not provided and secure_channel=True, system default CA bundle will be used.
         """
 
         self._host = host
@@ -164,11 +170,66 @@ class ClusterManager:
         self._password = password
         self._timeout = time.time() + timeout
         self._secure_channel = secure_channel
+        self._ssl_cert = ssl_cert
         self.cluster_uuid = cluster_uuid
         self._grpc_options = grpc_options
         if grpc_options is None:
             self._grpc_options = dict()
         self._debug = debug
+
+    def _get_ssl_credentials(self):
+        """
+        Creates SSL/TLS credentials for secure gRPC connections.
+
+        This method handles loading CA certificates from various sources:
+        - File path (str): Reads the certificate from the specified file
+        - Bytes: Uses the certificate content directly
+        - None: Uses system default CA bundle
+
+        Returns:
+            grpc.ChannelCredentials: SSL credentials for secure channel creation
+
+        Raises:
+            FileNotFoundError: If ssl_cert is a file path and the file doesn't exist
+            ValueError: If ssl_cert format is invalid or file cannot be read
+        """
+        root_certificates = None
+
+        if self._ssl_cert:
+            # Custom CA certificate provided
+            if isinstance(self._ssl_cert, str):
+                # It's a file path - read the certificate
+                try:
+                    with open(self._ssl_cert, 'rb') as f:
+                        root_certificates = f.read()
+                    if self._debug:
+                        logger.info(f"ClusterManager: Loaded CA certificate from file: {self._ssl_cert}")
+                except FileNotFoundError:
+                    raise FileNotFoundError(
+                        f"CA certificate file not found: {self._ssl_cert}. "
+                        f"Please ensure the file exists and the path is correct."
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to read CA certificate from {self._ssl_cert}: {str(e)}"
+                    )
+            elif isinstance(self._ssl_cert, bytes):
+                # Certificate content provided as bytes
+                root_certificates = self._ssl_cert
+                if self._debug:
+                    logger.info("ClusterManager: Using CA certificate provided as bytes")
+            else:
+                raise ValueError(
+                    f"ssl_cert must be either a file path (str) or certificate content (bytes), "
+                    f"got {type(self._ssl_cert)}"
+                )
+        else:
+            # No custom CA certificate - use system default CA bundle
+            if self._debug:
+                logger.info("ClusterManager: Using system default CA bundle for SSL/TLS")
+
+        # Create and return SSL credentials with certificate verification enabled
+        return grpc.ssl_channel_credentials(root_certificates=root_certificates)
 
     @property
     def _get_connection(self):
@@ -181,16 +242,29 @@ class ClusterManager:
         """
 
         if self._secure_channel:
+            # Get SSL credentials (handles CA cert loading and validation)
+            credentials = self._get_ssl_credentials()
+
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._grpc_options,
-                credentials=grpc.ssl_channel_credentials()
+                credentials=credentials
             )
+
+            if self._debug:
+                logger.info(
+                    f"ClusterManager: Created secure gRPC channel to {self._host}:{self._port} "
+                    f"with SSL/TLS certificate verification enabled"
+                )
         else:
             self._channel = grpc.insecure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._grpc_options
             )
+
+            if self._debug:
+                logger.info(f"ClusterManager: Created insecure gRPC channel to {self._host}:{self._port}")
+
         return cluster_pb2_grpc.ClusterServiceStub(self._channel)
 
     def _try_cluster_request(self, request_type, payload=None):
