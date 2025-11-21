@@ -26,7 +26,7 @@ from e6data_python_connector.cluster_manager import ClusterManager
 from e6data_python_connector.strategy import _get_grpc_header as _get_strategy_header
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
 from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
+from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk, is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.typeId import *
 
@@ -335,6 +335,7 @@ class Connection(object):
             scheme: str = 'e6data',
             grpc_options: dict = None,
             debug: bool = False,
+            require_fastbinary: bool = True,
     ):
         """
         Parameters
@@ -368,6 +369,10 @@ class Connection(object):
                 - keepalive_time_ms: This parameter defines the time, in milliseconds, Default to 30 seconds
             debug: bool, Optional
                 Flag to enable debug logging for blue-green deployment strategy changes
+            require_fastbinary: bool, Optional
+                Flag to require fastbinary module for Thrift deserialization. If True (default),
+                raises an exception if fastbinary is not available. If False, logs a warning
+                and continues with pure Python implementation (with reduced performance).
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -386,6 +391,29 @@ class Connection(object):
         self.catalog_name = catalog
 
         self._auto_resume = auto_resume
+
+        # Store require_fastbinary flag
+        self._require_fastbinary = require_fastbinary
+
+        # Check fastbinary availability at connection creation time
+        if not is_fastbinary_available():
+            if require_fastbinary:
+                raise Exception(
+                    """
+                    Failed to import fastbinary.
+                    Did you install system dependencies?
+                    Please verify https://github.com/e6x-labs/e6data-python-connector#dependencies
+
+                    To continue without fastbinary (with reduced performance), set require_fastbinary=False
+                    in the connection parameters.
+                    """
+                )
+            else:
+                logger.warning(
+                    "fastbinary module is not available. Using pure Python implementation. "
+                    "Performance may be degraded. To enable fastbinary, install system dependencies: "
+                    "https://github.com/e6x-labs/e6data-python-connector#dependencies"
+                )
 
         self._grpc_options = grpc_options
         if self._grpc_options is None:
@@ -1464,7 +1492,10 @@ class Cursor(DBAPICursor):
         if not buffer or len(buffer) == 0:
             return None
         # one batch retrieves the predefined set of rows
-        return read_rows_from_chunk(self._query_columns_description, buffer)
+        return read_rows_from_chunk(
+            self._query_columns_description,
+            buffer
+        )
 
     def fetchall(self):
         """
