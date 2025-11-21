@@ -140,7 +140,7 @@ class ClusterManager:
     """
 
     def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 5,
-                 cluster_uuid=None, grpc_options=None, debug=False):
+                 cluster_uuid=None, grpc_options=None, debug=False, ssl_cert=None):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -156,6 +156,8 @@ class ClusterManager:
             cluster_uuid (str, optional): The unique identifier for the target cluster;
                 defaults to None.
             debug (bool, optional): Enable debug logging; defaults to False.
+            ssl_cert (str or bytes, optional): Path to CA certificate file (PEM format) or
+                certificate content as bytes for secure connections; defaults to None.
         """
 
         self._host = host
@@ -169,6 +171,46 @@ class ClusterManager:
         if grpc_options is None:
             self._grpc_options = dict()
         self._debug = debug
+        self._ssl_cert = ssl_cert
+
+    def _get_ssl_credentials(self):
+        """
+        Get SSL credentials for secure gRPC channel.
+
+        Handles three scenarios:
+        1. ssl_cert is a string (file path): Read the PEM certificate from the file
+        2. ssl_cert is bytes: Use the certificate content directly
+        3. ssl_cert is None: Use system default CA bundle
+
+        Returns:
+            grpc.ChannelCredentials: SSL credentials for secure channel
+
+        Raises:
+            FileNotFoundError: If ssl_cert is a file path but the file doesn't exist
+            IOError: If ssl_cert file cannot be read
+        """
+        if self._ssl_cert is None:
+            # Use system default CA bundle
+            return grpc.ssl_channel_credentials()
+        elif isinstance(self._ssl_cert, str):
+            # ssl_cert is a file path - read the certificate from file
+            try:
+                with open(self._ssl_cert, 'rb') as cert_file:
+                    root_ca_cert = cert_file.read()
+                return grpc.ssl_channel_credentials(root_certificates=root_ca_cert)
+            except FileNotFoundError:
+                logger.error(f"SSL certificate file not found: {self._ssl_cert}")
+                raise
+            except IOError as e:
+                logger.error(f"Failed to read SSL certificate file {self._ssl_cert}: {e}")
+                raise
+        elif isinstance(self._ssl_cert, bytes):
+            # ssl_cert is certificate content as bytes
+            return grpc.ssl_channel_credentials(root_certificates=self._ssl_cert)
+        else:
+            # Invalid type - log warning and use system default
+            logger.warning(f"Invalid ssl_cert type: {type(self._ssl_cert)}. Using system default CA bundle.")
+            return grpc.ssl_channel_credentials()
 
     @property
     def _get_connection(self):
@@ -184,7 +226,7 @@ class ClusterManager:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._grpc_options,
-                credentials=grpc.ssl_channel_credentials()
+                credentials=self._get_ssl_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(

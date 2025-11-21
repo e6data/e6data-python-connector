@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.3.12rc31-blue.svg)
+![version](https://img.shields.io/badge/version-2.3.12rc32-blue.svg)
 
 ## Introduction
 
@@ -83,6 +83,7 @@ The `Connection` class supports the following parameters:
 | `catalog` | str | No | None | Catalog name |
 | `cluster_name` | str | No | None | Name of the cluster for cluster-specific operations |
 | `secure` | bool | No | False | Enable SSL/TLS for secure connections |
+| `ssl_cert` | str/bytes | No | None | Path to CA certificate (PEM) or certificate bytes for HTTPS connections |
 | `auto_resume` | bool | No | True | Automatically resume cluster if suspended |
 | `grpc_options` | dict | No | None | Additional gRPC configuration options |
 | `debug` | bool | No | False | Enable debug logging for troubleshooting |
@@ -117,6 +118,72 @@ conn = Connection(
     database=database,
     cluster_name='analytics-cluster-01',  # Specify cluster name
     secure=True
+)
+```
+
+#### HTTPS Connection with HAProxy
+
+When connecting through HAProxy with HTTPS, you can provide a custom CA certificate for secure connections. The `ssl_cert` parameter accepts either a file path to a PEM certificate or the certificate content as bytes.
+
+**Using a CA certificate file path:**
+
+```python
+conn = Connection(
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert='/path/to/ca-cert.pem'  # Path to your CA certificate
+)
+```
+
+**Reading certificate content as bytes:**
+
+```python
+# Read certificate file and pass as bytes
+with open('/path/to/ca-cert.pem', 'rb') as cert_file:
+    cert_data = cert_file.read()
+
+conn = Connection(
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert=cert_data  # Certificate content as bytes
+)
+```
+
+**Using system CA bundle for publicly signed certificates:**
+
+```python
+# When ssl_cert is None, system default CA bundle is used
+conn = Connection(
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True  # Uses system CA bundle by default
+)
+```
+
+**Connection pooling with custom CA certificate:**
+
+```python
+pool = ConnectionPool(
+    min_size=2,
+    max_size=10,
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert='/path/to/ca-cert.pem'  # Custom CA certificate for pool connections
 )
 ```
 

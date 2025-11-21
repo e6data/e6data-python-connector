@@ -331,6 +331,7 @@ class Connection(object):
             database: str = None,
             cluster_name: str = None,
             secure: bool = False,
+            ssl_cert = None,
             auto_resume: bool = True,
             scheme: str = 'e6data',
             grpc_options: dict = None,
@@ -356,6 +357,9 @@ class Connection(object):
                 Cluster's name
             secure: bool, Optional
                 Flag to use a secure channel for data transfer
+            ssl_cert: str or bytes, Optional
+                Path to CA certificate file (PEM format) or certificate content as bytes for
+                secure connections. If None, system default CA bundle is used.
             auto_resume: bool, Optional
                 Flag to enable auto resume of the cluster before the query execution
             scheme: string, Optional
@@ -387,6 +391,7 @@ class Connection(object):
         self._port = port
 
         self._secure_channel = secure
+        self._ssl_cert = ssl_cert
 
         self.catalog_name = catalog
 
@@ -511,6 +516,45 @@ class Connection(object):
 
         return self._cached_grpc_options
 
+    def _get_ssl_credentials(self):
+        """
+        Get SSL credentials for secure gRPC channel.
+
+        Handles three scenarios:
+        1. ssl_cert is a string (file path): Read the PEM certificate from the file
+        2. ssl_cert is bytes: Use the certificate content directly
+        3. ssl_cert is None: Use system default CA bundle
+
+        Returns:
+            grpc.ChannelCredentials: SSL credentials for secure channel
+
+        Raises:
+            FileNotFoundError: If ssl_cert is a file path but the file doesn't exist
+            IOError: If ssl_cert file cannot be read
+        """
+        if self._ssl_cert is None:
+            # Use system default CA bundle
+            return grpc.ssl_channel_credentials()
+        elif isinstance(self._ssl_cert, str):
+            # ssl_cert is a file path - read the certificate from file
+            try:
+                with open(self._ssl_cert, 'rb') as cert_file:
+                    root_ca_cert = cert_file.read()
+                return grpc.ssl_channel_credentials(root_certificates=root_ca_cert)
+            except FileNotFoundError:
+                logger.error(f"SSL certificate file not found: {self._ssl_cert}")
+                raise
+            except IOError as e:
+                logger.error(f"Failed to read SSL certificate file {self._ssl_cert}: {e}")
+                raise
+        elif isinstance(self._ssl_cert, bytes):
+            # ssl_cert is certificate content as bytes
+            return grpc.ssl_channel_credentials(root_certificates=self._ssl_cert)
+        else:
+            # Invalid type - log warning and use system default
+            logger.warning(f"Invalid ssl_cert type: {type(self._ssl_cert)}. Using system default CA bundle.")
+            return grpc.ssl_channel_credentials()
+
     def _create_client(self):
         """
         Creates a gRPC client for the connection.
@@ -531,7 +575,7 @@ class Connection(object):
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._get_grpc_options,
-                credentials=grpc.ssl_channel_credentials()
+                credentials=self._get_ssl_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(
@@ -713,7 +757,8 @@ class Connection(object):
                     secure_channel=self._secure_channel,
                     cluster_uuid=self.cluster_name,
                     timeout=self.grpc_auto_resume_timeout_seconds,
-                    debug=self._debug
+                    debug=self._debug,
+                    ssl_cert=self._ssl_cert
                 ).resume()
                 return status  # Return boolean status directly
             else:
