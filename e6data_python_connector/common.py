@@ -15,6 +15,7 @@ from builtins import int
 from builtins import object
 from builtins import str
 
+import grpc
 from future.utils import with_metaclass
 from past.builtins import basestring
 
@@ -267,3 +268,46 @@ class UniversalSet(object):
 
     def __contains__(self, item):
         return True
+
+
+def get_ssl_credentials(ssl_cert):
+    """
+    Get SSL credentials for secure gRPC channel.
+
+    Handles three scenarios:
+    1. ssl_cert is a string (file path): Read the PEM certificate from the file
+    2. ssl_cert is bytes: Use the certificate content directly
+    3. ssl_cert is None: Use system default CA bundle
+
+    Parameters:
+        ssl_cert (str or bytes or None): SSL certificate as file path, bytes, or None
+
+    Returns:
+        grpc.ChannelCredentials: SSL credentials for gRPC channel
+
+    Raises:
+        FileNotFoundError: If ssl_cert is a file path but the file doesn't exist
+        IOError: If ssl_cert file cannot be read
+    """
+    if ssl_cert is None:
+        # Use system default CA bundle
+        return grpc.ssl_channel_credentials()
+    elif isinstance(ssl_cert, str):
+        # ssl_cert is a file path - read the certificate from file
+        try:
+            with open(ssl_cert, 'rb') as cert_file:
+                root_ca_cert = cert_file.read()
+            return grpc.ssl_channel_credentials(root_certificates=root_ca_cert)
+        except FileNotFoundError:
+            _logger.error("SSL certificate file not found: {}".format(ssl_cert))
+            raise
+        except IOError as e:
+            _logger.error("Failed to read SSL certificate file {}: {}".format(ssl_cert, e))
+            raise
+    elif isinstance(ssl_cert, bytes):
+        # ssl_cert is certificate content as bytes
+        return grpc.ssl_channel_credentials(root_certificates=ssl_cert)
+    else:
+        # Invalid type - fall back to system default CA bundle with warning
+        _logger.warning("Invalid ssl_cert type: {}. Using system default CA bundle.".format(type(ssl_cert)))
+        return grpc.ssl_channel_credentials()
