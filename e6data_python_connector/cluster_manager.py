@@ -11,26 +11,7 @@ logger = logging.getLogger(__name__)
 
 from e6data_python_connector.common import get_ssl_credentials
 from e6data_python_connector.strategy import _get_active_strategy, _set_active_strategy, _set_pending_strategy, \
-    _get_grpc_header as _get_strategy_header
-
-
-def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
-    """
-    Generate gRPC metadata headers for the request.
-
-    This function creates a list of metadata headers to be used in gRPC requests.
-    It includes optional headers for the engine IP, cluster UUID, and deployment strategy.
-
-    Args:
-        engine_ip (str, optional): The IP address of the engine. Defaults to None.
-        cluster (str, optional): The UUID of the cluster. Defaults to None.
-        strategy (str, optional): The deployment strategy (blue/green). Defaults to None.
-
-    Returns:
-        list: A list of tuples representing the gRPC metadata headers.
-    """
-    # Use the strategy module's implementation
-    return _get_strategy_header(engine_ip=engine_ip, cluster=cluster, strategy=strategy)
+    _get_grpc_header
 
 
 class _StatusLock:

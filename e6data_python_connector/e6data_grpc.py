@@ -9,25 +9,27 @@ from __future__ import unicode_literals
 import datetime
 import logging
 import os
-
 import re
 import sys
+import threading
 import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
-import threading
-import multiprocessing
 
 import grpc
 from grpc._channel import _InactiveRpcError
 
 from e6data_python_connector.cluster_manager import ClusterManager
-from e6data_python_connector.strategy import _get_grpc_header as _get_strategy_header
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor, get_ssl_credentials
-from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk, is_fastbinary_available
+from e6data_python_connector.constants import (
+    MAX_RETRY_ATTEMPTS, RETRY_SLEEP_SECONDS, GRPC_ERROR_STRATEGY_MISMATCH, GRPC_ERROR_ACCESS_DENIED,
+    PRIMITIVE_TYPES
+)
+from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk, \
+    is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
+from e6data_python_connector.strategy import _get_grpc_header
 from e6data_python_connector.typeId import *
 
 apilevel = '2.0'
@@ -71,7 +73,7 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
-        max_retry = 5
+        max_retry = MAX_RETRY_ATTEMPTS
         current_retry = 0
         while current_retry < max_retry:
             try:
@@ -80,10 +82,10 @@ def re_auth(func):
                 current_retry += 1
                 if current_retry == max_retry:
                     raise e
-                if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
-                    time.sleep(0.2)
+                if e.code() == grpc.StatusCode.INTERNAL and GRPC_ERROR_ACCESS_DENIED in e.details():
+                    time.sleep(RETRY_SLEEP_SECONDS)
                     self.connection.get_re_authenticate_session_id()
-                elif 'status: 456' in e.details():
+                elif GRPC_ERROR_STRATEGY_MISMATCH in e.details():
                     # Strategy changed, clear cache and retry
                     _clear_strategy_cache()
                     # Force re-authentication which will detect new strategy
@@ -302,12 +304,6 @@ def _get_strategy_debug_info():
             'query_count': len(shared_strategy.get('query_strategy_map', {})),
             'current_time': time.time()
         }
-
-
-def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
-    """Generate gRPC metadata headers for the request."""
-    # Use the strategy module's implementation
-    return _get_strategy_header(engine_ip=engine_ip, cluster=cluster, strategy=strategy)
 
 
 def connect(*args, **kwargs):
