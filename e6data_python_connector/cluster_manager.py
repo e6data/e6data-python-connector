@@ -9,27 +9,9 @@ import multiprocessing
 
 logger = logging.getLogger(__name__)
 
+from e6data_python_connector.common import get_ssl_credentials
 from e6data_python_connector.strategy import _get_active_strategy, _set_active_strategy, _set_pending_strategy, \
-    _get_grpc_header as _get_strategy_header
-
-
-def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
-    """
-    Generate gRPC metadata headers for the request.
-
-    This function creates a list of metadata headers to be used in gRPC requests.
-    It includes optional headers for the engine IP, cluster UUID, and deployment strategy.
-
-    Args:
-        engine_ip (str, optional): The IP address of the engine. Defaults to None.
-        cluster (str, optional): The UUID of the cluster. Defaults to None.
-        strategy (str, optional): The deployment strategy (blue/green). Defaults to None.
-
-    Returns:
-        list: A list of tuples representing the gRPC metadata headers.
-    """
-    # Use the strategy module's implementation
-    return _get_strategy_header(engine_ip=engine_ip, cluster=cluster, strategy=strategy)
+    _get_grpc_header
 
 
 class _StatusLock:
@@ -140,7 +122,7 @@ class ClusterManager:
     """
 
     def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 5,
-                 cluster_uuid=None, grpc_options=None, debug=False):
+                 cluster_uuid=None, grpc_options=None, debug=False, ssl_cert=None):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -156,6 +138,8 @@ class ClusterManager:
             cluster_uuid (str, optional): The unique identifier for the target cluster;
                 defaults to None.
             debug (bool, optional): Enable debug logging; defaults to False.
+            ssl_cert (str or bytes, optional): Path to CA certificate file (PEM format) or
+                certificate content as bytes for secure connections; defaults to None.
         """
 
         self._host = host
@@ -169,6 +153,7 @@ class ClusterManager:
         if grpc_options is None:
             self._grpc_options = dict()
         self._debug = debug
+        self._ssl_cert = ssl_cert
 
     @property
     def _get_connection(self):
@@ -184,7 +169,7 @@ class ClusterManager:
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._grpc_options,
-                credentials=grpc.ssl_channel_credentials()
+                credentials=get_ssl_credentials(self._ssl_cert)
             )
         else:
             self._channel = grpc.insecure_channel(

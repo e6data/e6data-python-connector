@@ -1,5 +1,6 @@
 import pytz
 
+# Type definitions
 PRIMITIVE_TYPES = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 18, 19, 20, 21}
 COMPLEX_TYPES = {10, 11, 12, 13, 14}
 COLLECTION_TYPES = {10, 11}
@@ -30,3 +31,26 @@ CHARACTER_MAXIMUM_LENGTH = "characterMaximumLength"
 PRECISION = "precision"
 SCALE = "scale"
 ZONE = pytz.timezone('UTC')
+
+# Retry and timeout constants
+MAX_RETRY_ATTEMPTS = 5
+RETRY_SLEEP_SECONDS = 0.2
+STRATEGY_CACHE_TIMEOUT_SECONDS = 300  # 5 minutes
+DEFAULT_GRPC_PREPARE_TIMEOUT_SECONDS = 600  # 10 minutes
+DEFAULT_AUTO_RESUME_TIMEOUT_SECONDS = 300  # 5 minutes
+CLUSTER_STATUS_CHECK_SLEEP_SECONDS = 5
+LOCK_TIMEOUT_MS = 500
+
+# Connection pool constants
+POOL_GET_TIMEOUT_SECONDS = 0.1
+POOL_RETRY_SLEEP_SECONDS = 0.1
+
+# Blue-green deployment strategy constants
+STRATEGY_BLUE = 'blue'
+STRATEGY_GREEN = 'green'
+VALID_STRATEGIES = {STRATEGY_BLUE, STRATEGY_GREEN}
+
+# gRPC error codes and messages
+GRPC_ERROR_STRATEGY_MISMATCH = 'status: 456'
+GRPC_ERROR_SERVICE_UNAVAILABLE = 'status: 503'
+GRPC_ERROR_ACCESS_DENIED = 'Access denied'

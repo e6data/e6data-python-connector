@@ -1,6 +1,6 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.3.11-blue.svg)
+![version](https://img.shields.io/badge/version-2.3.12-blue.svg)
 
 ## Introduction
 
@@ -83,9 +83,11 @@ The `Connection` class supports the following parameters:
 | `catalog` | str | No | None | Catalog name |
 | `cluster_name` | str | No | None | Name of the cluster for cluster-specific operations |
 | `secure` | bool | No | False | Enable SSL/TLS for secure connections |
+| `ssl_cert` | str/bytes | No | None | Path to CA certificate (PEM) or certificate bytes for HTTPS connections |
 | `auto_resume` | bool | No | True | Automatically resume cluster if suspended |
 | `grpc_options` | dict | No | None | Additional gRPC configuration options |
 | `debug` | bool | No | False | Enable debug logging for troubleshooting |
+| `require_fastbinary` | bool | No | True | Require fastbinary module for Thrift deserialization. Set to False to use pure Python implementation if system dependencies cannot be installed |
 
 #### Secure Connection Example
 
@@ -118,6 +120,117 @@ conn = Connection(
     secure=True
 )
 ```
+
+#### HTTPS Connection with HAProxy
+
+When connecting through HAProxy with HTTPS, you can provide a custom CA certificate for secure connections. The `ssl_cert` parameter accepts either a file path to a PEM certificate or the certificate content as bytes.
+
+**Using a CA certificate file path:**
+
+```python
+conn = Connection(
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert='/path/to/ca-cert.pem'  # Path to your CA certificate
+)
+```
+
+**Reading certificate content as bytes:**
+
+```python
+# Read certificate file and pass as bytes
+with open('/path/to/ca-cert.pem', 'rb') as cert_file:
+    cert_data = cert_file.read()
+
+conn = Connection(
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert=cert_data  # Certificate content as bytes
+)
+```
+
+**Using system CA bundle for publicly signed certificates:**
+
+```python
+# When ssl_cert is None, system default CA bundle is used
+conn = Connection(
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True  # Uses system CA bundle by default
+)
+```
+
+**Connection pooling with custom CA certificate:**
+
+```python
+pool = ConnectionPool(
+    min_size=2,
+    max_size=10,
+    host=host,
+    port=443,
+    username=username,
+    password=password,
+    database=database,
+    secure=True,
+    ssl_cert='/path/to/ca-cert.pem'  # Custom CA certificate for pool connections
+)
+```
+
+#### Handling Missing System Dependencies
+
+The e6data connector uses the `fastbinary` module (from Apache Thrift) for optimal performance when deserializing data. This module requires system-level dependencies (`python3-devel` and `gcc-c++`) to be installed.
+
+**Default Behavior (Recommended):**
+By default, the connector requires `fastbinary` to be available. If it's not found, the connection will fail immediately with a clear error message:
+
+```python
+conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database
+)
+# Raises exception if fastbinary is not available
+```
+
+**Fallback to Pure Python:**
+If you cannot install system dependencies (e.g., in restricted environments, serverless platforms, or containers without build tools), you can disable the `fastbinary` requirement. The connector will fall back to a pure Python implementation with a performance penalty:
+
+```python
+conn = Connection(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    database=database,
+    require_fastbinary=False  # Allow operation without fastbinary
+)
+# Logs warning but continues with pure Python implementation
+```
+
+**When to use `require_fastbinary=False`:**
+- Running in AWS Lambda or other serverless environments
+- Docker containers built without compilation tools
+- Restricted environments where system packages cannot be installed
+- Development/testing environments where performance is not critical
+
+**Performance Impact:**
+- With `fastbinary`: Optimal performance for data deserialization
+- Without `fastbinary` (pure Python): ~2-3x slower deserialization, but otherwise fully functional
+
+**Note:** It's strongly recommended to install system dependencies when possible for best performance. The `require_fastbinary=False` option should only be used when system dependencies cannot be installed.
 
 ### Perform a Queries & Get Results
 
@@ -652,5 +765,6 @@ python your_script.py
 | 456 Strategy Error | Automatic blue-green failover will handle this |
 | Memory issues with large results | Use `fetchall_buffer()` instead of `fetchall()` |
 | gRPC message size errors | Configure `grpc_options` with appropriate message size limits |
+| fastbinary import error | Install system dependencies (`python3-devel`, `gcc-c++`) or set `require_fastbinary=False` |
 
 See [TECH_DOC.md](TECH_DOC.md) for detailed technical documentation.

@@ -12,18 +12,25 @@ from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6data_python_connector.constants import ZONE
 from e6data_python_connector.date_time_utils import floor_div, floor_mod, timezone_from_offset
 
+# Try to import fastbinary - it's optional but provides better performance
+_fastbinary_available = False
 try:
     from thrift.protocol import fastbinary
+    _fastbinary_available = True
 except ImportError:
-    raise Exception(
-        """
-        Failed to import fastbinary. 
-        Did you install system dependencies?
-        Please verify https://github.com/e6x-labs/e6data-python-connector#dependencies
-        """
-    )
+    pass  # Will check require_fastbinary flag at connection creation time
 
 _logger = logging.getLogger(__name__)
+
+
+def is_fastbinary_available():
+    """
+    Check if fastbinary module is available.
+
+    Returns:
+        bool: True if fastbinary is available, False otherwise
+    """
+    return _fastbinary_available
 
 
 def _binary_to_decimal128(binary_data, scale=None):
@@ -504,6 +511,16 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
 
 
 def read_rows_from_chunk(query_columns_description: list, buffer):
+    """
+    Read rows from a Thrift-encoded chunk buffer.
+
+    Args:
+        query_columns_description: List of column descriptions
+        buffer: Thrift-encoded binary buffer
+
+    Returns:
+        List of rows
+    """
     # Create a transport and protocol instance for deserialization
     transport = TTransport.TMemoryBuffer(buffer)
     protocol = TBinaryProtocol.TBinaryProtocolAccelerated(transport)

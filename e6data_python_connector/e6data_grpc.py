@@ -9,25 +9,27 @@ from __future__ import unicode_literals
 import datetime
 import logging
 import os
-
 import re
 import sys
+import threading
 import time
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
-import threading
-import multiprocessing
 
 import grpc
 from grpc._channel import _InactiveRpcError
 
 from e6data_python_connector.cluster_manager import ClusterManager
-from e6data_python_connector.strategy import _get_grpc_header as _get_strategy_header
-from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor
-from e6data_python_connector.constants import *
-from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk
+from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor, get_ssl_credentials
+from e6data_python_connector.constants import (
+    MAX_RETRY_ATTEMPTS, RETRY_SLEEP_SECONDS, GRPC_ERROR_STRATEGY_MISMATCH, GRPC_ERROR_ACCESS_DENIED,
+    PRIMITIVE_TYPES
+)
+from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk, \
+    is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
+from e6data_python_connector.strategy import _get_grpc_header
 from e6data_python_connector.typeId import *
 
 apilevel = '2.0'
@@ -71,7 +73,7 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
-        max_retry = 5
+        max_retry = MAX_RETRY_ATTEMPTS
         current_retry = 0
         while current_retry < max_retry:
             try:
@@ -80,10 +82,10 @@ def re_auth(func):
                 current_retry += 1
                 if current_retry == max_retry:
                     raise e
-                if e.code() == grpc.StatusCode.INTERNAL and 'Access denied' in e.details():
-                    time.sleep(0.2)
+                if e.code() == grpc.StatusCode.INTERNAL and GRPC_ERROR_ACCESS_DENIED in e.details():
+                    time.sleep(RETRY_SLEEP_SECONDS)
                     self.connection.get_re_authenticate_session_id()
-                elif 'status: 456' in e.details():
+                elif GRPC_ERROR_STRATEGY_MISMATCH in e.details():
                     # Strategy changed, clear cache and retry
                     _clear_strategy_cache()
                     # Force re-authentication which will detect new strategy
@@ -304,12 +306,6 @@ def _get_strategy_debug_info():
         }
 
 
-def _get_grpc_header(engine_ip=None, cluster=None, strategy=None):
-    """Generate gRPC metadata headers for the request."""
-    # Use the strategy module's implementation
-    return _get_strategy_header(engine_ip=engine_ip, cluster=cluster, strategy=strategy)
-
-
 def connect(*args, **kwargs):
     """Constructor for creating a connection to the database. See class :py:class:`Connection` for
     arguments.
@@ -331,10 +327,12 @@ class Connection(object):
             database: str = None,
             cluster_name: str = None,
             secure: bool = False,
+            ssl_cert = None,
             auto_resume: bool = True,
             scheme: str = 'e6data',
             grpc_options: dict = None,
             debug: bool = False,
+            require_fastbinary: bool = True,
     ):
         """
         Parameters
@@ -355,6 +353,9 @@ class Connection(object):
                 Cluster's name
             secure: bool, Optional
                 Flag to use a secure channel for data transfer
+            ssl_cert: str or bytes, Optional
+                Path to CA certificate file (PEM format) or certificate content as bytes for
+                secure connections. If None, system default CA bundle is used.
             auto_resume: bool, Optional
                 Flag to enable auto resume of the cluster before the query execution
             scheme: string, Optional
@@ -368,6 +369,10 @@ class Connection(object):
                 - keepalive_time_ms: This parameter defines the time, in milliseconds, Default to 30 seconds
             debug: bool, Optional
                 Flag to enable debug logging for blue-green deployment strategy changes
+            require_fastbinary: bool, Optional
+                Flag to require fastbinary module for Thrift deserialization. If True (default),
+                raises an exception if fastbinary is not available. If False, logs a warning
+                and continues with pure Python implementation (with reduced performance).
         """
         if not username or not password:
             raise ValueError("username or password cannot be empty.")
@@ -382,10 +387,34 @@ class Connection(object):
         self._port = port
 
         self._secure_channel = secure
+        self._ssl_cert = ssl_cert
 
         self.catalog_name = catalog
 
         self._auto_resume = auto_resume
+
+        # Store require_fastbinary flag
+        self._require_fastbinary = require_fastbinary
+
+        # Check fastbinary availability at connection creation time
+        if not is_fastbinary_available():
+            if require_fastbinary:
+                raise Exception(
+                    """
+                    Failed to import fastbinary.
+                    Did you install system dependencies?
+                    Please verify https://github.com/e6x-labs/e6data-python-connector#dependencies
+
+                    To continue without fastbinary (with reduced performance), set require_fastbinary=False
+                    in the connection parameters.
+                    """
+                )
+            else:
+                logger.warning(
+                    "fastbinary module is not available. Using pure Python implementation. "
+                    "Performance may be degraded. To enable fastbinary, install system dependencies: "
+                    "https://github.com/e6x-labs/e6data-python-connector#dependencies"
+                )
 
         self._grpc_options = grpc_options
         if self._grpc_options is None:
@@ -503,7 +532,7 @@ class Connection(object):
             self._channel = grpc.secure_channel(
                 target='{}:{}'.format(self._host, self._port),
                 options=self._get_grpc_options,
-                credentials=grpc.ssl_channel_credentials()
+                credentials=get_ssl_credentials(self._ssl_cert)
             )
         else:
             self._channel = grpc.insecure_channel(
@@ -685,7 +714,8 @@ class Connection(object):
                     secure_channel=self._secure_channel,
                     cluster_uuid=self.cluster_name,
                     timeout=self.grpc_auto_resume_timeout_seconds,
-                    debug=self._debug
+                    debug=self._debug,
+                    ssl_cert=self._ssl_cert
                 ).resume()
                 return status  # Return boolean status directly
             else:
@@ -1464,7 +1494,10 @@ class Cursor(DBAPICursor):
         if not buffer or len(buffer) == 0:
             return None
         # one batch retrieves the predefined set of rows
-        return read_rows_from_chunk(self._query_columns_description, buffer)
+        return read_rows_from_chunk(
+            self._query_columns_description,
+            buffer
+        )
 
     def fetchall(self):
         """
