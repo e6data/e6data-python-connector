@@ -561,6 +561,10 @@ def get_column_from_chunk(vector: Vector) -> list:
                 value_array.append(vector.data.int64Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericConstantData.data)
         elif d_type == VectorType.DATE:
+            # Use the JDBC-parity formatter so years > 9999 emit "+YYYYY-MM-DD"
+            # instead of raising. Per-row try/except keeps a single bad value
+            # from truncating the column (which previously cascaded to an
+            # IndexError in read_rows_from_chunk).
             for row in range(vector.size):
                 if get_null(vector, row):
                     value_array.append(None)
@@ -574,6 +578,9 @@ def get_column_from_chunk(vector: Vector) -> list:
                     _logger.error("Failed to parse DATE row=%s: %s", row, e)
                     value_array.append('Failed to parse.')
         elif d_type == VectorType.DATETIME:
+            # Default formatter knobs reproduce the prior datetime.isoformat
+            # output ("YYYY-MM-DDTHH:MM:SS.sss+HH:MM"). See DATE branch above
+            # for the rationale on per-row try/except.
             for row in range(vector.size):
                 if get_null(vector, row):
                     value_array.append(None)
@@ -632,6 +639,8 @@ def get_column_from_chunk(vector: Vector) -> list:
             for row in range(vector.size):
                 value_array.append(None)
         elif d_type == VectorType.TIMESTAMP_TZ:
+            # row_zone is scoped to the row (not the outer `zone`) so a
+            # per-row zone resolution doesn't leak into later iterations.
             for row in range(vector.size):
                 if get_null(vector, row):
                     value_array.append(None)
@@ -687,6 +696,10 @@ def get_column_from_chunk(vector: Vector) -> list:
         else:
             value_array.append(None)
     except Exception as e:
+        # Safety net: if anything escapes the per-row try/excepts above (or
+        # comes from a branch without one), pad value_array to vector.size so
+        # read_rows_from_chunk's columns[colIndex][rowIndex] access can never
+        # IndexError on a short column.
         _logger.error("get_column_from_chunk failed (vectorType=%s, parsed=%s/%s): %s",
                       d_type, len(value_array), vector.size, e)
         while len(value_array) < vector.size:
