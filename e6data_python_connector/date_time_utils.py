@@ -160,6 +160,101 @@ def floor_mod(x, y):
     return r
 
 
+_SECONDS_PER_DAY = 86400
+
+
+def _civil_from_days(z):
+    """
+    Convert days since 1970-01-01 to proleptic Gregorian (year, month, day).
+
+    Howard Hinnant's algorithm. Supports any year representable by a Python int,
+    so it does not overflow like datetime.fromtimestamp (capped at year 9999).
+    """
+    z = z + 719468
+    era = (z if z >= 0 else z - 146096) // 146097
+    doe = z - era * 146097
+    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    y = yoe + era * 400
+    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    mp = (5 * doy + 2) // 153
+    d = doy - (153 * mp + 2) // 5 + 1
+    m = mp + 3 if mp < 10 else mp - 9
+    if m <= 2:
+        y += 1
+    return y, m, d
+
+
+def _format_iso_year(year):
+    """Java LocalDate-style year: 0000-9999 unprefixed; outside range gets +/- prefix."""
+    if 0 <= year <= 9999:
+        return "{:04d}".format(year)
+    if year > 9999:
+        return "+{}".format(year)
+    return "-{:04d}".format(abs(year)) if abs(year) <= 9999 else "-{}".format(abs(year))
+
+
+def _tz_offset_minutes(tz, ref_seconds=0):
+    """Best-effort fixed-offset extraction. Returns 0 if unknown."""
+    if tz is None:
+        return 0
+    try:
+        offset = tz.utcoffset(None)
+        if offset is not None:
+            return int(offset.total_seconds() // 60)
+    except (TypeError, AttributeError, ValueError):
+        pass
+    # Fallback for named timezones: probe with a reference datetime.
+    try:
+        from datetime import datetime as _dt
+        probe = _dt.utcfromtimestamp(max(0, min(ref_seconds, 253370764800)))  # clamp to year 9999
+        offset = tz.utcoffset(probe)
+        if offset is not None:
+            return int(offset.total_seconds() // 60)
+    except Exception:
+        pass
+    return 0
+
+
+def format_iso_date_from_epoch_micros(epoch_micros):
+    """
+    Format epoch microseconds (UTC) as ISO-8601 date with Java LocalDate-style
+    expanded year support (e.g. '+11756-12-31'). Never raises on year overflow.
+    """
+    epoch_seconds = floor_div(epoch_micros, 1_000_000)
+    days = floor_div(epoch_seconds, _SECONDS_PER_DAY)
+    y, mo, d = _civil_from_days(days)
+    return "{}-{:02d}-{:02d}".format(_format_iso_year(y), mo, d)
+
+
+def format_iso_datetime_from_epoch_micros(epoch_micros, tz=None, separator='T',
+                                          include_millis=True, include_offset=True):
+    """
+    Format epoch microseconds as ISO-8601 datetime with expanded year support.
+    Mirrors Java's LocalDateTime/OffsetDateTime toString() semantics so out-of-range
+    years are emitted instead of raising.
+    """
+    epoch_seconds_utc = floor_div(epoch_micros, 1_000_000)
+    offset_minutes = _tz_offset_minutes(tz, ref_seconds=epoch_seconds_utc)
+    local_micros = epoch_micros + offset_minutes * 60 * 1_000_000
+    epoch_seconds = floor_div(local_micros, 1_000_000)
+    micros_of_second = floor_mod(local_micros, 1_000_000)
+    days = floor_div(epoch_seconds, _SECONDS_PER_DAY)
+    sec_of_day = floor_mod(epoch_seconds, _SECONDS_PER_DAY)
+    y, mo, d = _civil_from_days(days)
+    h = sec_of_day // 3600
+    mi = (sec_of_day % 3600) // 60
+    s = sec_of_day % 60
+    out = "{}-{:02d}-{:02d}{}{:02d}:{:02d}:{:02d}".format(
+        _format_iso_year(y), mo, d, separator, h, mi, s)
+    if include_millis:
+        out += ".{:03d}".format(micros_of_second // 1000)
+    if include_offset:
+        sign = '+' if offset_minutes >= 0 else '-'
+        tot = abs(offset_minutes)
+        out += "{}{:02d}:{:02d}".format(sign, tot // 60, tot % 60)
+    return out
+
+
 def timezone_from_offset(offset_string) -> pytz:
     # Parse the offset string into hours and minutes
     sign = -1 if offset_string[0] == "-" else 1
