@@ -10,7 +10,13 @@ from thrift.transport import TTransport
 
 from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6data_python_connector.constants import ZONE
-from e6data_python_connector.date_time_utils import floor_div, floor_mod, timezone_from_offset
+from e6data_python_connector.date_time_utils import (
+    floor_div,
+    floor_mod,
+    timezone_from_offset,
+    format_iso_date_from_epoch_micros,
+    format_iso_datetime_from_epoch_micros,
+)
 
 # Try to import fastbinary - it's optional but provides better performance
 _fastbinary_available = False
@@ -463,16 +469,11 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
             if dtype == "LONG":
                 value_array.append(dis.read_long())
             elif dtype == "DATE":
-                epoch_seconds = floor_div(dis.read_long(), 1000_000)
-                date = datetime.fromtimestamp(epoch_seconds, ZONE)
-                value_array.append(date.strftime("%Y-%m-%d"))
+                value_array.append(format_iso_date_from_epoch_micros(dis.read_long()))
             elif dtype == "DATETIME":
-                epoch_micros = dis.read_long()
-                epoch_seconds = floor_div(epoch_micros, 1000_000)
-                micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                date_time = datetime.fromtimestamp(epoch_seconds, ZONE)
-                date_time = date_time + timedelta(microseconds=micros_of_the_day)
-                value_array.append(date_time.strftime("%Y-%m-%d %H:%M:%S"))
+                value_array.append(format_iso_datetime_from_epoch_micros(
+                    dis.read_long(), tz=ZONE, separator=' ',
+                    include_millis=False, include_offset=False))
             elif dtype == "STRING" or dtype == "ARRAY" or dtype == "MAP" or dtype == "STRUCT":
                 value_array.append(dis.read_utf().decode())
             elif dtype == "INT":
@@ -560,27 +561,38 @@ def get_column_from_chunk(vector: Vector) -> list:
                 value_array.append(vector.data.int64Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericConstantData.data)
         elif d_type == VectorType.DATE:
+            # Use the JDBC-parity formatter so years > 9999 emit "+YYYYY-MM-DD"
+            # instead of raising. Per-row try/except keeps a single bad value
+            # from truncating the column (which previously cascaded to an
+            # IndexError in read_rows_from_chunk).
             for row in range(vector.size):
                 if get_null(vector, row):
                     value_array.append(None)
                     continue
-                epoch_seconds = floor_div(vector.data.dateData.data[
-                                              row] if not vector.isConstantVector else vector.data.dateConstantData.data,
-                                          1000_000)
-                date = datetime.fromtimestamp(epoch_seconds, zone)
-                value_array.append(date.strftime("%Y-%m-%d"))
+                try:
+                    raw = (vector.data.dateData.data[row]
+                           if not vector.isConstantVector
+                           else vector.data.dateConstantData.data)
+                    value_array.append(format_iso_date_from_epoch_micros(raw))
+                except Exception as e:
+                    _logger.error("Failed to parse DATE row=%s: %s", row, e)
+                    value_array.append('Failed to parse.')
         elif d_type == VectorType.DATETIME:
+            # Default formatter knobs reproduce the prior datetime.isoformat
+            # output ("YYYY-MM-DDTHH:MM:SS.sss+HH:MM"). See DATE branch above
+            # for the rationale on per-row try/except.
             for row in range(vector.size):
                 if get_null(vector, row):
                     value_array.append(None)
                     continue
-                epoch_micros = vector.data.timeData.data[
-                    row] if not vector.isConstantVector else vector.data.timeConstantData.data
-                epoch_seconds = floor_div(epoch_micros, 1000_000)
-                micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                date_time = datetime.fromtimestamp(epoch_seconds, zone)
-                date_time = date_time + timedelta(microseconds=micros_of_the_day)
-                value_array.append(date_time.isoformat(timespec='milliseconds'))
+                try:
+                    epoch_micros = (vector.data.timeData.data[row]
+                                    if not vector.isConstantVector
+                                    else vector.data.timeConstantData.data)
+                    value_array.append(format_iso_datetime_from_epoch_micros(epoch_micros, tz=zone))
+                except Exception as e:
+                    _logger.error("Failed to parse DATETIME row=%s: %s", row, e)
+                    value_array.append('Failed to parse.')
         elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
             for row in range(vector.size):
                 if get_null(vector, row):
@@ -627,22 +639,27 @@ def get_column_from_chunk(vector: Vector) -> list:
             for row in range(vector.size):
                 value_array.append(None)
         elif d_type == VectorType.TIMESTAMP_TZ:
+            # row_zone is scoped to the row (not the outer `zone`) so a
+            # per-row zone resolution doesn't leak into later iterations.
             for row in range(vector.size):
                 if get_null(vector, row):
                     value_array.append(None)
                     continue
-                epoch_micros = vector.data.timeData.data[
-                    row] if not vector.isConstantVector else vector.data.timeConstantData.data
-                if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
-                        (not vector.isConstantVector and vector.data.timeData.zoneData is not None)):
-                    zone_id = vector.data.timeData.zoneData[
-                        row] if not vector.isConstantVector else vector.data.timeConstantData.zoneData
-                    zone = timezone_from_offset(zone_id)
-                epoch_seconds = floor_div(epoch_micros, 1000_000)
-                micros_of_the_day = floor_mod(epoch_micros, 1000_000)
-                date_time = datetime.fromtimestamp(epoch_seconds, zone)
-                date_time = date_time + timedelta(microseconds=micros_of_the_day)
-                value_array.append(date_time.isoformat(timespec='milliseconds'))
+                try:
+                    epoch_micros = (vector.data.timeData.data[row]
+                                    if not vector.isConstantVector
+                                    else vector.data.timeConstantData.data)
+                    row_zone = zone
+                    if ((vector.isConstantVector and vector.data.timeConstantData.zoneData is not None) or
+                            (not vector.isConstantVector and vector.data.timeData.zoneData is not None)):
+                        zone_id = (vector.data.timeData.zoneData[row]
+                                   if not vector.isConstantVector
+                                   else vector.data.timeConstantData.zoneData)
+                        row_zone = timezone_from_offset(zone_id)
+                    value_array.append(format_iso_datetime_from_epoch_micros(epoch_micros, tz=row_zone))
+                except Exception as e:
+                    _logger.error("Failed to parse TIMESTAMP_TZ row=%s: %s", row, e)
+                    value_array.append('Failed to parse.')
         elif d_type == VectorType.DECIMAL128:
             # Handle both constant and non-constant vectors following Java implementation
             if vector.isConstantVector:
@@ -679,6 +696,12 @@ def get_column_from_chunk(vector: Vector) -> list:
         else:
             value_array.append(None)
     except Exception as e:
-        _logger.error(e)
-        value_array.append('Failed to parse.')
+        # Safety net: if anything escapes the per-row try/excepts above (or
+        # comes from a branch without one), pad value_array to vector.size so
+        # read_rows_from_chunk's columns[colIndex][rowIndex] access can never
+        # IndexError on a short column.
+        _logger.error("get_column_from_chunk failed (vectorType=%s, parsed=%s/%s): %s",
+                      d_type, len(value_array), vector.size, e)
+        while len(value_array) < vector.size:
+            value_array.append('Failed to parse.')
     return value_array
