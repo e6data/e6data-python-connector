@@ -316,7 +316,9 @@ class E6dataDialect(default.DefaultDialect):
         for column in columns:
             row = dict()
             row["name"] = column.get('fieldName')
-            row["type"] = lambda: column.get('fieldType')
+            raw_type = str(column.get('fieldType')).lower()
+            mapped_type = _type_map.get(raw_type, types.String)
+            row["type"] = lambda t=mapped_type: t
             rows.append(row)
         return rows
 
