@@ -285,6 +285,48 @@ query_id = '<query_id>'  # query id from execute function response.
 cursor.cancel(query_id)
 ```
 
+To get the status of a running or completed query:
+```python
+query_id = '<query_id>'  # query id from execute function response.
+status_response = cursor.status(query_id)
+
+# Check if query execution is complete
+is_complete = status_response.status  # Returns True when query is done, False if still running
+
+# Get the total row count
+row_count = status_response.rowCount  # Total number of rows in the result set
+
+print(f"Query complete: {is_complete}")
+print(f"Row count: {row_count}")
+```
+
+The `status()` method is useful for:
+- **Monitoring long-running queries**: Poll the status periodically to check if execution is complete
+- **Checking row counts**: Get the total number of rows without fetching all results
+- **Query progress tracking**: Integrate with monitoring systems or progress bars
+- **Conditional fetching**: Decide whether to fetch results based on completion status
+
+Example - Polling for query completion:
+```python
+import time
+
+cursor = conn.cursor(catalog_name=catalog_name)
+query_id = cursor.execute("SELECT * FROM large_table")
+
+# Poll until query is complete
+while True:
+    status_response = cursor.status(query_id)
+    if status_response.status:
+        print(f"Query complete! Total rows: {status_response.rowCount}")
+        break
+    else:
+        print("Query still running...")
+        time.sleep(1)  # Wait 1 second before checking again
+
+# Now fetch the results
+results = cursor.fetchall()
+```
+
 Switch database in an existing connection:
 ```python
 database = '<new_database_name>'  # Replace with the new database.
