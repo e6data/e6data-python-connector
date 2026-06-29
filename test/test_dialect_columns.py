@@ -82,5 +82,37 @@ class TestDialectGetColumns(unittest.TestCase):
         self.assertIs(columns[0]["type"], types.String)
 
 
+    def test_get_columns_maps_engine_short_names_and_parameterized_types(self):
+        # The e6data engine emits short names ('int') and parameterized types
+        # ('decimal(7,2)', 'varchar(16)', 'array<int>'). These must resolve to the
+        # right SQLAlchemy type, not silently default to String.
+        client = FakeClient([
+            {"fieldName": "sk", "fieldType": "int"},
+            {"fieldName": "big", "fieldType": "long"},
+            {"fieldName": "small", "fieldType": "short"},
+            {"fieldName": "flag", "fieldType": "bool"},
+            {"fieldName": "price", "fieldType": "decimal(7,2)"},
+            {"fieldName": "name", "fieldType": "varchar(16)"},
+            {"fieldName": "code", "fieldType": "char(1)"},
+            {"fieldName": "tags", "fieldType": "array<int>"},
+        ])
+        connection = FakeSQLAlchemyConnection(client)
+        dialect = E6dataDialect()
+        dialect.catalog_name = "lakehouse"
+
+        with patch.object(dialect_module, "Connection", FakeSQLAlchemyConnection):
+            columns = dialect.get_columns(connection, "items", "sales")
+
+        by_name = {c["name"]: c["type"] for c in columns}
+        self.assertIs(by_name["sk"], types.Integer)
+        self.assertIs(by_name["big"], types.BigInteger)
+        self.assertIs(by_name["small"], types.SmallInteger)
+        self.assertIs(by_name["flag"], types.Boolean)
+        self.assertIs(by_name["price"], E6dataDecimal)
+        self.assertIs(by_name["name"], types.String)
+        self.assertIs(by_name["code"], types.String)
+        self.assertIs(by_name["tags"], types.String)  # complex type normalizes, not a miss
+
+
 if __name__ == "__main__":
     unittest.main()

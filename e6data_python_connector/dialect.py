@@ -148,6 +148,13 @@ _type_map = {
     'struct': types.String,
     'uniontype': types.String,
     'decimal': E6dataDecimal,
+    'numeric': E6dataDecimal,
+    # aliases for the short type names the e6data engine actually emits
+    'int': types.Integer,
+    'long': types.BigInteger,
+    'short': types.SmallInteger,
+    'bool': types.Boolean,
+    'real': types.Float,
 }
 
 
@@ -328,7 +335,17 @@ class E6dataDialect(default.DefaultDialect):
             row = dict()
             row["name"] = column.get('fieldName')
             field_type = str(column.get('fieldType')).lower()
-            row["type"] = _type_map.get(field_type, types.String)
+            # Engine types may carry parameters: 'decimal(7,2)', 'varchar(16)',
+            # 'array<int>'. Strip them so the base type maps; otherwise the exact
+            # key lookup misses and the column silently defaults to String.
+            base_type = field_type.split('(', 1)[0].split('<', 1)[0].strip()
+            mapped = _type_map.get(base_type)
+            if mapped is None:
+                _logger.warning(
+                    "e6data dialect: unmapped column type %r -> defaulting to String",
+                    column.get('fieldType'))
+                mapped = types.String
+            row["type"] = mapped
             rows.append(row)
         return rows
 
