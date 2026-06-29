@@ -14,9 +14,15 @@ from decimal import Decimal
 
 from dateutil.parser import parse
 from sqlalchemy import exc
-from sqlalchemy import processors
 from sqlalchemy import types
-from sqlalchemy.databases import mysql
+try:
+    from sqlalchemy import processors
+except ImportError:
+    from sqlalchemy.engine import processors
+try:
+    from sqlalchemy.databases import mysql
+except ImportError:
+    from sqlalchemy.dialects import mysql
 from sqlalchemy.engine import default, Engine, Connection
 from sqlalchemy.sql import compiler
 from sqlalchemy.sql.compiler import SQLCompiler
@@ -26,6 +32,11 @@ from e6data_python_connector.common import UniversalSet
 from e6data_python_connector.exceptions import *
 
 _logger = logging.getLogger(__name__)
+
+_MYSQL_TINY_INTEGER = (
+    getattr(mysql, "MSTinyInteger", None) or
+    getattr(mysql, "TINYINT", types.SmallInteger)
+)
 
 
 class E6dataStringTypeBase(types.TypeDecorator):
@@ -120,7 +131,7 @@ class E6dataIdentifierPreparer(compiler.IdentifierPreparer):
 
 _type_map = {
     'boolean': types.Boolean,
-    'tinyint': mysql.MSTinyInteger,
+    'tinyint': _MYSQL_TINY_INTEGER,
     'smallint': types.SmallInteger,
     'integer': types.Integer,
     'bigint': types.BigInteger,
@@ -316,7 +327,8 @@ class E6dataDialect(default.DefaultDialect):
         for column in columns:
             row = dict()
             row["name"] = column.get('fieldName')
-            row["type"] = lambda: column.get('fieldType')
+            field_type = str(column.get('fieldType')).lower()
+            row["type"] = _type_map.get(field_type, types.String)
             rows.append(row)
         return rows
 
