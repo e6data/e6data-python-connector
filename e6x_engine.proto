@@ -9,6 +9,14 @@ message AuthenticateRequest
   string  user = 1;
   string  password = 2;
   optional string  userNameForImpersonation = 3;
+  // Declared to keep field numbering in step with the engine's copy of this proto. The engine sets
+  // it for Unity Catalog ABAC; this client does not use it, but reserving the number stops a future
+  // change here from colliding with it on the wire.
+  optional string  customIdentityClaim = 4;
+  // OAuth 2.0 access token. When set, the engine derives the identity from the token's claims and
+  // user/password are ignored. Grant-agnostic: a client-credentials (M2M) or authorization-code
+  // (U2M) token both work.
+  optional string  bearerToken = 5;
 }
 
 // passing session IP as a session and session objects are local to planner

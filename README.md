@@ -81,8 +81,8 @@ The `Connection` class supports the following parameters:
 |-----------|------|----------|---------|-------------|
 | `host` | str | Yes | - | IP address or hostname of the e6data cluster |
 | `port` | int | Yes | - | Port of the e6data engine (typically 80) |
-| `username` | str | Yes | - | Your e6data Email ID |
-| `password` | str | Yes | - | Access Token generated in the e6data console |
+| `username` | str | Conditional | None | Your e6data Email ID. Required unless authenticating with OAuth |
+| `password` | str | Conditional | None | Access Token generated in the e6data console. Required unless authenticating with OAuth |
 | `database` | str | No | None | Database to perform queries on |
 | `catalog` | str | No | None | Catalog name |
 | `cluster_name` | str | No | None | Name of the cluster for cluster-specific operations |
@@ -92,6 +92,50 @@ The `Connection` class supports the following parameters:
 | `grpc_options` | dict | No | None | Additional gRPC configuration options |
 | `debug` | bool | No | False | Enable debug logging for troubleshooting |
 | `require_fastbinary` | bool | No | True | Require fastbinary module for Thrift deserialization. Set to False to use pure Python implementation if system dependencies cannot be installed |
+| `client_id` | str | No | None | OAuth 2.0 client id. Use with `client_secret` and `token_url` |
+| `client_secret` | str | No | None | OAuth 2.0 client secret |
+| `token_url` | str | No | None | Token endpoint of the authorization server |
+| `oauth_scope` | str | No | None | Space-delimited scopes to request. Omit for the client's full registered set |
+| `access_token` | str | No | None | A previously obtained access token, for callers that mint their own |
+| `client_auth_method` | str | No | `'basic'` | How client credentials reach the token endpoint: `'basic'` or `'post'` |
+
+#### Authenticating with OAuth 2.0
+
+As an alternative to username and password, a connection can authenticate with an OAuth 2.0 access
+token. The connector obtains a token using the client-credentials grant, caches it, and refreshes it
+shortly before it expires.
+
+```python
+conn = Connection(
+    host=host,
+    port=port,
+    database=database,
+    client_id='<client_id>',
+    client_secret='<client_secret>',
+    token_url='https://<your-workspace>/oauth2/token',
+)
+```
+
+If you mint tokens yourself, pass one directly instead. The connector will not refresh it, so a
+long-lived connection may outlive the token:
+
+```python
+conn = Connection(host=host, port=port, database=database, access_token='<token>')
+```
+
+**Supply exactly one authentication method.** Passing both username/password and OAuth settings
+raises a `ValueError` rather than picking one, so a stale value left in a config file cannot quietly
+win.
+
+Two things to know:
+
+- **The engine must have OAuth enabled** and must trust the token's issuer. An engine that predates
+  OAuth support ignores the token, sees empty credentials and refuses, which looks identical to a
+  rejected token. The connector raises `OAuthNotSupportedError` naming both possibilities rather than
+  guessing between them.
+- **Auto-resume is unavailable on an OAuth connection.** The cluster-manager service authenticates
+  with its own username and password, which an OAuth connection does not hold. Resume the cluster
+  before connecting, or connect with credentials.
 
 #### Secure Connection Example
 

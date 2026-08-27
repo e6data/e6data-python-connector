@@ -29,6 +29,8 @@ from e6data_python_connector.constants import (
 from e6data_python_connector.datainputstream import get_query_columns_info, read_rows_from_chunk, \
     is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
+from e6data_python_connector.oauth import ClientCredentialsTokenProvider
+from e6data_python_connector.exceptions import OAuthNotSupportedError
 from e6data_python_connector.strategy import _get_grpc_header
 from e6data_python_connector.typeId import *
 
@@ -321,8 +323,8 @@ class Connection(object):
             self,
             host: str,
             port: int,
-            username: str,
-            password: str,
+            username: str = None,
+            password: str = None,
             catalog: str = None,
             database: str = None,
             cluster_name: str = None,
@@ -333,6 +335,12 @@ class Connection(object):
             grpc_options: dict = None,
             debug: bool = False,
             require_fastbinary: bool = True,
+            client_id: str = None,
+            client_secret: str = None,
+            token_url: str = None,
+            oauth_scope: str = None,
+            access_token: str = None,
+            client_auth_method: str = 'basic',
     ):
         """
         Parameters
@@ -373,11 +381,70 @@ class Connection(object):
                 Flag to require fastbinary module for Thrift deserialization. If True (default),
                 raises an exception if fastbinary is not available. If False, logs a warning
                 and continues with pure Python implementation (with reduced performance).
+            client_id: str, Optional
+                OAuth 2.0 client id. Supply with client_secret and token_url to authenticate with
+                the client-credentials grant instead of username/password.
+            client_secret: str, Optional
+                OAuth 2.0 client secret.
+            token_url: str, Optional
+                Token endpoint of the authorization server.
+            oauth_scope: str, Optional
+                Space-delimited scopes to request. Omit to receive the client's full registered set.
+            access_token: str, Optional
+                A previously obtained OAuth 2.0 access token, for callers that mint their own. The
+                connector will not refresh it, so a long-lived connection may outlive the token.
+            client_auth_method: str, Optional
+                How the client credentials are presented to the token endpoint -- 'basic' (default,
+                what the e6data authorization server expects) or 'post'.
+
+        Exactly one authentication method must be supplied: username and password, or client_id
+        with client_secret and token_url, or access_token. Passing more than one is an error rather
+        than a precedence rule, so a stale credential left in a config file cannot silently win.
         """
-        if not username or not password:
-            raise ValueError("username or password cannot be empty.")
         if not host or not port:
             raise ValueError("host or port cannot be empty.")
+
+        # Count the credential shapes present rather than picking one by precedence: silently
+        # preferring one over another is how a stale value in a config file ends up authenticating
+        # a connection nobody meant it to.
+        supplied = [
+            bool(username or password),
+            bool(client_id or client_secret or token_url or oauth_scope),
+            bool(access_token),
+        ]
+        if not any(supplied):
+            raise ValueError(
+                "No credentials supplied. Provide username and password, or client_id with "
+                "client_secret and token_url, or access_token."
+            )
+        if sum(supplied) > 1:
+            raise ValueError(
+                "Supply exactly one authentication method: username/password, OAuth client "
+                "credentials, or a pre-obtained access_token."
+            )
+
+        self._token_provider = None
+        self._static_access_token = None
+
+        if supplied[0]:
+            if not username or not password:
+                raise ValueError("username or password cannot be empty.")
+        elif supplied[1]:
+            if not client_id or not client_secret or not token_url:
+                raise ValueError(
+                    "client_id, client_secret and token_url are all required for OAuth "
+                    "client-credentials authentication."
+                )
+            self._token_provider = ClientCredentialsTokenProvider(
+                token_url=token_url,
+                client_id=client_id,
+                client_secret=client_secret,
+                scope=oauth_scope,
+                client_auth_method=client_auth_method,
+            )
+        else:
+            self._static_access_token = access_token
+
         self.__username = username
         self.__password = password
         self.database = database
@@ -541,6 +608,55 @@ class Connection(object):
             )
         self._client = e6x_engine_pb2_grpc.QueryEngineServiceStub(self._channel)
 
+    @property
+    def _uses_oauth(self) -> bool:
+        """Whether this connection authenticates with an OAuth token rather than credentials."""
+        return self._token_provider is not None or self._static_access_token is not None
+
+    def _bearer_token(self, force_refresh: bool = False) -> str:
+        """
+        Returns the access token to present on authenticate.
+
+        A provider-backed token is refreshed as needed; a token supplied directly by the caller is
+        returned as given, because we have no way to obtain another one.
+        """
+        if self._token_provider is not None:
+            return self._token_provider.get_token(force_refresh=force_refresh)
+        return self._static_access_token
+
+    def _build_authenticate_request(self):
+        """
+        Builds the authenticate request for whichever credential shape this connection holds.
+
+        Only one of the two shapes is ever populated. The engine checks for a bearer token first, so
+        sending both would be ambiguous rather than a useful fallback.
+        """
+        if self._uses_oauth:
+            return e6x_engine_pb2.AuthenticateRequest(bearerToken=self._bearer_token())
+        return e6x_engine_pb2.AuthenticateRequest(
+            user=self.__username,
+            password=self.__password
+        )
+
+    def _authentication_failure(self):
+        """
+        Builds the exception raised when the engine returns no session.
+
+        In OAuth mode the failure is genuinely ambiguous and the message says so. An engine built
+        before the bearerToken field existed ignores it as an unknown field, then sees an empty user
+        and password and refuses -- which looks exactly like a rejected token. Guessing between the
+        two would be worse than naming both.
+        """
+        if self._uses_oauth:
+            return OAuthNotSupportedError(
+                "The engine returned no session for the supplied OAuth token. Either the token was "
+                "rejected, or this engine predates OAuth support on authenticate and ignored it -- "
+                "the two are indistinguishable from the client side. Check that the engine has "
+                "OAUTH_ENABLED set and trusts the token's issuer, or connect with username and "
+                "password instead."
+            )
+        return ValueError("Invalid credentials.")
+
     def get_re_authenticate_session_id(self):
         """
         Re-authenticates the session by closing the current connection and creating a new client.
@@ -591,10 +707,7 @@ class Connection(object):
 
         if not self._session_id:
             try:
-                authenticate_request = e6x_engine_pb2.AuthenticateRequest(
-                    user=self.__username,
-                    password=self.__password
-                )
+                authenticate_request = self._build_authenticate_request()
 
                 # Check if we have a cached strategy
                 active_strategy = _get_active_strategy()
@@ -611,7 +724,7 @@ class Connection(object):
                         )
                         self._session_id = authenticate_response.sessionId
                         if not self._session_id:
-                            raise ValueError("Invalid credentials.")
+                            raise self._authentication_failure()
                         # Check for new strategy in authenticate response
                         if hasattr(authenticate_response, 'new_strategy') and authenticate_response.new_strategy:
                             new_strategy = authenticate_response.new_strategy.lower()
@@ -695,7 +808,7 @@ class Connection(object):
                         raise last_error
 
                 if not self._session_id:
-                    raise ValueError("Invalid credentials.")
+                    raise self._authentication_failure()
             except _InactiveRpcError as e:
                 self._perform_auto_resume(e)
             except Exception as e:
@@ -705,6 +818,16 @@ class Connection(object):
 
     def _perform_auto_resume(self, e: _InactiveRpcError):
         if self._auto_resume:
+            if self._uses_oauth:
+                # The cluster-manager service authenticates with a username and password of its
+                # own, which an OAuth connection does not hold. Constructing one with None would
+                # fail deep inside the resume call with a misleading error, so decline here and say
+                # why. Resume the cluster out of band, or connect with credentials.
+                logger.warning(
+                    'Auto-resume is unavailable on an OAuth connection: the cluster-manager service '
+                    'requires username and password. Resume the cluster before connecting.'
+                )
+                return False
             if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
                 status = ClusterManager(
                     host=self._host,
