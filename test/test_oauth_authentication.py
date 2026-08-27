@@ -213,19 +213,13 @@ class AuthenticateRequestShapeTest(unittest.TestCase):
     rather than inferred from the .proto.
     """
 
-    def test_the_bearer_token_field_exists_and_round_trips(self):
-        request = e6x_engine_pb2.AuthenticateRequest(bearerToken='tok-1')
+    def test_the_message_carries_no_token_field(self):
+        # The token travels in call metadata, so the message is wire-identical to what every
+        # deployed client already speaks. Nothing here can break.
+        names = [field.name for field in e6x_engine_pb2.AuthenticateRequest.DESCRIPTOR.fields]
 
-        parsed = e6x_engine_pb2.AuthenticateRequest.FromString(request.SerializeToString())
-
-        self.assertTrue(parsed.HasField('bearerToken'))
-        self.assertEqual(parsed.bearerToken, 'tok-1')
-
-    def test_a_credential_request_carries_no_bearer_token(self):
-        # This is what decides the engine's branch: absent means take the credential path.
-        request = e6x_engine_pb2.AuthenticateRequest(user='alice', password='secret')
-
-        self.assertFalse(request.HasField('bearerToken'))
+        self.assertNotIn('bearerToken', names)
+        self.assertFalse(any('token' in name.lower() for name in names))
 
     def test_pre_existing_fields_keep_their_numbers(self):
         # Renumbering any of these would break every deployed client, so pin them.
@@ -235,18 +229,21 @@ class AuthenticateRequestShapeTest(unittest.TestCase):
         self.assertEqual(numbers['password'], 2)
         self.assertEqual(numbers['userNameForImpersonation'], 3)
         self.assertEqual(numbers['customIdentityClaim'], 4)
-        self.assertEqual(numbers['bearerToken'], 5)
+
+    def test_field_five_is_not_reused(self):
+        # It briefly held an in-body token during development. Reserved in both copies of the proto
+        # so nothing else can claim it and collide with a client built in that window.
+        by_number = e6x_engine_pb2.AuthenticateRequest.DESCRIPTOR.fields_by_number
+
+        self.assertIsNone(by_number.get(5))
 
     def test_bytes_from_an_older_client_still_parse(self):
-        # An older client's message is byte-identical to a new one that simply set no token, so
-        # serialising without the field is a faithful stand-in.
         old_shape = e6x_engine_pb2.AuthenticateRequest(user='alice', password='secret')
 
         parsed = e6x_engine_pb2.AuthenticateRequest.FromString(old_shape.SerializeToString())
 
         self.assertEqual(parsed.user, 'alice')
         self.assertEqual(parsed.password, 'secret')
-        self.assertFalse(parsed.HasField('bearerToken'))
 
 
 class ConnectionCredentialSelectionTest(unittest.TestCase):
@@ -278,28 +275,45 @@ class ConnectionCredentialSelectionTest(unittest.TestCase):
 
         self.assertEqual(request.user, 'alice')
         self.assertEqual(request.password, 'secret')
-        self.assertFalse(request.HasField('bearerToken'))
 
     @patch('e6data_python_connector.oauth.urllib.request.urlopen')
-    def test_an_oauth_connection_builds_a_bearer_request(self, urlopen):
+    def test_an_oauth_connection_sends_the_token_as_metadata(self, urlopen):
         urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
         connection = self._connect(
             client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
 
         request = connection._build_authenticate_request()
+        metadata = dict(connection._authenticate_metadata())
 
         self.assertTrue(connection._uses_oauth)
-        self.assertEqual(request.bearerToken, 'tok-1')
+        # Nothing in the message; the credential is entirely in metadata.
         self.assertEqual(request.user, '')
         self.assertEqual(request.password, '')
+        self.assertEqual(metadata['authorization'], 'Bearer tok-1')
+
+    def test_a_credential_connection_sends_no_authorization_metadata(self):
+        connection = self._connect(username='alice', password='secret')
+
+        metadata = dict(connection._authenticate_metadata())
+
+        self.assertNotIn('authorization', metadata)
 
     def test_a_pre_obtained_token_is_used_as_given(self):
         connection = self._connect(access_token='minted-elsewhere')
 
-        request = connection._build_authenticate_request()
+        metadata = dict(connection._authenticate_metadata())
 
         self.assertTrue(connection._uses_oauth)
-        self.assertEqual(request.bearerToken, 'minted-elsewhere')
+        self.assertEqual(metadata['authorization'], 'Bearer minted-elsewhere')
+
+    def test_metadata_keeps_the_headers_the_connector_already_sent(self):
+        # The authorization entry is appended to the existing metadata, never a replacement for it.
+        connection = self._connect(access_token='tok', cluster_name='my-cluster')
+
+        metadata = dict(connection._authenticate_metadata(strategy='blue'))
+
+        self.assertEqual(metadata['cluster-name'], 'my-cluster')
+        self.assertIn('authorization', metadata)
 
     def test_supplying_no_credentials_is_rejected(self):
         with self.assertRaises(ValueError) as raised:

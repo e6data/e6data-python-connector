@@ -626,17 +626,33 @@ class Connection(object):
 
     def _build_authenticate_request(self):
         """
-        Builds the authenticate request for whichever credential shape this connection holds.
+        Builds the authenticate request.
 
-        Only one of the two shapes is ever populated. The engine checks for a bearer token first, so
-        sending both would be ambiguous rather than a useful fallback.
+        An OAuth token is never placed in the message -- it travels in call metadata, which is the
+        gRPC convention and the only form a proxy could inspect. See _authenticate_metadata.
         """
         if self._uses_oauth:
-            return e6x_engine_pb2.AuthenticateRequest(bearerToken=self._bearer_token())
+            return e6x_engine_pb2.AuthenticateRequest()
         return e6x_engine_pb2.AuthenticateRequest(
             user=self.__username,
             password=self.__password
         )
+
+    def _authenticate_metadata(self, strategy=None, force_token_refresh: bool = False):
+        """
+        Builds the call metadata for authenticate, adding the bearer credential when this connection
+        authenticates with a token.
+
+        Sent as per-call metadata rather than through grpc.CallCredentials deliberately: Python's
+        call credentials must be composed onto *channel* credentials and are rejected on an insecure
+        channel, and this connector defaults to plaintext. Metadata works on both.
+        """
+        metadata = list(_get_grpc_header(cluster=self.cluster_name, strategy=strategy))
+        if self._uses_oauth:
+            metadata.append(
+                ('authorization', 'Bearer {}'.format(self._bearer_token(force_refresh=force_token_refresh)))
+            )
+        return metadata
 
     def _authentication_failure(self):
         """
@@ -720,7 +736,7 @@ class Connection(object):
                     try:
                         authenticate_response = self._client.authenticate(
                             authenticate_request,
-                            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=active_strategy)
+                            metadata=self._authenticate_metadata(strategy=active_strategy)
                         )
                         self._session_id = authenticate_response.sessionId
                         if not self._session_id:
@@ -769,7 +785,7 @@ class Connection(object):
                         try:
                             authenticate_response = self._client.authenticate(
                                 authenticate_request,
-                                metadata=_get_grpc_header(cluster=self.cluster_name, strategy=strategy)
+                                metadata=self._authenticate_metadata(strategy=strategy)
                             )
                             self._session_id = authenticate_response.sessionId
                             if self._session_id:
