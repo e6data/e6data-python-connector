@@ -657,6 +657,23 @@ class Connection(object):
             )
         return metadata
 
+    def _call_metadata(self, engine_ip=None, strategy=None):
+        """
+        Builds the call metadata for every RPC other than authenticate.
+
+        The bearer travels on each call, not just on authenticate. That is what lets the engine
+        authorize from the token the caller is presenting right now rather than from a snapshot
+        taken when the session was minted -- so narrowing or revoking a client's grant takes effect
+        within the token's lifetime instead of the session's.
+
+        Near-free on the wire: the header value is identical call to call, so HPACK indexes it after
+        the first and each subsequent call carries a reference rather than the token.
+        """
+        metadata = list(_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=strategy))
+        if self._uses_oauth:
+            metadata.append(('authorization', 'Bearer {}'.format(self._bearer_token())))
+        return metadata
+
     def _authentication_failure(self):
         """
         Builds the exception raised when the engine returns no session.
@@ -698,7 +715,16 @@ class Connection(object):
         """
         To get the session id, if user is not authorised, first authenticate the user.
         Also detects the active deployment strategy (blue/green) on first authentication.
+
+        Returns the empty string on an OAuth connection: there is no session to get. The access
+        token is the credential and travels in metadata on every call, so the engine resolves the
+        identity per request and the sessionId field carries nothing. Left empty rather than
+        removed because it is a proto3 scalar -- unset costs zero bytes, so the field can stay in
+        the schema for the credential path without either rail paying for the other.
         """
+        if self._uses_oauth:
+            return ''
+
         # Check if we need a fresh connection due to strategy change
         shared_strategy = _get_shared_strategy()
         pending_strategy = shared_strategy.get('pending_strategy')
@@ -984,7 +1010,7 @@ class Connection(object):
         )
         clear_response = self._client.clear(
             clear_request,
-            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=_get_active_strategy())
+            metadata=self._call_metadata(engine_ip=engine_ip, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in clear response
@@ -1015,7 +1041,7 @@ class Connection(object):
         )
         cancel_response = self._client.cancelQuery(
             cancel_query_request,
-            metadata=_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=_get_active_strategy())
+            metadata=self._call_metadata(engine_ip=engine_ip, strategy=_get_active_strategy())
         )
 
         # Check for new strategy in cancel response
@@ -1039,7 +1065,7 @@ class Connection(object):
         )
         dry_run_response = self._client.dryRun(
             dry_run_request,
-            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
+            metadata=self._call_metadata(strategy=_get_active_strategy())
         )
         return dry_run_response.dryrunValue
 
@@ -1061,7 +1087,7 @@ class Connection(object):
         )
         get_table_response = self._client.getTablesV2(
             get_table_request,
-            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
+            metadata=self._call_metadata(strategy=_get_active_strategy())
         )
 
         # Check for new strategy in get tables response
@@ -1089,7 +1115,7 @@ class Connection(object):
         )
         get_columns_response = self._client.getColumnsV2(
             get_columns_request,
-            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
+            metadata=self._call_metadata(strategy=_get_active_strategy())
         )
 
         # Check for new strategy in get columns response
@@ -1113,7 +1139,7 @@ class Connection(object):
         )
         get_schema_response = self._client.getSchemaNamesV2(
             get_schema_request,
-            metadata=_get_grpc_header(cluster=self.cluster_name, strategy=_get_active_strategy())
+            metadata=self._call_metadata(strategy=_get_active_strategy())
         )
 
         # Check for new strategy in get schema names response
@@ -1210,7 +1236,10 @@ class Cursor(DBAPICursor):
         """
         # Use query-specific strategy if available, otherwise use active strategy
         strategy = _get_query_strategy(self._query_id) if self._query_id else _get_active_strategy()
-        return _get_grpc_header(engine_ip=self._engine_ip, cluster=self.connection.cluster_name, strategy=strategy)
+        # Delegated so the bearer is attached in exactly one place. Every cursor RPC reads this
+        # property, so returning a bare header here would silently drop the credential on the whole
+        # query path while authenticate alone kept working.
+        return self.connection._call_metadata(engine_ip=self._engine_ip, strategy=strategy)
 
     @property
     def arraysize(self):

@@ -352,6 +352,66 @@ class ConnectionCredentialSelectionTest(unittest.TestCase):
                 Connection(host='', port=80, username='alice', password='secret')
 
 
+class StatelessRailTest(unittest.TestCase):
+    """
+    The token as the credential on every call, rather than traded once for a session.
+
+    Both halves are needed together and each is silently useless without the other: a token on
+    every call that the connector never relies on changes nothing, and an empty sessionId without a
+    token on every call would leave the engine with no credential to read at all.
+    """
+
+    def _connect(self, **kwargs):
+        from e6data_python_connector.e6data_grpc import Connection
+        defaults = dict(host='localhost', port=80)
+        defaults.update(kwargs)
+        with patch.object(Connection, '_create_client', Mock(return_value=None)):
+            return Connection(**defaults)
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_every_rpc_carries_the_bearer_not_just_authenticate(self, urlopen):
+        # Regression guard for a real gap: the bearer was attached in _authenticate_metadata only,
+        # so authenticate carried it and executeStatement, getNextResultBatch, status and
+        # clearOrCancelQuery all went out with no credential.
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        connection = self._connect(
+            client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
+
+        metadata = dict(connection._call_metadata())
+
+        self.assertEqual(metadata['authorization'], 'Bearer tok-1')
+
+    def test_a_credential_connection_sends_no_authorization_metadata(self):
+        # The header must not appear on the credential path, where there is no token to put in it.
+        connection = self._connect(username='alice', password='secret')
+
+        metadata = dict(connection._call_metadata())
+
+        self.assertNotIn('authorization', metadata)
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_an_oauth_connection_asks_for_no_session(self, urlopen):
+        # No authenticate round trip at all: the property short-circuits before touching the client,
+        # which is stubbed to None here and would raise if it were called.
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        connection = self._connect(
+            client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
+
+        self.assertEqual(connection.get_session_id, '')
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_the_cursor_carries_the_bearer_too(self, urlopen):
+        # Cursor.metadata feeds every query-path RPC. It built its own header before, so the
+        # credential would have been dropped on exactly the calls that matter most.
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        connection = self._connect(
+            client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
+
+        metadata = dict(connection.cursor().metadata)
+
+        self.assertEqual(metadata['authorization'], 'Bearer tok-1')
+
+
 class AuthenticationFailureMessageTest(unittest.TestCase):
 
     def _connect(self, **kwargs):
