@@ -425,6 +425,9 @@ class Connection(object):
 
         self._token_provider = None
         self._static_access_token = None
+        # Guards the single retry after an auto-resume, so a cluster that keeps refusing
+        # connections cannot drive get_session_id into unbounded recursion.
+        self._resume_retry_in_progress = False
 
         if supplied[0]:
             if not username or not password:
@@ -826,7 +829,25 @@ class Connection(object):
                 if not self._session_id:
                     raise self._authentication_failure()
             except _InactiveRpcError as e:
-                self._perform_auto_resume(e)
+                # Give auto-resume its chance, then surface the failure either way.
+                #
+                # This used to call _perform_auto_resume and discard the result, which swallowed
+                # the error: _session_id stayed None, the property returned None, and the caller
+                # saw an opaque TypeError on the None rather than the RPC status explaining why
+                # authentication failed. Diagnosing anything required server logs.
+                #
+                # The inner strategy handlers already follow this contract -- resume and retry, or
+                # re-raise. This is the same contract applied to the outermost catch.
+                if self._perform_auto_resume(e) and not self._resume_retry_in_progress:
+                    self._resume_retry_in_progress = True
+                    try:
+                        logger.info('Cluster resume triggered; retrying authentication once.')
+                        return self.get_session_id
+                    finally:
+                        # Cleared whatever the retry did, so a later independent failure can
+                        # resume again rather than being permanently barred.
+                        self._resume_retry_in_progress = False
+                raise
             except Exception as e:
                 self._channel.close()
                 raise e
