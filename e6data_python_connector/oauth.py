@@ -2,8 +2,7 @@
 OAuth 2.0 client-credentials support for the e6data connector.
 
 Obtains an access token from an authorization server and caches it until shortly before it expires.
-The token is then handed to the engine on ``authenticate``, which validates it and returns an
-ordinary session id -- everything after that point is identical to a username/password connection.
+The token travels as bearer metadata on every OAuth RPC, without creating a legacy session.
 
 Deliberately built on the standard library. ``requests`` appears in ``requirements.txt`` but not in
 ``install_requires``, so it is a development dependency; reaching for it here would silently add a
@@ -100,7 +99,7 @@ class ClientCredentialsTokenProvider(object):
         self._access_token = None
         self._expires_at = 0.0
 
-    def get_token(self, force_refresh: bool = False) -> str:
+    def get_token(self, force_refresh: bool = False, deadline=None, rejected_token=None) -> str:
         """
         Returns a usable access token, fetching a new one if the cached token is missing, stale or
         explicitly discarded.
@@ -108,8 +107,14 @@ class ClientCredentialsTokenProvider(object):
         Parameters
         ----------
             force_refresh: bool, Optional
-                Discard the cached token and fetch a new one. Used after the engine rejects a
-                session, where the token may have been revoked before its stated expiry.
+                Fetch a new token even if the cache is fresh.
+            deadline: float, Optional
+                Absolute monotonic caller deadline, including lock wait and exchange.
+                An already dispatched HTTP exchange can finish after the caller times out;
+                its result is discarded and cannot schedule any further RPC.
+            rejected_token: str, Optional
+                Token rejected by an explicit UNAUTHENTICATED response. Reuse a valid
+                replacement another thread already obtained instead of refreshing again.
 
         Returns
         -------
@@ -119,14 +124,60 @@ class ClientCredentialsTokenProvider(object):
         ------
             OAuthError: if the authorization server refuses or cannot be reached.
         """
-        with self._lock:
-            if not force_refresh and self._access_token and time.time() < self._expires_at:
+        if deadline is None:
+            self._lock.acquire()
+        elif not self._lock.acquire(timeout=self._remaining(deadline)):
+            raise TimeoutError('OAuth token deadline exceeded waiting for refresh lock.')
+        transferred = False
+        try:
+            replaced = rejected_token is not None and self._access_token != rejected_token
+            if (not force_refresh or replaced) and self._access_token and time.time() < self._expires_at:
                 return self._access_token
+            if deadline is None:
+                return self._refresh_token()
 
-            access_token, expires_in = self._fetch_token()
-            self._access_token = access_token
-            self._expires_at = time.time() + max(expires_in - self._refresh_leeway_seconds, 0)
-            return self._access_token
+            # urllib's socket timeout does not bound DNS or a sequence of reads. Bound
+            # the waiting caller too. The worker retains the refresh lock until the
+            # in-flight exchange ends and never publishes a token after its deadline.
+            # Python cannot forcibly cancel a blocking DNS/read in another thread.
+            completed = threading.Event()
+            result = []
+            def refresh():
+                try:
+                    result.append(self._refresh_token(deadline))
+                except BaseException as error:
+                    result.append(error)
+                finally:
+                    self._lock.release()
+                    completed.set()
+
+            worker = threading.Thread(target=refresh, daemon=True)
+            worker.start()
+            transferred = True
+            if not completed.wait(self._remaining(deadline)):
+                raise TimeoutError('OAuth token deadline exceeded during exchange.')
+            self._remaining(deadline)
+            if isinstance(result[0], BaseException):
+                raise result[0]
+            return result[0]
+        finally:
+            if not transferred:
+                self._lock.release()
+
+    @staticmethod
+    def _remaining(deadline):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('OAuth token deadline exceeded.')
+        return remaining
+
+    def _refresh_token(self, deadline=None):
+        access_token, expires_in = self._fetch_token(deadline)
+        if deadline is not None:
+            self._remaining(deadline)
+        self._access_token = access_token
+        self._expires_at = time.time() + max(expires_in - self._refresh_leeway_seconds, 0)
+        return access_token
 
     def invalidate(self):
         """Drops the cached token so the next call fetches a fresh one."""
@@ -134,7 +185,7 @@ class ClientCredentialsTokenProvider(object):
             self._access_token = None
             self._expires_at = 0.0
 
-    def _fetch_token(self):
+    def _fetch_token(self, deadline=None):
         """Performs the client-credentials exchange. Caller holds the lock."""
         form = {'grant_type': 'client_credentials'}
         if self._scope:
@@ -156,7 +207,8 @@ class ClientCredentialsTokenProvider(object):
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            timeout = self._timeout if deadline is None else min(self._timeout, self._remaining(deadline))
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode('utf-8'))
         except urllib.error.HTTPError as error:
             raise OAuthError(self._describe_http_error(error)) from error

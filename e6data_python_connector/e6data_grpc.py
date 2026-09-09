@@ -20,7 +20,7 @@ from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 import grpc
 from grpc._channel import _InactiveRpcError
 
-from e6data_python_connector.cluster_manager import ClusterManager
+from e6data_python_connector.cluster_manager import ClusterManager, _oauth_rpc
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor, get_ssl_credentials
 from e6data_python_connector.constants import (
     MAX_RETRY_ATTEMPTS, RETRY_SLEEP_SECONDS, GRPC_ERROR_STRATEGY_MISMATCH, GRPC_ERROR_ACCESS_DENIED,
@@ -75,6 +75,10 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
+        if self.connection._uses_oauth:
+            # OAuth retries belong to a safe individual RPC before admission. Never
+            # replay execute or result retrieval after a query may have been submitted.
+            return func(self, *args, **kwargs)
         max_retry = MAX_RETRY_ATTEMPTS
         current_retry = 0
         while current_retry < max_retry:
@@ -425,6 +429,7 @@ class Connection(object):
 
         self._token_provider = None
         self._static_access_token = None
+        self._oauth_resume_strategy = None
         # Guards the single retry after an auto-resume, so a cluster that keeps refusing
         # connections cannot drive get_session_id into unbounded recursion.
         self._resume_retry_in_progress = False
@@ -616,15 +621,16 @@ class Connection(object):
         """Whether this connection authenticates with an OAuth token rather than credentials."""
         return self._token_provider is not None or self._static_access_token is not None
 
-    def _bearer_token(self, force_refresh: bool = False) -> str:
+    def _bearer_token(self, force_refresh: bool = False, deadline=None, rejected_token=None) -> str:
         """
-        Returns the access token to present on authenticate.
+        Returns the access token to present on the current OAuth RPC.
 
         A provider-backed token is refreshed as needed; a token supplied directly by the caller is
         returned as given, because we have no way to obtain another one.
         """
         if self._token_provider is not None:
-            return self._token_provider.get_token(force_refresh=force_refresh)
+            return self._token_provider.get_token(force_refresh=force_refresh, deadline=deadline,
+                                                  rejected_token=rejected_token)
         return self._static_access_token
 
     def _build_authenticate_request(self):
@@ -657,7 +663,7 @@ class Connection(object):
             )
         return metadata
 
-    def _call_metadata(self, engine_ip=None, strategy=None):
+    def _call_metadata(self, engine_ip=None, strategy=None, deadline=None, rejected_token=None):
         """
         Builds the call metadata for every RPC other than authenticate.
 
@@ -671,8 +677,14 @@ class Connection(object):
         """
         metadata = list(_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=strategy))
         if self._uses_oauth:
-            metadata.append(('authorization', 'Bearer {}'.format(self._bearer_token())))
+            metadata.append(('authorization', 'Bearer {}'.format(self._bearer_token(
+                force_refresh=rejected_token is not None, deadline=deadline, rejected_token=rejected_token))))
         return metadata
+
+    def _oauth_metadata(self, strategy, deadline, rejected_token=None):
+        if rejected_token is not None and self._token_provider is None:
+            return None
+        return self._call_metadata(strategy=strategy, deadline=deadline, rejected_token=rejected_token)
 
     def _authentication_failure(self):
         """
@@ -882,14 +894,7 @@ class Connection(object):
     def _perform_auto_resume(self, e: _InactiveRpcError):
         if self._auto_resume:
             if self._uses_oauth:
-                # The cluster-manager service authenticates with a username and password of its
-                # own, which an OAuth connection does not hold. Constructing one with None would
-                # fail deep inside the resume call with a misleading error, so decline here and say
-                # why. Resume the cluster out of band, or connect with credentials.
-                logger.warning(
-                    'Auto-resume is unavailable on an OAuth connection: the cluster-manager service '
-                    'requires username and password. Resume the cluster before connecting.'
-                )
+                # OAuth recovery belongs only to Cursor's initial prepare boundary.
                 return False
             if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
                 status = ClusterManager(
@@ -1226,6 +1231,64 @@ class Cursor(DBAPICursor):
         """Reset state about the previous query in preparation for running another query"""
         pass
 
+    def _prepare_with_auto_resume(self, method_name, request):
+        """Recover one suspended prepare, returning the strategy this query used."""
+        method = getattr(self.connection.client, method_name)
+        selected = _get_active_strategy()
+        if not self.connection._uses_oauth:
+            kwargs = {'metadata': self.metadata}
+            if method_name == 'prepareStatementV2':
+                kwargs['timeout'] = self.connection.grpc_prepare_timeout
+            return method(request, **kwargs), selected
+
+        # New operation state must not depend on a reused cursor's old query ID/IP.
+        selected = self.connection._oauth_resume_strategy or selected
+        prepare_deadline = time.monotonic() + self.connection.grpc_prepare_timeout
+        refresh_state = [False]
+        try:
+            for route_attempt in range(2):
+                try:
+                    response = _oauth_rpc(method, request, self.connection._oauth_metadata, selected,
+                                          prepare_deadline, refresh_state)
+                except grpc.RpcError as error:
+                    if (route_attempt == 0 and error.code() == grpc.StatusCode.UNKNOWN
+                            and error.details() == 'status: 456'):
+                        # A later deployment can invalidate this connection's route.
+                        # Correct it once before admission, without replaying execute.
+                        selected = 'green' if selected == 'blue' else 'blue'
+                        continue
+                    raise
+                if route_attempt:
+                    self.connection._oauth_resume_strategy = selected
+                return response, selected
+        except grpc.RpcError as error:
+            if (not self.connection._auto_resume or error.code() != grpc.StatusCode.UNAVAILABLE
+                    or error.details() != 'status: 503, cluster is suspended'):
+                raise
+
+        deadline = time.monotonic() + self.connection.grpc_auto_resume_timeout_seconds
+        manager = ClusterManager(
+            self.connection._host, self.connection._port, '', '',
+            secure_channel=self.connection._secure_channel,
+            cluster_uuid=self.connection.cluster_name,
+            grpc_options=self.connection._get_grpc_options,
+            debug=self.connection._debug, ssl_cert=self.connection._ssl_cert,
+            metadata_provider=self.connection._oauth_metadata,
+            initial_strategy=selected, deadline=deadline)
+        manager.resume()
+        selected = manager.last_successful_strategy
+        try:
+            response = _oauth_rpc(method, request, self.connection._oauth_metadata, selected, deadline)
+        except grpc.RpcError as error:
+            if (error.code() == grpc.StatusCode.UNAVAILABLE
+                    and error.details() == 'status: 503, cluster is suspended'):
+                raise RuntimeError('Cluster routing is not ready after resume; prepare was not admitted.') from error
+            raise
+        # Retain confirmed routing for later cursors on this connection without
+        # changing the global cache or routing an already running query again.
+        self.connection._oauth_resume_strategy = selected
+        return response, selected
+
     @property
     def metadata(self):
         """
@@ -1476,12 +1539,8 @@ class Cursor(DBAPICursor):
                 schema=self._database,
                 queryString=sql
             )
-            # Get fresh client after session access (may have been invalidated)
-            client = self.connection.client
-            prepare_statement_response = client.prepareStatement(
-                prepare_statement_request,
-                metadata=self.metadata
-            )
+            prepare_statement_response, current_strategy = self._prepare_with_auto_resume(
+                'prepareStatement', prepare_statement_request)
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
@@ -1493,7 +1552,6 @@ class Cursor(DBAPICursor):
                     _set_pending_strategy(new_strategy)
 
             # Register this query with the current strategy
-            current_strategy = _get_active_strategy()
             if current_strategy:
                 _register_query_strategy(self._query_id, current_strategy)
 
@@ -1521,13 +1579,8 @@ class Cursor(DBAPICursor):
                 catalog=self._catalog_name,
                 queryString=sql
             )
-            # Get fresh client after session access (may have been invalidated)
-            client = self.connection.client
-            prepare_statement_response = client.prepareStatementV2(
-                prepare_statement_request,
-                metadata=self.metadata,
-                timeout=self.connection.grpc_prepare_timeout
-            )
+            prepare_statement_response, current_strategy = self._prepare_with_auto_resume(
+                'prepareStatementV2', prepare_statement_request)
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
@@ -1539,8 +1592,6 @@ class Cursor(DBAPICursor):
                     _set_pending_strategy(new_strategy)
 
             # Register this query with the current strategy
-            current_strategy = _get_active_strategy()
-
             if current_strategy:
                 _register_query_strategy(self._query_id, current_strategy)
 

@@ -207,6 +207,94 @@ class _BytesBody(object):
         pass
 
 
+class TokenRecoveryDeadlineTest(unittest.TestCase):
+    def provider(self):
+        return ClientCredentialsTokenProvider(TOKEN_URL, 'fixture-client', 'fixture-secret')
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_rejected_token_refresh_reuses_another_threads_replacement(self, urlopen):
+        provider = self.provider()
+        urlopen.side_effect = [_FakeResponse({'access_token': 'old', 'expires_in': 3600}),
+                               _FakeResponse({'access_token': 'new', 'expires_in': 3600})]
+        self.assertEqual(provider.get_token(), 'old')
+        self.assertEqual(provider.get_token(force_refresh=True, rejected_token='old'), 'new')
+        self.assertEqual(provider.get_token(force_refresh=True, rejected_token='old'), 'new')
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_concurrent_rejections_produce_one_replacement_exchange(self, urlopen):
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        import time
+        provider = self.provider()
+        urlopen.side_effect = [_FakeResponse({'access_token': 'old', 'expires_in': 3600}),
+                               _FakeResponse({'access_token': 'new', 'expires_in': 3600})]
+        provider.get_token()
+        barrier = threading.Barrier(6)
+        def recover(_):
+            barrier.wait(timeout=1)
+            return provider.get_token(force_refresh=True, rejected_token='old',
+                                      deadline=time.monotonic() + 1)
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            self.assertEqual(list(pool.map(recover, range(6))), ['new'] * 6)
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_expired_deadline_does_not_start_token_exchange(self, urlopen):
+        import time
+        with self.assertRaises(TimeoutError):
+            self.provider().get_token(deadline=time.monotonic() - 1)
+        urlopen.assert_not_called()
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_token_failure_with_deadline_propagates_and_releases_lock(self, urlopen):
+        import time
+        urlopen.side_effect = urllib.error.URLError('fixture-unavailable')
+        provider = self.provider()
+        with self.assertRaises(OAuthError):
+            provider.get_token(deadline=time.monotonic() + 1)
+        self.assertTrue(provider._lock.acquire(timeout=1))
+        provider._lock.release()
+
+    def test_token_lock_wait_respects_deadline(self):
+        import time
+        provider = self.provider()
+        provider._lock.acquire()
+        start = time.monotonic()
+        try:
+            with self.assertRaises(TimeoutError):
+                provider.get_token(deadline=start + 0.03)
+            self.assertLess(time.monotonic() - start, 0.2)
+            self.assertTrue(provider._lock.locked())
+        finally:
+            provider._lock.release()
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_slow_token_read_cannot_extend_callers_deadline_or_publish_late_token(self, urlopen):
+        import threading
+        import time
+        released = threading.Event()
+        completed = threading.Event()
+        class SlowResponse(_FakeResponse):
+            def read(self):
+                released.wait(1)
+                completed.set()
+                return super().read()
+        urlopen.return_value = SlowResponse({'access_token': 'late-token', 'expires_in': 3600})
+        provider = self.provider()
+        start = time.monotonic()
+        try:
+            with self.assertRaises(TimeoutError):
+                provider.get_token(deadline=start + 0.04)
+            self.assertLess(time.monotonic() - start, 0.2)
+        finally:
+            released.set()
+        self.assertTrue(completed.wait(1))
+        self.assertTrue(provider._lock.acquire(timeout=1))
+        provider._lock.release()
+        self.assertIsNone(provider._access_token)
+
+
 class AuthenticateRequestShapeTest(unittest.TestCase):
     """
     The generated message is what actually crosses the wire, so its behaviour is asserted directly
