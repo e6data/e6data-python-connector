@@ -1,10 +1,30 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.3.15-blue.svg)
+Package version and extras are defined in `setup.py`.
 
 ## Introduction
 
-The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations. It includes automatic support for blue-green deployments, ensuring seamless failover during server updates without query interruption.
+The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations. It includes routing support for blue-green deployments. Active query handles remain tied to the engine that accepted them; failover does not guarantee uninterrupted results.
+
+## Optional native asyncio API
+
+This branch adds native async connection, cursor, pooling and SQLAlchemy support for Python 3.11+. Release qualification remains incomplete. Install this branch's built package with `[async]` or `[async-sqlalchemy]`; these instructions do not assert that the feature is published.
+
+```python
+from e6data_python_connector.aio import AsyncConnection
+
+async def query(config, sql):
+    async with AsyncConnection(**config) as connection:
+        async with connection.cursor() as cursor:
+            await cursor.execute(sql)
+            return await cursor.fetchall()
+```
+
+`config` is application-supplied connection configuration. OAuth requires verified TLS. Native `fetchone()` preserves the one-row outer list, while SQLAlchemy `e6data+asyncio` adapts it to a normal row. Ambiguous submission and incomplete result errors must not be handled by blindly retrying the query. Use context managers for bounded cleanup.
+
+See [Async API](docs/ASYNC_API.md) for the complete API map, deadlines, pooling, SQLAlchemy and test configuration, [OAuth lifecycle](docs/OAUTH_LIFECYCLE.md) for renewal and failure behavior, and [the application example](examples/async_query.py).
+
+The new CI keeps the full-package coverage denominator and a greater-than-80% gate. The initial baseline was about 19%, so focused async test success is not a release pass. Real-service tests require explicit configuration and are qualified separately.
 
 ### Dependencies
 Make sure to install below dependencies and wheel before install e6data-python-connector.
@@ -104,6 +124,11 @@ The `Connection` class supports the following parameters:
 As an alternative to username and password, a connection can authenticate with an OAuth 2.0 access
 token. The connector obtains a token using the client-credentials grant, caches it, and refreshes it
 shortly before it expires.
+
+Matching client-credentials configurations share one token cache and concurrent
+refresh across sync and async connections, separate pools and threads in the same
+process. Connection and transport ownership remain local. See the
+[OAuth lifecycle](docs/OAUTH_LIFECYCLE.md) for matching settings and expiry behavior.
 
 ```python
 conn = Connection(

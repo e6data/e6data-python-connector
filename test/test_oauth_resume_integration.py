@@ -1,5 +1,9 @@
 """Loopback-only gRPC and token-service integration for the full connector flow."""
 import json
+import os
+import ssl
+import subprocess
+import tempfile
 import struct
 import threading
 import time
@@ -97,7 +101,7 @@ def local_services(service):
             if service.tokens == service.token_delay_at:
                 time.sleep(0.2)
             payload = json.dumps({'access_token': 'synthetic-token-{}'.format(service.tokens),
-                                  'expires_in': service.token_lifetime}).encode()
+                                  'token_type': 'Bearer', 'expires_in': service.token_lifetime}).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(payload)))
@@ -111,6 +115,19 @@ def local_services(service):
                     service.delayed_token_done.set()
 
     token_server = ThreadingHTTPServer(('127.0.0.1', 0), TokenHandler)
+    # Existing synthetic fixture now exercises HTTPS with an explicitly trusted local CA.
+    certificates = tempfile.TemporaryDirectory(prefix='connector-test-tls-')
+    certificate = os.path.join(certificates.name, 'certificate.pem')
+    key = os.path.join(certificates.name, 'key.pem')
+    subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                    '-keyout', key, '-out', certificate, '-days', '1',
+                    '-subj', '/CN=localhost', '-addext', 'subjectAltName=IP:127.0.0.1'],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certificate, key)
+    token_server.socket = context.wrap_socket(token_server.socket, server_side=True)
+    old_ca = os.environ.get('SSL_CERT_FILE')
+    os.environ['SSL_CERT_FILE'] = certificate
     thread = threading.Thread(target=token_server.serve_forever, daemon=True)
     thread.start()
     server = grpc.server(ThreadPoolExecutor(max_workers=4))
@@ -119,12 +136,17 @@ def local_services(service):
     port = server.add_insecure_port('127.0.0.1:0')
     server.start()
     try:
-        yield port, 'http://127.0.0.1:{}/token'.format(token_server.server_port)
+        yield port, 'https://127.0.0.1:{}/token'.format(token_server.server_port)
     finally:
         server.stop(0).wait(2)
         token_server.shutdown()
         token_server.server_close()
         thread.join(2)
+        if old_ca is None:
+            os.environ.pop('SSL_CERT_FILE', None)
+        else:
+            os.environ['SSL_CERT_FILE'] = old_ca
+        certificates.cleanup()
 
 
 @pytest.mark.parametrize('catalog', [None, 'catalog'])

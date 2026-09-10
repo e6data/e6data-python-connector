@@ -45,7 +45,7 @@ def test_cluster_manager_strategy_support():
     from e6data_python_connector.cluster_manager import _get_grpc_header
     
     headers = _get_grpc_header(cluster='test-cluster', strategy='blue')
-    expected_headers = [('cluster-uuid', 'test-cluster'), ('strategy', 'blue')]
+    expected_headers = [('cluster-name', 'test-cluster'), ('strategy', 'blue')]
     assert headers == expected_headers, f"Expected {expected_headers}, got {headers}"
     print("✓ _get_grpc_header works correctly with strategy")
     
