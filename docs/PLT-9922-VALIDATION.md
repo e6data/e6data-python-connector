@@ -239,3 +239,15 @@ The staged files passed whitespace validation and checks for the known authorize
 The real issuer preflight declared a 900-second token lifetime. Natural expiration, receiver rejection of that old bearer, and continuation of the same query handle/channel after that rejection have not been demonstrated. Existing live continuation tests invalidate the cache and acquire real credentials; they must not be described as natural-expiry tests. Remaining live fault/cancellation and legacy qualification gaps from section 13 also remain open. The branch publication does not merge, release or deploy the connector.
 
 Final aggregate package source SHA-256: `582c0b0955d60bb2871e4dddb82f09202f048b004f7cfdc9b7fa877680c44f5e`.
+
+## 15. PR 85 minimum-dependency CI correction
+
+The [PR workflow](https://github.com/e6data/e6data-python-connector/actions/runs/34522935689) and [push workflow](https://github.com/e6data/e6data-python-connector/actions/runs/34522934123) for `5c617c3` each failed one test on Ubuntu x64 with Python 3.11.16 and Thrift 0.20.0. The other three dependency configurations passed in both workflows. Coverage still passed at 89.92%; the failure was `test_truncated_thrift_struct_is_rejected[TCompactProtocolAccelerated]`.
+
+The test required `EOFError` or `TypeError`, but the native Thrift decoder rejected the truncated payload with `SystemError: PY_SSIZE_T_CLEAN macro must be defined for '#' formats`. Apache documents this environment-dependent native-extension issue in [THRIFT-5892](https://issues.apache.org/jira/browse/THRIFT-5892) and [its fix](https://github.com/apache/thrift/pull/3210). The same Python/dependency versions on macOS ARM64 use active native acceleration and raise `EOFError`. The exact compiler/linker cause of the platform difference was not measured locally.
+
+The test now first verifies that the intact payload decodes correctly, then still requires truncated data to be rejected. It recognizes the alternate error only for Thrift 0.20.0, the accelerated Compact protocol with native decoding enabled, and the exact documented message. Any other `SystemError`, or the same error on a newer Thrift version, fails the test. No tests are skipped or marked expected-failure by this correction. Connector code, generated protocol files, dependency floors and coverage thresholds remain unchanged. The connector's result decoder continues to use the accelerated Binary protocol.
+
+The original two failing Linux jobs are the reproduction evidence. Local minimum-version vector tests pass all 259 cases after the test correction. Actual Ubuntu CI is the decisive verification of the alternate native error path; the local Docker daemon was unavailable and no Linux runtime was provisioned for this fix.
+
+The complete local Python 3.11-minimum and 3.12-current suites each pass 1,844 tests, with 23 opt-in live skips and the existing xfail. Full-package coverage is 89.9720% and 89.9243%, respectively. The vector module also passes in the other three local configurations. Independent review approved the exact compatibility guard. Package source retains the SHA-256 in section 14, so the earlier wheel checks remain applicable.

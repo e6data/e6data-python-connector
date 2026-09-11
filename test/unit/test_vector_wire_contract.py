@@ -1,4 +1,6 @@
 """Actual Thrift wire roundtrips for every vector model, without a server."""
+from importlib.metadata import version
+
 import pytest
 from thrift.Thrift import TType
 from thrift.protocol import TBinaryProtocol, TCompactProtocol
@@ -112,8 +114,17 @@ def test_empty_lists_are_distinct_from_absent(value, protocol):
 @pytest.mark.parametrize('protocol', PROTOCOLS)
 def test_truncated_thrift_struct_is_rejected(protocol):
     payload = encode(wire.Int64Data([1, 2, 3]), protocol)
-    with pytest.raises((EOFError, TypeError)):
+    assert decode(wire.Int64Data, payload, protocol) == wire.Int64Data([1, 2, 3])
+    with pytest.raises((EOFError, TypeError, SystemError)) as rejected:
         decode(wire.Int64Data, payload[:-2], protocol)
+    if isinstance(rejected.value, SystemError):
+        # THRIFT-5892: some native 0.20 builds reject truncated Compact data
+        # with this error. Do not accept unrelated errors or newer regressions.
+        # https://issues.apache.org/jira/browse/THRIFT-5892
+        assert protocol is TCompactProtocol.TCompactProtocolAccelerated
+        assert protocol(TMemoryBuffer())._fast_decode is not None
+        assert version('thrift') == '0.20.0'
+        assert str(rejected.value) == "PY_SSIZE_T_CLEAN macro must be defined for '#' formats"
 
 
 def test_vector_enum_name_mapping_is_bijective():
