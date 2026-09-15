@@ -39,7 +39,7 @@ def is_fastbinary_available():
     return _fastbinary_available
 
 
-def _binary_to_decimal128(binary_data, scale=None):
+def _binary_to_decimal128(binary_data, scale=None, strict=False):
     """
     Convert binary data to Decimal128.
 
@@ -55,6 +55,8 @@ def _binary_to_decimal128(binary_data, scale=None):
         Decimal: Python Decimal object
     """
     if not binary_data:
+        if strict:
+            raise ValueError("Non-null Decimal128 data is empty.")
         return None
 
     try:
@@ -74,8 +76,10 @@ def _binary_to_decimal128(binary_data, scale=None):
 
             # Handle IEEE 754-2008 Decimal128 binary format
             if len(binary_data) == 16:  # Decimal128 should be exactly 16 bytes
-                return _decode_decimal128_binary_java_style(binary_data, scale)
+                return _decode_decimal128_binary_java_style(binary_data, scale, strict=strict)
             else:
+                if strict:
+                    raise ValueError("Invalid Decimal128 binary length.")
                 _logger.warning(f"Invalid Decimal128 binary length: {len(binary_data)} bytes, expected 16")
                 return Decimal('0')
 
@@ -83,12 +87,14 @@ def _binary_to_decimal128(binary_data, scale=None):
         return Decimal(str(binary_data))
 
     except Exception as e:
+        if strict:
+            raise
         _logger.error(f"Error converting binary to Decimal128: {e}")
         # Return Decimal('0') as fallback for any unexpected errors
         return Decimal('0')
 
 
-def _decode_decimal128_binary_java_style(binary_data, scale=None):
+def _decode_decimal128_binary_java_style(binary_data, scale=None, strict=False):
     """
     Decode IEEE 754-2008 Decimal128 binary format following Java implementation.
 
@@ -135,11 +141,15 @@ def _decode_decimal128_binary_java_style(binary_data, scale=None):
         if scale is None and (abs(decimal_value) < Decimal('1E-6143') or abs(decimal_value) > Decimal(
                 '9.999999999999999999999999999999999E+6144')):
             # Value is outside normal Decimal128 range, try alternative interpretation
+            if strict:
+                raise ValueError("Decimal128 value is outside supported range.")
             return _decode_decimal128_alternative(binary_data)
 
         return decimal_value
 
     except Exception as e:
+        if strict:
+            raise
         _logger.warning(f"Failed to decode Decimal128 with Java-style method: {e}")
         # Fallback to alternative decoding
         return _decode_decimal128_alternative(binary_data)
@@ -511,13 +521,14 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
     return value_array
 
 
-def read_rows_from_chunk(query_columns_description: list, buffer):
+def read_rows_from_chunk(query_columns_description: list, buffer, strict=False):
     """
     Read rows from a Thrift-encoded chunk buffer.
 
     Args:
         query_columns_description: List of column descriptions
         buffer: Thrift-encoded binary buffer
+        strict: Raise decoding errors instead of legacy per-row fallback strings.
 
     Returns:
         List of rows
@@ -530,6 +541,17 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     chunk = Chunk()
     chunk.read(protocol)
 
+    if strict:
+        if chunk.size is None or chunk.size < 0:
+            raise ValueError("Invalid chunk row count.")
+        # A serialized empty chunk is also a supported end-of-results marker.
+        if chunk.size == 0 and not chunk.vectors:
+            return None
+        if len(chunk.vectors or []) != len(query_columns_description):
+            raise ValueError("Chunk column count does not match metadata.")
+        if any(vector.size != chunk.size for vector in (chunk.vectors or [])):
+            raise ValueError("Vector row count does not match chunk.")
+
     if chunk.size <= 0:
         return None
 
@@ -537,7 +559,7 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     columns = list()
 
     for col, colName in enumerate(query_columns_description):
-        columns.append(get_column_from_chunk(chunk.vectors[col]))
+        columns.append(get_column_from_chunk(chunk.vectors[col], strict=strict))
 
     for rowIndex in range(chunk.size):
         value = list()
@@ -548,7 +570,7 @@ def read_rows_from_chunk(query_columns_description: list, buffer):
     return rows
 
 
-def get_column_from_chunk(vector: Vector) -> list:
+def get_column_from_chunk(vector: Vector, strict=False) -> list:
     value_array = list()
     d_type = vector.vectorType
     zone = pytz.UTC
@@ -575,6 +597,8 @@ def get_column_from_chunk(vector: Vector) -> list:
                            else vector.data.dateConstantData.data)
                     value_array.append(format_iso_date_from_epoch_micros(raw))
                 except Exception as e:
+                    if strict:
+                        raise
                     _logger.error("Failed to parse DATE row=%s: %s", row, e)
                     value_array.append('Failed to parse.')
         elif d_type == VectorType.DATETIME:
@@ -591,6 +615,8 @@ def get_column_from_chunk(vector: Vector) -> list:
                                     else vector.data.timeConstantData.data)
                     value_array.append(format_iso_datetime_from_epoch_micros(epoch_micros, tz=zone))
                 except Exception as e:
+                    if strict:
+                        raise
                     _logger.error("Failed to parse DATETIME row=%s: %s", row, e)
                     value_array.append('Failed to parse.')
         elif d_type == VectorType.STRING or d_type == VectorType.ARRAY or d_type == VectorType.MAP or d_type == VectorType.STRUCT:
@@ -658,19 +684,23 @@ def get_column_from_chunk(vector: Vector) -> list:
                         row_zone = timezone_from_offset(zone_id)
                     value_array.append(format_iso_datetime_from_epoch_micros(epoch_micros, tz=row_zone))
                 except Exception as e:
+                    if strict:
+                        raise
                     _logger.error("Failed to parse TIMESTAMP_TZ row=%s: %s", row, e)
                     value_array.append('Failed to parse.')
         elif d_type == VectorType.DECIMAL128:
             # Handle both constant and non-constant vectors following Java implementation
             if vector.isConstantVector:
+                if strict and vector.size and get_null(vector, 0):
+                    return [None] * vector.size
                 # For constant vectors, get the binary data and convert it once
                 binary_data = vector.data.numericDecimal128ConstantData.data
                 # Get scale with backward compatibility for older engines
                 scale = getattr(vector.data.numericDecimal128ConstantData, 'scale', None)
 
                 # Convert binary data to BigDecimal equivalent
-                if binary_data:
-                    decimal_value = _binary_to_decimal128(binary_data, scale)
+                if binary_data or strict:
+                    decimal_value = _binary_to_decimal128(binary_data, scale, strict=strict)
                 else:
                     decimal_value = Decimal('0')
 
@@ -691,11 +721,15 @@ def get_column_from_chunk(vector: Vector) -> list:
                         continue
                     # Get binary data for this row
                     binary_data = vector.data.decimal128Data.data[row]
-                    decimal_value = _binary_to_decimal128(binary_data, scale)
+                    decimal_value = _binary_to_decimal128(binary_data, scale, strict=strict)
                     value_array.append(decimal_value)
         else:
+            if strict:
+                raise ValueError("Unsupported vector type.")
             value_array.append(None)
     except Exception as e:
+        if strict:
+            raise
         # Safety net: if anything escapes the per-row try/excepts above (or
         # comes from a branch without one), pad value_array to vector.size so
         # read_rows_from_chunk's columns[colIndex][rowIndex] access can never

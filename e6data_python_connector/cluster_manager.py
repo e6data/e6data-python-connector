@@ -6,12 +6,41 @@ import e6data_python_connector.cluster_server.cluster_pb2_grpc as cluster_pb2_gr
 import grpc
 from grpc._channel import _InactiveRpcError
 import multiprocessing
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
 from e6data_python_connector.common import get_ssl_credentials
 from e6data_python_connector.strategy import _get_active_strategy, _set_active_strategy, _set_pending_strategy, \
     _get_grpc_header
+
+
+def _remaining(deadline):
+    """One monotonic budget, including metadata, lock waits and network calls."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('OAuth cluster recovery deadline exceeded; a dispatched resume may still complete.')
+    return remaining
+
+
+def _oauth_rpc(method, request, metadata_provider, strategy, deadline, refresh_state=None):
+    """Retry only explicit authentication rejection, once per safe logical RPC."""
+    refresh_state = refresh_state if refresh_state is not None else [False]
+    _remaining(deadline)
+    metadata = metadata_provider(strategy, deadline)
+    while True:
+        try:
+            response = method(request, metadata=metadata, timeout=_remaining(deadline))
+            _remaining(deadline)
+            return response
+        except grpc.RpcError as error:
+            if error.code() != grpc.StatusCode.UNAUTHENTICATED or refresh_state[0]:
+                raise
+            refresh_state[0] = True
+            rejected_token = dict(metadata).get('authorization', '')[len('Bearer '):]
+            metadata = metadata_provider(strategy, deadline, rejected_token=rejected_token)
+            if metadata is None:  # Static access tokens cannot renew.
+                raise
 
 
 class _StatusLock:
@@ -99,6 +128,21 @@ class _StatusLock:
         self._status_thread_lock.release()
         self._status_multiprocessing_lock.release()
 
+    @contextmanager
+    def hold_until(self, deadline):
+        """Release only owned locks, sharing the caller's remaining budget."""
+        if not self._status_thread_lock.acquire(timeout=_remaining(deadline)):
+            raise TimeoutError('OAuth recovery timed out waiting for the status lock.')
+        try:
+            if not self._status_multiprocessing_lock.acquire(timeout=_remaining(deadline)):
+                raise TimeoutError('OAuth recovery timed out waiting for the process lock.')
+            try:
+                yield
+            finally:
+                self._status_multiprocessing_lock.release()
+        finally:
+            self._status_thread_lock.release()
+
 
 status_lock = _StatusLock()
 
@@ -122,7 +166,8 @@ class ClusterManager:
     """
 
     def __init__(self, host: str, port: int, user: str, password: str, secure_channel: bool = False, timeout=60 * 5,
-                 cluster_uuid=None, grpc_options=None, debug=False, ssl_cert=None):
+                 cluster_uuid=None, grpc_options=None, debug=False, ssl_cert=None,
+                 metadata_provider=None, initial_strategy=None, deadline=None):
         """
         Initializes a new instance of the ClusterManager class.
 
@@ -154,6 +199,64 @@ class ClusterManager:
             self._grpc_options = dict()
         self._debug = debug
         self._ssl_cert = ssl_cert
+        self._metadata_provider = metadata_provider
+        self._deadline = deadline if deadline is not None else time.monotonic() + timeout
+        self.last_successful_strategy = initial_strategy
+
+    def _oauth_cluster_request(self, client, request_type):
+        """OAuth errors propagate; each real attempt obtains current metadata."""
+        request = (cluster_pb2.ClusterStatusRequest() if request_type == 'status'
+                   else cluster_pb2.ResumeRequest())
+        first = self.last_successful_strategy or 'blue'
+        refresh_state = [False]
+        for selected in (first, 'green' if first == 'blue' else 'blue'):
+            try:
+                response = _oauth_rpc(getattr(client, request_type), request,
+                                      self._metadata_provider, selected, self._deadline,
+                                      refresh_state)
+                self.last_successful_strategy = selected
+                return response
+            except grpc.RpcError as error:
+                if (selected != first or error.code() != grpc.StatusCode.UNKNOWN
+                        or error.details() != 'status: 456'):
+                    raise
+
+    @staticmethod
+    def _oauth_status(response):
+        status = getattr(response, 'status', None)
+        if status not in ('active', 'suspended', 'resuming'):
+            raise RuntimeError('Cluster returned failed or unsupported status: {!r}'.format(status))
+        return status
+
+    def _resume_oauth(self):
+        """Resume at most once and require an observed active status before prepare."""
+        with status_lock.hold_until(self._deadline):
+            client = self._get_connection
+            try:
+                status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
+                if status == 'suspended':
+                    try:
+                        self._oauth_status(self._oauth_cluster_request(client, 'resume'))
+                    except grpc.RpcError as error:
+                        if error.code() not in (grpc.StatusCode.UNAVAILABLE,
+                                                grpc.StatusCode.DEADLINE_EXCEEDED,
+                                                grpc.StatusCode.CANCELLED):
+                            raise
+                        # Mutation may have succeeded. Establish progress with a read.
+                        status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
+                        if status == 'suspended':
+                            raise RuntimeError('Resume outcome is ambiguous; cluster is still suspended.') from error
+                    else:
+                        status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
+                while status != 'active':
+                    if status == 'suspended':
+                        raise RuntimeError('Cluster returned suspended status after resume; refusing a second mutation.')
+                    time.sleep(min(5, _remaining(self._deadline)))
+                    status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
+                return True
+            finally:
+                if hasattr(self, '_channel'):
+                    self._channel.close()
 
     @property
     def _get_connection(self):
@@ -387,6 +490,8 @@ class ClusterManager:
             - The operation is subject to the `_timeout` threshold;
               if the timeout expires, the method returns False.
         """
+        if self._metadata_provider is not None:
+            return self._resume_oauth()
         if self._debug:
             logger.info(f"Starting auto-resume for cluster {self.cluster_uuid} at {self._host}:{self._port}")
 

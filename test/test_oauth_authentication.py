@@ -32,8 +32,8 @@ class _FakeResponse(object):
     def __init__(self, payload):
         self._body = json.dumps(payload).encode('utf-8')
 
-    def read(self):
-        return self._body
+    def read(self, size=-1):
+        return self._body if size < 0 else self._body[:size]
 
     def __enter__(self):
         return self
@@ -49,9 +49,9 @@ class TokenProviderTest(unittest.TestCase):
         defaults.update(kwargs)
         return ClientCredentialsTokenProvider(**defaults)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_fetches_a_token_with_the_client_credentials_grant(self, urlopen):
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
 
         self.assertEqual(self._provider().get_token(), 'tok-1')
 
@@ -60,10 +60,10 @@ class TokenProviderTest(unittest.TestCase):
         self.assertEqual(request.full_url, TOKEN_URL)
         self.assertIn('grant_type=client_credentials', request.data.decode('utf-8'))
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_sends_client_credentials_as_basic_auth_by_default(self, urlopen):
         # client_secret_basic is what the e6data authorization server expects.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
 
         self._provider().get_token()
 
@@ -71,9 +71,9 @@ class TokenProviderTest(unittest.TestCase):
         expected = 'Basic ' + base64.b64encode(b'client-a:shhh').decode('ascii')
         self.assertEqual(header, expected)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_can_send_client_credentials_in_the_body_instead(self, urlopen):
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
 
         self._provider(client_auth_method=CLIENT_AUTH_POST).get_token()
 
@@ -83,19 +83,19 @@ class TokenProviderTest(unittest.TestCase):
         self.assertIn('client_id=client-a', body)
         self.assertIn('client_secret=shhh', body)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_omits_scope_when_none_is_requested(self, urlopen):
         # An absent scope grants the client's full registered set; sending an empty one would be
         # asking for nothing at all.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
 
         self._provider().get_token()
 
         self.assertNotIn('scope=', urlopen.call_args[0][0].data.decode('utf-8'))
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_caches_the_token_between_calls(self, urlopen):
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
         provider = self._provider()
 
         provider.get_token()
@@ -104,11 +104,11 @@ class TokenProviderTest(unittest.TestCase):
 
         self.assertEqual(urlopen.call_count, 1)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_refreshes_before_the_token_actually_expires(self, urlopen):
         # expires_in of 30s with the default 60s leeway means the token is already considered stale,
         # so every call re-fetches rather than handing back something about to be rejected.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 30})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 30})
         provider = self._provider()
 
         provider.get_token()
@@ -116,29 +116,24 @@ class TokenProviderTest(unittest.TestCase):
 
         self.assertEqual(urlopen.call_count, 2)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_force_refresh_bypasses_the_cache(self, urlopen):
         urlopen.side_effect = [
-            _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600}),
-            _FakeResponse({'access_token': 'tok-2', 'expires_in': 3600}),
+            _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600}),
+            _FakeResponse({'access_token': 'tok-2', 'token_type': 'Bearer', 'expires_in': 3600}),
         ]
         provider = self._provider()
 
         self.assertEqual(provider.get_token(), 'tok-1')
         self.assertEqual(provider.get_token(force_refresh=True), 'tok-2')
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
-    def test_assumes_a_short_lifetime_when_expires_in_is_missing(self, urlopen):
-        # Caching a token past its expiry is an outage; refreshing one too often is a rounding
-        # error. The default leans to the cheap failure.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1'})
-        provider = self._provider()
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
+    def test_rejects_missing_lifetime(self, urlopen):
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer'})
+        with self.assertRaises(OAuthError):
+            self._provider().get_token()
 
-        self.assertEqual(provider.get_token(), 'tok-1')
-        self.assertEqual(provider.get_token(), 'tok-1')
-        self.assertEqual(urlopen.call_count, 1)
-
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_reports_a_rejected_client_as_terminal(self, urlopen):
         urlopen.side_effect = urllib.error.HTTPError(
             TOKEN_URL, 401, 'Unauthorized', {},
@@ -152,7 +147,7 @@ class TokenProviderTest(unittest.TestCase):
         self.assertIn('invalid_client', message)
         self.assertIn('client_secret', message)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_reports_a_server_error_as_worth_retrying(self, urlopen):
         # The e6data authorization server returns 503 temporarily_unavailable when it cannot confirm
         # a client's status. That is transient and must not read like bad credentials.
@@ -166,7 +161,7 @@ class TokenProviderTest(unittest.TestCase):
 
         self.assertIn('retry', str(raised.exception).lower())
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_reports_an_unreachable_endpoint(self, urlopen):
         urlopen.side_effect = urllib.error.URLError('connection refused')
 
@@ -175,7 +170,7 @@ class TokenProviderTest(unittest.TestCase):
 
         self.assertIn('Could not reach', str(raised.exception))
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_rejects_a_response_with_no_access_token(self, urlopen):
         urlopen.return_value = _FakeResponse({'token_type': 'Bearer'})
 
@@ -198,13 +193,101 @@ class _BytesBody(object):
     def __init__(self, payload):
         self._payload = payload
 
-    def read(self):
+    def read(self, size=-1):
         return self._payload
 
     def close(self):
         # HTTPError treats its body as a file and closes it during teardown. Without this the
         # tests pass but litter stderr with AttributeError from the garbage collector.
         pass
+
+
+class TokenRecoveryDeadlineTest(unittest.TestCase):
+    def provider(self):
+        return ClientCredentialsTokenProvider(TOKEN_URL, 'fixture-client', 'fixture-secret')
+
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
+    def test_rejected_token_refresh_reuses_another_threads_replacement(self, urlopen):
+        provider = self.provider()
+        urlopen.side_effect = [_FakeResponse({'access_token': 'old', 'token_type': 'Bearer', 'expires_in': 3600}),
+                               _FakeResponse({'access_token': 'new', 'token_type': 'Bearer', 'expires_in': 3600})]
+        self.assertEqual(provider.get_token(), 'old')
+        self.assertEqual(provider.get_token(force_refresh=True, rejected_token='old'), 'new')
+        self.assertEqual(provider.get_token(force_refresh=True, rejected_token='old'), 'new')
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
+    def test_concurrent_rejections_produce_one_replacement_exchange(self, urlopen):
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        import time
+        provider = self.provider()
+        urlopen.side_effect = [_FakeResponse({'access_token': 'old', 'token_type': 'Bearer', 'expires_in': 3600}),
+                               _FakeResponse({'access_token': 'new', 'token_type': 'Bearer', 'expires_in': 3600})]
+        provider.get_token()
+        barrier = threading.Barrier(6)
+        def recover(_):
+            barrier.wait(timeout=1)
+            return provider.get_token(force_refresh=True, rejected_token='old',
+                                      deadline=time.monotonic() + 1)
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            self.assertEqual(list(pool.map(recover, range(6))), ['new'] * 6)
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
+    def test_expired_deadline_does_not_start_token_exchange(self, urlopen):
+        import time
+        with self.assertRaises(TimeoutError):
+            self.provider().get_token(deadline=time.monotonic() - 1)
+        urlopen.assert_not_called()
+
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
+    def test_token_failure_with_deadline_propagates_and_releases_lock(self, urlopen):
+        import time
+        urlopen.side_effect = urllib.error.URLError('fixture-unavailable')
+        provider = self.provider()
+        with self.assertRaises(OAuthError):
+            provider.get_token(deadline=time.monotonic() + 1)
+        self.assertIsNone(provider._state._flight)
+
+    def test_token_lock_wait_respects_deadline(self):
+        import time
+        provider = self.provider()
+        flight = provider._state.select(time.monotonic() + 1).flight
+        start = time.monotonic()
+        try:
+            with self.assertRaises(TimeoutError):
+                provider.get_token(deadline=start + 0.03)
+            self.assertLess(time.monotonic() - start, 0.2)
+            self.assertIs(provider._state._flight, flight)
+        finally:
+            provider._state.finish(flight, error=TimeoutError())
+
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
+    def test_slow_token_read_cannot_extend_callers_deadline_or_publish_late_token(self, urlopen):
+        import threading
+        import time
+        released = threading.Event()
+        completed = threading.Event()
+        class SlowResponse(_FakeResponse):
+            def read(self, size=-1):
+                released.wait(1)
+                completed.set()
+                return super().read(size)
+        urlopen.return_value = SlowResponse({'access_token': 'late-token', 'token_type': 'Bearer', 'expires_in': 3600})
+        provider = self.provider()
+        start = time.monotonic()
+        try:
+            with self.assertRaises(TimeoutError):
+                provider.get_token(deadline=start + 0.04)
+            self.assertLess(time.monotonic() - start, 0.2)
+        finally:
+            released.set()
+        self.assertTrue(completed.wait(1))
+        flight = provider._state._flight
+        if flight is not None:
+            self.assertTrue(flight.done.wait(1))
+        self.assertIsNone(provider._access_token)
 
 
 class AuthenticateRequestShapeTest(unittest.TestCase):
@@ -276,9 +359,9 @@ class ConnectionCredentialSelectionTest(unittest.TestCase):
         self.assertEqual(request.user, 'alice')
         self.assertEqual(request.password, 'secret')
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_an_oauth_connection_sends_the_token_as_metadata(self, urlopen):
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
         connection = self._connect(
             client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
 
@@ -368,12 +451,12 @@ class StatelessRailTest(unittest.TestCase):
         with patch.object(Connection, '_create_client', Mock(return_value=None)):
             return Connection(**defaults)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_every_rpc_carries_the_bearer_not_just_authenticate(self, urlopen):
         # Regression guard for a real gap: the bearer was attached in _authenticate_metadata only,
         # so authenticate carried it and executeStatement, getNextResultBatch, status and
         # clearOrCancelQuery all went out with no credential.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
         connection = self._connect(
             client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
 
@@ -389,21 +472,21 @@ class StatelessRailTest(unittest.TestCase):
 
         self.assertNotIn('authorization', metadata)
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_an_oauth_connection_asks_for_no_session(self, urlopen):
         # No authenticate round trip at all: the property short-circuits before touching the client,
         # which is stubbed to None here and would raise if it were called.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
         connection = self._connect(
             client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
 
         self.assertEqual(connection.get_session_id, '')
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_the_cursor_carries_the_bearer_too(self, urlopen):
         # Cursor.metadata feeds every query-path RPC. It built its own header before, so the
         # credential would have been dropped on exactly the calls that matter most.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600})
         connection = self._connect(
             client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
 

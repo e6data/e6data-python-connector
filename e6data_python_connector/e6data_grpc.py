@@ -8,11 +8,13 @@ from __future__ import unicode_literals
 
 import datetime
 import logging
+import math
 import os
 import re
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from decimal import Decimal
 from io import BytesIO
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
@@ -20,7 +22,7 @@ from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 import grpc
 from grpc._channel import _InactiveRpcError
 
-from e6data_python_connector.cluster_manager import ClusterManager
+from e6data_python_connector.cluster_manager import ClusterManager, _oauth_rpc
 from e6data_python_connector.common import DBAPITypeObject, ParamEscaper, DBAPICursor, get_ssl_credentials
 from e6data_python_connector.constants import (
     MAX_RETRY_ATTEMPTS, RETRY_SLEEP_SECONDS, GRPC_ERROR_STRATEGY_MISMATCH, GRPC_ERROR_ACCESS_DENIED,
@@ -30,7 +32,8 @@ from e6data_python_connector.datainputstream import get_query_columns_info, read
     is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.oauth import ClientCredentialsTokenProvider
-from e6data_python_connector.exceptions import OAuthNotSupportedError
+from e6data_python_connector.exceptions import (
+    OAuthNotSupportedError, IncompleteResultError, ProgrammingError, OperationalError)
 from e6data_python_connector.strategy import _get_grpc_header
 from e6data_python_connector.typeId import *
 
@@ -39,6 +42,22 @@ threadsafety = 2  # Threads may share the e6xdb and connections.
 paramstyle = 'pyformat'  # Python extended format codes, e.g. ...WHERE name=%(name)s
 
 _TIMESTAMP_PATTERN = re.compile(r'(\d+-\d+-\d+ \d+:\d+:\d+(\.\d{,6})?)')
+
+
+def _cleanup_deadline(timeout):
+    timeout = 10.0 if timeout is None else timeout
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout):
+        raise ValueError('Cleanup timeout must be finite seconds.')
+    if timeout <= 0:
+        raise TimeoutError('Cleanup deadline exceeded before dispatch.')
+    return time.monotonic() + timeout
+
+
+def _cleanup_remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('Cleanup deadline exceeded before dispatch.')
+    return remaining
 
 ssl_cert_parameter_map = {
     "none": CERT_NONE,
@@ -75,6 +94,10 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
+        if self.connection._uses_oauth:
+            # OAuth retries belong to a safe individual RPC before admission. Never
+            # replay execute or result retrieval after a query may have been submitted.
+            return func(self, *args, **kwargs)
         max_retry = MAX_RETRY_ATTEMPTS
         current_retry = 0
         while current_retry < max_retry:
@@ -152,9 +175,24 @@ def _get_shared_strategy():
     return _local_strategy_cache
 
 
-def _get_active_strategy():
+@contextmanager
+def _strategy_guard(deadline=None):
+    """Bound cleanup routing admission by the operation's original deadline."""
+    if deadline is None:
+        _strategy_lock.acquire()
+    elif not _strategy_lock.acquire(timeout=_cleanup_remaining(deadline)):
+        raise TimeoutError('Cleanup deadline exceeded waiting for routing state.')
+    try:
+        if deadline is not None:
+            _cleanup_remaining(deadline)
+        yield
+    finally:
+        _strategy_lock.release()
+
+
+def _get_active_strategy(deadline=None):
     """Get the active deployment strategy (blue or green) from shared memory."""
-    with _strategy_lock:
+    with _strategy_guard(deadline):
         shared_strategy = _get_shared_strategy()
         # current_time = time.time()
         # Check if strategy is cached and not expired
@@ -202,7 +240,7 @@ def _clear_strategy_cache():
         shared_strategy['pending_strategy'] = None
 
 
-def _set_pending_strategy(strategy):
+def _set_pending_strategy(strategy, deadline=None):
     """Set the pending strategy to be used for the next query."""
     if not strategy:
         return
@@ -211,7 +249,7 @@ def _set_pending_strategy(strategy):
     if normalized_strategy not in ['blue', 'green']:
         return
 
-    with _strategy_lock:
+    with _strategy_guard(deadline):
         shared_strategy = _get_shared_strategy()
         current_active = shared_strategy['active_strategy']
 
@@ -221,9 +259,9 @@ def _set_pending_strategy(strategy):
             _strategy_debug_log(f"Setting pending strategy: {normalized_strategy} (current: {current_active}, active queries: {query_count})")
 
 
-def _apply_pending_strategy():
+def _apply_pending_strategy(deadline=None):
     """Apply the pending strategy as the active strategy."""
-    with _strategy_lock:
+    with _strategy_guard(deadline):
         shared_strategy = _get_shared_strategy()
         if shared_strategy['pending_strategy']:
             old_strategy = shared_strategy['active_strategy']
@@ -268,22 +306,22 @@ def _register_query_strategy(query_id, strategy):
         _strategy_debug_log(f"Query {query_id} registered with strategy: {normalized_strategy}")
 
 
-def _get_query_strategy(query_id):
+def _get_query_strategy(query_id, deadline=None):
     """Get the strategy used for a specific query."""
-    current_active_strategy = _get_active_strategy()
+    current_active_strategy = _get_active_strategy(deadline=deadline)
     if not query_id:
         return current_active_strategy
-    with _strategy_lock:
+    with _strategy_guard(deadline):
         shared_strategy = _get_shared_strategy()
         query_map = shared_strategy.get('query_strategy_map', {})
         return query_map.get(query_id, current_active_strategy)
 
 
-def _cleanup_query_strategy(query_id):
+def _cleanup_query_strategy(query_id, deadline=None):
     """Remove the strategy mapping for a completed query."""
     if not query_id:
         return
-    with _strategy_lock:
+    with _strategy_guard(deadline):
         shared_strategy = _get_shared_strategy()
         query_map = shared_strategy.get('query_strategy_map', {})
         if query_id in query_map:
@@ -292,6 +330,24 @@ def _cleanup_query_strategy(query_id):
             shared_strategy['query_strategy_map'] = query_map
             remaining_queries = len(query_map)
             _strategy_debug_log(f"Query {query_id} completed (was using {strategy}). Remaining active queries: {remaining_queries}")
+
+
+def _finish_query_cleanup(query_id, new_strategy, deadline):
+    """Publish all successful cleanup bookkeeping under one bounded admission."""
+    with _strategy_guard(deadline):
+        shared = _get_shared_strategy()
+        normalized = new_strategy.lower() if isinstance(new_strategy, str) else None
+        if normalized in ('blue', 'green') and normalized != shared['active_strategy']:
+            shared['pending_strategy'] = normalized
+        query_map = shared.get('query_strategy_map', {})
+        query_map.pop(query_id, None)
+        shared['query_strategy_map'] = query_map
+        if not query_map and shared['pending_strategy']:
+            shared['active_strategy'] = shared['pending_strategy']
+            shared['pending_strategy'] = None
+            now = time.time()
+            shared['last_check_time'] = shared['last_transition_time'] = now
+            shared['session_invalidated'] = True
 
 
 def _get_strategy_debug_info():
@@ -425,6 +481,7 @@ class Connection(object):
 
         self._token_provider = None
         self._static_access_token = None
+        self._oauth_resume_strategy = None
         # Guards the single retry after an auto-resume, so a cluster that keeps refusing
         # connections cannot drive get_session_id into unbounded recursion.
         self._resume_retry_in_progress = False
@@ -616,15 +673,16 @@ class Connection(object):
         """Whether this connection authenticates with an OAuth token rather than credentials."""
         return self._token_provider is not None or self._static_access_token is not None
 
-    def _bearer_token(self, force_refresh: bool = False) -> str:
+    def _bearer_token(self, force_refresh: bool = False, deadline=None, rejected_token=None) -> str:
         """
-        Returns the access token to present on authenticate.
+        Returns the access token to present on the current OAuth RPC.
 
         A provider-backed token is refreshed as needed; a token supplied directly by the caller is
         returned as given, because we have no way to obtain another one.
         """
         if self._token_provider is not None:
-            return self._token_provider.get_token(force_refresh=force_refresh)
+            return self._token_provider.get_token(force_refresh=force_refresh, deadline=deadline,
+                                                  rejected_token=rejected_token)
         return self._static_access_token
 
     def _build_authenticate_request(self):
@@ -657,7 +715,7 @@ class Connection(object):
             )
         return metadata
 
-    def _call_metadata(self, engine_ip=None, strategy=None):
+    def _call_metadata(self, engine_ip=None, strategy=None, deadline=None, rejected_token=None):
         """
         Builds the call metadata for every RPC other than authenticate.
 
@@ -671,8 +729,14 @@ class Connection(object):
         """
         metadata = list(_get_grpc_header(engine_ip=engine_ip, cluster=self.cluster_name, strategy=strategy))
         if self._uses_oauth:
-            metadata.append(('authorization', 'Bearer {}'.format(self._bearer_token())))
+            metadata.append(('authorization', 'Bearer {}'.format(self._bearer_token(
+                force_refresh=rejected_token is not None, deadline=deadline, rejected_token=rejected_token))))
         return metadata
+
+    def _oauth_metadata(self, strategy, deadline, rejected_token=None):
+        if rejected_token is not None and self._token_provider is None:
+            return None
+        return self._call_metadata(strategy=strategy, deadline=deadline, rejected_token=rejected_token)
 
     def _authentication_failure(self):
         """
@@ -882,14 +946,7 @@ class Connection(object):
     def _perform_auto_resume(self, e: _InactiveRpcError):
         if self._auto_resume:
             if self._uses_oauth:
-                # The cluster-manager service authenticates with a username and password of its
-                # own, which an OAuth connection does not hold. Constructing one with None would
-                # fail deep inside the resume call with a misleading error, so decline here and say
-                # why. Resume the cluster out of band, or connect with credentials.
-                logger.warning(
-                    'Auto-resume is unavailable on an OAuth connection: the cluster-manager service '
-                    'requires username and password. Resume the cluster before connecting.'
-                )
+                # OAuth recovery belongs only to Cursor's initial prepare boundary.
                 return False
             if e.code() == grpc.StatusCode.UNAVAILABLE and 'status: 503' in e.details():
                 status = ClusterManager(
@@ -995,7 +1052,7 @@ class Connection(object):
         return (not self._session_id or
                 (pending_strategy and pending_strategy != active_strategy and len(query_map) == 0))
 
-    def clear(self, query_id, engine_ip=None):
+    def clear(self, query_id, engine_ip=None, timeout=None):
         """
         Clears the query results from the server.
 
@@ -1003,19 +1060,23 @@ class Connection(object):
             query_id (str): The ID of the query to be cleared.
             engine_ip (str, optional): The IP address of the engine. Defaults to None.
         """
+        deadline = _cleanup_deadline(timeout) if self._uses_oauth else None
         clear_request = e6x_engine_pb2.ClearRequest(
             sessionId=self.get_session_id,
             queryId=query_id,
             engineIP=engine_ip
         )
-        clear_response = self._client.clear(
-            clear_request,
-            metadata=self._call_metadata(engine_ip=engine_ip, strategy=_get_active_strategy())
-        )
+        metadata = self._call_metadata(engine_ip=engine_ip,
+                                       strategy=_get_query_strategy(query_id, deadline=deadline),
+                                       deadline=deadline)
+        options = {'metadata': metadata}
+        if deadline is not None:
+            options['timeout'] = _cleanup_remaining(deadline)
+        clear_response = self._client.clear(clear_request, **options)
 
         # Check for new strategy in clear response
         if hasattr(clear_response, 'new_strategy') and clear_response.new_strategy:
-            _set_pending_strategy(clear_response.new_strategy)
+            _set_pending_strategy(clear_response.new_strategy, deadline=deadline)
 
     def reopen(self):
         """
@@ -1058,12 +1119,13 @@ class Connection(object):
         Returns:
             str: The result of the dry run validation.
         """
-        dry_run_request = e6x_engine_pb2.DryRunRequest(
-            sessionId=self.get_session_id,
-            schema=self.database,
-            queryString=query
-        )
-        dry_run_response = self._client.dryRun(
+        fields = dict(sessionId=self.get_session_id, schema=self.database, queryString=query)
+        if self.catalog_name:
+            fields['catalog'] = self.catalog_name
+        request_type = e6x_engine_pb2.DryRunRequestV2 if self.catalog_name else e6x_engine_pb2.DryRunRequest
+        dry_run_request = request_type(**fields)
+        method = self._client.dryRunV2 if self.catalog_name else self._client.dryRun
+        dry_run_response = method(
             dry_run_request,
             metadata=self._call_metadata(strategy=_get_active_strategy())
         )
@@ -1243,6 +1305,10 @@ class Cursor(DBAPICursor):
         self._data = None
         self._query_columns_description = None
         self._is_metadata_updated = False
+        self._result_failure = None
+        self._result_exhausted = False
+        self._closed = False
+        self._cleanup_error = None
         self._description = None
         self._query_id = None
         self._engine_ip = None
@@ -1254,6 +1320,80 @@ class Cursor(DBAPICursor):
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
         pass
+
+    def _fail_result(self, reason):
+        if self._result_failure is None:
+            self._result_failure = IncompleteResultError(reason, query_id=self._query_id)
+        return self._result_failure
+
+    def _check_result(self):
+        if self._closed:
+            raise ProgrammingError('Cursor is closed.')
+        if self._result_failure is not None:
+            raise self._result_failure
+
+    @property
+    def query_id(self):
+        """Known handle, including when remote cleanup is unconfirmed."""
+        return self._query_id
+
+    def _prepare_with_auto_resume(self, method_name, request):
+        """Recover one suspended prepare, returning the strategy this query used."""
+        method = getattr(self.connection.client, method_name)
+        selected = _get_active_strategy()
+        if not self.connection._uses_oauth:
+            kwargs = {'metadata': self.metadata}
+            if method_name == 'prepareStatementV2':
+                kwargs['timeout'] = self.connection.grpc_prepare_timeout
+            return method(request, **kwargs), selected
+
+        # New operation state must not depend on a reused cursor's old query ID/IP.
+        selected = self.connection._oauth_resume_strategy or selected
+        prepare_deadline = time.monotonic() + self.connection.grpc_prepare_timeout
+        refresh_state = [False]
+        try:
+            for route_attempt in range(2):
+                try:
+                    response = _oauth_rpc(method, request, self.connection._oauth_metadata, selected,
+                                          prepare_deadline, refresh_state)
+                except grpc.RpcError as error:
+                    if (route_attempt == 0 and error.code() == grpc.StatusCode.UNKNOWN
+                            and error.details() == 'status: 456'):
+                        # A later deployment can invalidate this connection's route.
+                        # Correct it once before admission, without replaying execute.
+                        selected = 'green' if selected == 'blue' else 'blue'
+                        continue
+                    raise
+                if route_attempt:
+                    self.connection._oauth_resume_strategy = selected
+                return response, selected
+        except grpc.RpcError as error:
+            if (not self.connection._auto_resume or error.code() != grpc.StatusCode.UNAVAILABLE
+                    or error.details() != 'status: 503, cluster is suspended'):
+                raise
+
+        deadline = time.monotonic() + self.connection.grpc_auto_resume_timeout_seconds
+        manager = ClusterManager(
+            self.connection._host, self.connection._port, '', '',
+            secure_channel=self.connection._secure_channel,
+            cluster_uuid=self.connection.cluster_name,
+            grpc_options=self.connection._get_grpc_options,
+            debug=self.connection._debug, ssl_cert=self.connection._ssl_cert,
+            metadata_provider=self.connection._oauth_metadata,
+            initial_strategy=selected, deadline=deadline)
+        manager.resume()
+        selected = manager.last_successful_strategy
+        try:
+            response = _oauth_rpc(method, request, self.connection._oauth_metadata, selected, deadline)
+        except grpc.RpcError as error:
+            if (error.code() == grpc.StatusCode.UNAVAILABLE
+                    and error.details() == 'status: 503, cluster is suspended'):
+                raise RuntimeError('Cluster routing is not ready after resume; prepare was not admitted.') from error
+            raise
+        # Retain confirmed routing for later cursors on this connection without
+        # changing the global cache or routing an already running query again.
+        self.connection._oauth_resume_strategy = selected
+        return response, selected
 
     @property
     def metadata(self):
@@ -1342,10 +1482,22 @@ class Cursor(DBAPICursor):
         """
         self.close()
 
-    def close(self):
+    def close(self, timeout=None):
         """
          Close the operation handle and reset the cursor state.
          """
+        if self.connection is not None and self.connection._uses_oauth:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                if self._query_id:
+                    self.clear(timeout=timeout)
+            except Exception:
+                self._cleanup_error = OperationalError('Query cleanup is unconfirmed; known handle retained.')
+                logging.getLogger(__name__).warning('OAuth cursor cleanup unconfirmed; retain query handle for cleanup.')
+            self._data = None
+            return
         try:
             self.clear()
         except:
@@ -1393,7 +1545,7 @@ class Cursor(DBAPICursor):
          """
         return self.connection.get_schema_names(catalog=self._catalog_name)
 
-    def clear(self, query_id=None):
+    def clear(self, query_id=None, timeout=None):
         """
         Clear the query results from the server.
 
@@ -1403,6 +1555,10 @@ class Cursor(DBAPICursor):
         if not query_id:
             query_id = self._query_id
 
+        deadline = _cleanup_deadline(timeout) if self.connection._uses_oauth else None
+        if self.connection._uses_oauth and not query_id:
+            return None
+
         clear_request = e6x_engine_pb2.ClearOrCancelQueryRequest(
             sessionId=self.connection.get_session_id,
             queryId=query_id,
@@ -1410,25 +1566,42 @@ class Cursor(DBAPICursor):
         )
         # Get fresh client after session access (may have been invalidated)
         client = self.connection.client
-        clear_response = client.clearOrCancelQuery(clear_request, metadata=self.metadata)
+        if deadline is not None:
+            strategy = _get_query_strategy(query_id, deadline=deadline)
+            metadata = self.connection._call_metadata(engine_ip=self._engine_ip, strategy=strategy, deadline=deadline)
+            clear_response = client.clearOrCancelQuery(clear_request, metadata=metadata,
+                                                       timeout=_cleanup_remaining(deadline))
+        else:
+            clear_response = client.clearOrCancelQuery(clear_request, metadata=self.metadata)
 
-        # Check for new strategy in clear response
-        if hasattr(clear_response, 'new_strategy') and clear_response.new_strategy:
-            _set_pending_strategy(clear_response.new_strategy)
+        if deadline is not None:
+            _finish_query_cleanup(query_id, getattr(clear_response, 'new_strategy', None), deadline)
+        else:
+            # Check for new strategy in clear response
+            if hasattr(clear_response, 'new_strategy') and clear_response.new_strategy:
+                _set_pending_strategy(clear_response.new_strategy, deadline=deadline)
 
-        # Clean up query strategy mapping
-        if query_id:
-            _cleanup_query_strategy(query_id)
+            # Clean up query strategy mapping
+            if query_id:
+                _cleanup_query_strategy(query_id, deadline=deadline)
 
-        # Check if this was the last query and we have a pending strategy
-        shared_strategy = _get_shared_strategy()
-        pending_strategy = shared_strategy.get('pending_strategy')
-        query_map = shared_strategy.get('query_strategy_map', {})
+            # Check if this was the last query and we have a pending strategy
+            shared_strategy = _get_shared_strategy()
+            pending_strategy = shared_strategy.get('pending_strategy')
+            query_map = shared_strategy.get('query_strategy_map', {})
 
-        if pending_strategy and len(query_map) == 0:
-            _strategy_debug_log(f"Last query cleared, triggering pending strategy transition")
-            _apply_pending_strategy()
+            if pending_strategy and len(query_map) == 0:
+                _strategy_debug_log(f"Last query cleared, triggering pending strategy transition")
+                _apply_pending_strategy(deadline=deadline)
 
+        if self.connection._uses_oauth and query_id == self._query_id:
+            self._query_id = self._engine_ip = None
+            self._result_failure = None
+            self._result_exhausted = False
+            self._data = None
+            self._is_metadata_updated = False
+            self._query_columns_description = self._description = None
+            self._cleanup_error = None
         return clear_response
 
     def cancel(self, query_id):
@@ -1488,6 +1661,8 @@ class Cursor(DBAPICursor):
         Returns:
             str: The query ID of the executed query.
         """
+        if self.connection._uses_oauth:
+            self._check_result()
         # Semicolon is now not supported. So removing it from query end.
         operation = operation.strip()  # Remove leading and trailing whitespaces.
         if operation.endswith(';'):
@@ -1505,15 +1680,15 @@ class Cursor(DBAPICursor):
                 schema=self._database,
                 queryString=sql
             )
-            # Get fresh client after session access (may have been invalidated)
-            client = self.connection.client
-            prepare_statement_response = client.prepareStatement(
-                prepare_statement_request,
-                metadata=self.metadata
-            )
+            prepare_statement_response, current_strategy = self._prepare_with_auto_resume(
+                'prepareStatement', prepare_statement_request)
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
+            if self.connection._uses_oauth:
+                self._result_exhausted = False
+                self._is_metadata_updated = False
+                self._data = self._description = None
 
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
@@ -1522,7 +1697,6 @@ class Cursor(DBAPICursor):
                     _set_pending_strategy(new_strategy)
 
             # Register this query with the current strategy
-            current_strategy = _get_active_strategy()
             if current_strategy:
                 _register_query_strategy(self._query_id, current_strategy)
 
@@ -1550,16 +1724,15 @@ class Cursor(DBAPICursor):
                 catalog=self._catalog_name,
                 queryString=sql
             )
-            # Get fresh client after session access (may have been invalidated)
-            client = self.connection.client
-            prepare_statement_response = client.prepareStatementV2(
-                prepare_statement_request,
-                metadata=self.metadata,
-                timeout=self.connection.grpc_prepare_timeout
-            )
+            prepare_statement_response, current_strategy = self._prepare_with_auto_resume(
+                'prepareStatementV2', prepare_statement_request)
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
+            if self.connection._uses_oauth:
+                self._result_exhausted = False
+                self._is_metadata_updated = False
+                self._data = self._description = None
 
             # Check for new strategy in prepare response
             if hasattr(prepare_statement_response, 'new_strategy') and prepare_statement_response.new_strategy:
@@ -1568,8 +1741,6 @@ class Cursor(DBAPICursor):
                     _set_pending_strategy(new_strategy)
 
             # Register this query with the current strategy
-            current_strategy = _get_active_strategy()
-
             if current_strategy:
                 _register_query_strategy(self._query_id, current_strategy)
 
@@ -1643,7 +1814,12 @@ class Cursor(DBAPICursor):
             rows = self.fetch_batch()
             if rows is None:
                 return
-            self._data = self._data + rows
+            try:
+                self._data = self._data + rows
+            except Exception as error:
+                if self.connection._uses_oauth:
+                    raise self._fail_result('aggregation_failed') from error
+                raise
         return self._data
 
     def _fetch_all(self):
@@ -1653,12 +1829,22 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of all rows fetched from the server.
         """
-        self._data = list()
+        if self.connection._uses_oauth:
+            self._check_result()
+            if self._data is None:
+                self._data = []
+        else:
+            self._data = list()
         while True:
             rows = self.fetch_batch()
             if rows is None:
                 break
-            self._data = self._data + rows
+            try:
+                self._data = self._data + rows
+            except Exception as error:
+                if self.connection._uses_oauth:
+                    raise self._fail_result('aggregation_failed') from error
+                raise
         rows = self._data
         self._data = None
         return rows
@@ -1673,6 +1859,13 @@ class Cursor(DBAPICursor):
         Yields:
             list: A list of rows fetched from the server.
         """
+        if self.connection._uses_oauth:
+            self._check_result()
+            if query_id and query_id != self._query_id:
+                raise ValueError('Cannot replace the active OAuth query handle.')
+            if self._data:
+                rows, self._data = self._data, None
+                yield rows
         if query_id:
             self._query_id = query_id
         while True:
@@ -1688,6 +1881,8 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of rows fetched from the server.
         """
+        if self.connection._uses_oauth:
+            return self._fetch_batch_oauth()
         get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
             engineIP=self._engine_ip,
             sessionId=self.connection.get_session_id,
@@ -1717,6 +1912,43 @@ class Cursor(DBAPICursor):
             buffer
         )
 
+    def _decode_batch_oauth(self, buffer):
+        try:
+            rows = read_rows_from_chunk(self._query_columns_description, buffer, strict=True)
+        except Exception as error:
+            raise self._fail_result('decode_failed') from error
+        if rows is None:
+            self._result_exhausted = True
+        return rows
+
+    def _fetch_batch_oauth(self):
+        self._check_result()
+        if self._result_exhausted:
+            return None
+        # Metadata must succeed before the sequential server cursor advances.
+        if not self._is_metadata_updated:
+            self.update_mete_data()
+        deadline = time.monotonic() + self.connection.grpc_prepare_timeout
+        strategy = _get_query_strategy(self._query_id) if self._query_id else _get_active_strategy()
+        metadata = self.connection._call_metadata(engine_ip=self._engine_ip, strategy=strategy, deadline=deadline)
+        request = e6x_engine_pb2.GetNextResultBatchRequest(
+            engineIP=self._engine_ip, sessionId='', queryId=self._query_id)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Result deadline exceeded before dispatch.')
+        try:
+            response = self.connection.client.getNextResultBatch(request, metadata=metadata, timeout=remaining)
+        except Exception as error:
+            raise self._fail_result('ambiguous_result') from error
+        buffer = response.resultBatch
+        if not buffer:
+            self._result_exhausted = True
+            return None
+        rows = self._decode_batch_oauth(buffer)
+        if response.new_strategy:
+            _set_pending_strategy(response.new_strategy.lower())
+        return rows
+
     def fetchall(self):
         """
          Fetch all rows from the server.
@@ -1736,6 +1968,8 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of rows fetched from the server.
         """
+        if self.connection._uses_oauth:
+            self._check_result()
         if size is None:
             size = self.arraysize
         if self._data is None:
@@ -1744,7 +1978,12 @@ class Cursor(DBAPICursor):
             rows = self.fetch_batch()
             if rows is None:
                 break
-            self._data += rows
+            try:
+                self._data += rows
+            except Exception as error:
+                if self.connection._uses_oauth:
+                    raise self._fail_result('aggregation_failed') from error
+                raise
         if len(self._data) <= size:
             rows = self._data
             self._data = None

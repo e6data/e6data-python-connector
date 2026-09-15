@@ -1,18 +1,8 @@
-"""
-OAuth 2.0 client-credentials support for the e6data connector.
-
-Obtains an access token from an authorization server and caches it until shortly before it expires.
-The token is then handed to the engine on ``authenticate``, which validates it and returns an
-ordinary session id -- everything after that point is identical to a username/password connection.
-
-Deliberately built on the standard library. ``requests`` appears in ``requirements.txt`` but not in
-``install_requires``, so it is a development dependency; reaching for it here would silently add a
-runtime dependency for everyone installing the connector.
-"""
-
+"""Bounded synchronous client-credentials exchange and monotonic token cache."""
 import base64
 import json
-import logging
+import math
+import os
 import threading
 import time
 import urllib.error
@@ -20,198 +10,176 @@ import urllib.parse
 import urllib.request
 
 from e6data_python_connector.exceptions import OAuthError
+from e6data_python_connector.oauth_cache import get_state
+from e6data_python_connector.oauth_common import (
+    MAX_TOKEN_RESPONSE_BYTES, validate_positive_timeout,
+    validate_token_endpoint, validate_token_response,
+)
 
-_logger = logging.getLogger(__name__)
-
-#: Seconds before actual expiry at which a cached token is considered stale. Covers clock skew
-#: between us and the authorization server plus the round trip of whatever call the token is about
-#: to be used for.
 DEFAULT_REFRESH_LEEWAY_SECONDS = 60
-
-#: Assumed lifetime when the authorization server omits ``expires_in``. Deliberately short: a token
-#: refreshed too often is a small waste, whereas one cached past its expiry is an outage.
-DEFAULT_ASSUMED_LIFETIME_SECONDS = 300
-
 DEFAULT_TIMEOUT_SECONDS = 10
-
-#: Send the client id and secret as HTTP Basic credentials (RFC 6749 section 2.3.1). This is the
-#: default because it is what the e6data authorization server expects.
 CLIENT_AUTH_BASIC = 'basic'
-
-#: Send them in the request body instead, for authorization servers that require it.
 CLIENT_AUTH_POST = 'post'
 
+# A timed-out blocking exchange continues to own its slot until it actually exits.
+_EXCHANGE_SLOTS = threading.BoundedSemaphore(4)
 
-class ClientCredentialsTokenProvider(object):
-    """
-    Fetches and caches an OAuth 2.0 access token using the client-credentials grant.
 
-    Safe to share between threads: the connector's connection pool hands one provider to several
-    connections, and without the lock they would stampede the authorization server the moment a
-    token expires.
-    """
+def _reset_exchange_slots_after_fork():
+    # Parent workers do not survive fork, so their occupied slots cannot drain.
+    global _EXCHANGE_SLOTS
+    _EXCHANGE_SLOTS = threading.BoundedSemaphore(4)
 
-    def __init__(
-            self,
-            token_url: str,
-            client_id: str,
-            client_secret: str,
-            scope: str = None,
-            client_auth_method: str = CLIENT_AUTH_BASIC,
-            timeout: int = DEFAULT_TIMEOUT_SECONDS,
-            refresh_leeway_seconds: int = DEFAULT_REFRESH_LEEWAY_SECONDS,
-    ):
-        """
-        Parameters
-        ----------
-            token_url: str
-                The authorization server's token endpoint.
-            client_id: str
-                Client identifier issued by the authorization server.
-            client_secret: str
-                Client secret issued alongside the id.
-            scope: str, Optional
-                Space-delimited scopes to request. Omit to receive the client's full registered set.
-            client_auth_method: str, Optional
-                How to present the client credentials -- ``basic`` (default) or ``post``.
-            timeout: int, Optional
-                Per-request timeout in seconds.
-            refresh_leeway_seconds: int, Optional
-                How long before expiry a cached token is refreshed.
-        """
-        if not token_url:
-            raise ValueError('token_url cannot be empty.')
+
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_reset_exchange_slots_after_fork)
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise OAuthError('OAuth token endpoint redirects are prohibited.')
+
+
+class ClientCredentialsTokenProvider:
+    """Shareable provider with one publisher and no queued background workers."""
+
+    def __init__(self, token_url, client_id, client_secret, scope=None,
+                 client_auth_method=CLIENT_AUTH_BASIC, timeout=DEFAULT_TIMEOUT_SECONDS,
+                 refresh_leeway_seconds=DEFAULT_REFRESH_LEEWAY_SECONDS):
+        validate_token_endpoint(token_url)
         if not client_id or not client_secret:
             raise ValueError('client_id and client_secret cannot be empty.')
         if client_auth_method not in (CLIENT_AUTH_BASIC, CLIENT_AUTH_POST):
-            raise ValueError(
-                "client_auth_method must be '{}' or '{}'.".format(CLIENT_AUTH_BASIC, CLIENT_AUTH_POST)
-            )
-
+            raise ValueError("client_auth_method must be 'basic' or 'post'.")
+        self._timeout = validate_positive_timeout(timeout)
+        if (isinstance(refresh_leeway_seconds, bool)
+                or not isinstance(refresh_leeway_seconds, (int, float))
+                or not math.isfinite(refresh_leeway_seconds) or refresh_leeway_seconds < 0):
+            raise ValueError('refresh_leeway_seconds must be finite and nonnegative.')
         self._token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
         self._scope = scope
         self._client_auth_method = client_auth_method
-        self._timeout = timeout
         self._refresh_leeway_seconds = refresh_leeway_seconds
+        self._pid = os.getpid()
+        self._state = get_state(token_url, client_id, client_secret, scope,
+                                client_auth_method, self._timeout, refresh_leeway_seconds)
+        # Ignore environment proxy configuration and never forward credentials on redirects.
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _RejectRedirects())
 
-        self._lock = threading.Lock()
-        self._access_token = None
-        self._expires_at = 0.0
+    @property
+    def _access_token(self):
+        return self._state.token
 
-    def get_token(self, force_refresh: bool = False) -> str:
-        """
-        Returns a usable access token, fetching a new one if the cached token is missing, stale or
-        explicitly discarded.
+    @_access_token.setter
+    def _access_token(self, value):
+        self._state.token = value
 
-        Parameters
-        ----------
-            force_refresh: bool, Optional
-                Discard the cached token and fetch a new one. Used after the engine rejects a
-                session, where the token may have been revoked before its stated expiry.
+    @property
+    def _expires_at(self):
+        return self._state.expires_at
 
-        Returns
-        -------
-            str: the access token.
+    @_expires_at.setter
+    def _expires_at(self, value):
+        self._state.expires_at = value
 
-        Raises
-        ------
-            OAuthError: if the authorization server refuses or cannot be reached.
-        """
-        with self._lock:
-            if not force_refresh and self._access_token and time.time() < self._expires_at:
-                return self._access_token
+    def get_token(self, force_refresh=False, deadline=None, rejected_token=None):
+        """Join matching credential renewal within this caller's own budget."""
+        self._state._check_pid()
+        budget = time.monotonic() + self._timeout
+        if deadline is not None:
+            if isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline):
+                raise ValueError('deadline must be a finite monotonic timestamp.')
+            budget = min(budget, deadline)
+        while True:
+            selection = self._state.select(budget, force_refresh, rejected_token)
+            if selection.token is not None:
+                return selection.token
+            flight = selection.flight
+            if selection.retiring:
+                if not flight.done.wait(self._remaining(budget)):
+                    raise TimeoutError('OAuth token deadline exceeded waiting for retirement.')
+                continue
+            try:
+                if selection.owner:
+                    self._start_refresh(flight)
+                if not flight.done.wait(self._remaining(budget)):
+                    raise TimeoutError('OAuth token deadline exceeded during exchange.')
+                self._remaining(budget)
+                return flight.result()
+            finally:
+                self._state.detach(selection.waiter)
 
-            access_token, expires_in = self._fetch_token()
-            self._access_token = access_token
-            self._expires_at = time.time() + max(expires_in - self._refresh_leeway_seconds, 0)
-            return self._access_token
+    def _start_refresh(self, flight):
+        exchange_slots = _EXCHANGE_SLOTS
+        if not exchange_slots.acquire(blocking=False):
+            self._state.finish(flight, error=TimeoutError('OAuth exchange capacity exhausted.'))
+            return
+
+        def refresh():
+            try:
+                started = time.monotonic()
+                payload = self._fetch_token(flight.deadline)
+                token, until = validate_token_response(payload, started_at=started,
+                    now=time.monotonic(), leeway=self._refresh_leeway_seconds)
+                self._state.finish(flight, token, until)
+            except BaseException as error:
+                self._state.finish(flight, error=error)
+            finally:
+                exchange_slots.release()
+
+        try:
+            threading.Thread(target=refresh, daemon=True).start()
+        except BaseException as error:
+            exchange_slots.release()
+            self._state.finish(flight, error=error)
+
+    @staticmethod
+    def _remaining(deadline):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('OAuth token deadline exceeded.')
+        return remaining
 
     def invalidate(self):
-        """Drops the cached token so the next call fetches a fresh one."""
-        with self._lock:
-            self._access_token = None
-            self._expires_at = 0.0
+        """Invalidate the matching shared credential generation."""
+        self._state.invalidate()
 
-    def _fetch_token(self):
-        """Performs the client-credentials exchange. Caller holds the lock."""
+    def _fetch_token(self, deadline):
         form = {'grant_type': 'client_credentials'}
         if self._scope:
             form['scope'] = self._scope
-
         headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'}
         if self._client_auth_method == CLIENT_AUTH_BASIC:
-            credentials = '{}:{}'.format(self._client_id, self._client_secret).encode('utf-8')
+            credentials = '{}:{}'.format(urllib.parse.quote_plus(self._client_id),
+                                        urllib.parse.quote_plus(self._client_secret)).encode('utf-8')
             headers['Authorization'] = 'Basic ' + base64.b64encode(credentials).decode('ascii')
         else:
             form['client_id'] = self._client_id
             form['client_secret'] = self._client_secret
-
-        request = urllib.request.Request(
-            self._token_url,
-            data=urllib.parse.urlencode(form).encode('utf-8'),
-            headers=headers,
-            method='POST',
-        )
-
+        request = urllib.request.Request(self._token_url, data=urllib.parse.urlencode(form).encode('utf-8'),
+                                         headers=headers, method='POST')
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                payload = json.loads(response.read().decode('utf-8'))
+            with self._opener.open(request, timeout=self._remaining(deadline)) as response:
+                body = response.read(MAX_TOKEN_RESPONSE_BYTES + 1)
+                if len(body) > MAX_TOKEN_RESPONSE_BYTES:
+                    raise OAuthError('OAuth token response exceeds size limit.')
+                return json.loads(body.decode('utf-8'))
         except urllib.error.HTTPError as error:
-            raise OAuthError(self._describe_http_error(error)) from error
-        except urllib.error.URLError as error:
-            raise OAuthError(
-                'Could not reach the token endpoint {}: {}'.format(self._token_url, error.reason)
-            ) from error
-        except (ValueError, TypeError) as error:
-            raise OAuthError(
-                'Token endpoint {} did not return valid JSON.'.format(self._token_url)
-            ) from error
+            message = self._describe_http_error(error)
+            error.close()
+            raise OAuthError(message) from None
+        except (urllib.error.URLError, OSError):
+            raise OAuthError('Could not reach the OAuth token endpoint.') from None
+        except (ValueError, TypeError):
+            raise OAuthError('OAuth token endpoint did not return valid JSON.') from None
 
-        access_token = payload.get('access_token')
-        if not access_token:
-            raise OAuthError(
-                'Token endpoint {} returned no access_token.'.format(self._token_url)
-            )
-
-        expires_in = payload.get('expires_in')
-        try:
-            expires_in = int(expires_in)
-        except (TypeError, ValueError):
-            _logger.warning(
-                'Token endpoint %s returned no usable expires_in; assuming %s seconds.',
-                self._token_url, DEFAULT_ASSUMED_LIFETIME_SECONDS,
-            )
-            expires_in = DEFAULT_ASSUMED_LIFETIME_SECONDS
-
-        return access_token, expires_in
-
-    def _describe_http_error(self, error) -> str:
-        """
-        Turns an HTTP failure into a message that says what to do about it.
-
-        The distinction that matters is transient versus terminal: a 5xx (the e6data authorization
-        server returns 503 ``temporarily_unavailable`` when it cannot confirm a client's status) is
-        worth retrying, whereas a 401 ``invalid_client`` means the credentials are wrong and
-        retrying will not help.
-        """
-        oauth_error = ''
-        try:
-            body = json.loads(error.read().decode('utf-8'))
-            oauth_error = body.get('error') or ''
-        except Exception:  # noqa: BLE001 - the body is best-effort context, never load-bearing
-            pass
-
-        detail = ' ({})'.format(oauth_error) if oauth_error else ''
+    @staticmethod
+    def _describe_http_error(error):
+        # Do not read untrusted error bodies or expose URLs, reasons or credentials.
         if error.code >= 500:
-            return (
-                'Token endpoint {} is temporarily unavailable: HTTP {}{}. This is usually transient '
-                '- retry.'.format(self._token_url, error.code, detail)
-            )
+            return 'OAuth token endpoint temporarily unavailable; retry later.'
         if error.code in (400, 401):
-            return (
-                'Token endpoint {} rejected the client credentials: HTTP {}{}. Check client_id, '
-                'client_secret and the requested scope.'.format(self._token_url, error.code, detail)
-            )
-        return 'Token endpoint {} returned HTTP {}{}.'.format(self._token_url, error.code, detail)
+            return 'OAuth invalid_client or scope rejected; check client_id and client_secret.'
+        return 'OAuth token endpoint rejected the request.'

@@ -1,0 +1,118 @@
+name: Connector tests
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+    inputs:
+      run_live:
+        description: Run real-service qualification on an explicitly configured runner
+        type: boolean
+        default: false
+      integration_environment:
+        description: Existing protected environment for real-service qualification
+        type: environment
+        required: false
+      integration_runner:
+        description: Existing trusted runner label with target access and configured environment variables
+        type: string
+        default: self-hosted
+      integration_config:
+        description: Absolute path to operator-provisioned JSON config on that runner (credential values use env references)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: '3.11'
+            constraints: minimum
+          - python: '3.11'
+            constraints: current
+          - python: '3.12'
+            constraints: current
+          - python: '3.13'
+            constraints: current
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install connector and pinned test dependencies
+        run: python -m pip install -c test/constraints/${{ matrix.constraints }}.txt -e '.[async-sqlalchemy]' -r requirements-test.txt build
+      - name: Complete offline collection and full package coverage gate
+        run: python -m pytest --cov=e6data_python_connector --cov-branch --cov-report=xml --cov-report=term-missing --cov-fail-under=80.01
+      - name: Preserve full denominator report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: coverage-${{ matrix.python }}-${{ matrix.constraints }}
+          path: coverage.xml
+          if-no-files-found: warn
+      - name: Build wheel after successful tests
+        run: python -m build --wheel
+      - name: Clean wheel imports for base and optional extras
+        shell: bash
+        run: |
+          wheel_path=$(realpath dist/*.whl)
+          for flavor in base async async-sqlalchemy; do
+            python -m venv "$RUNNER_TEMP/connector-$flavor"
+            runtime="$RUNNER_TEMP/connector-$flavor/bin/python"
+            requirement="$wheel_path"
+            if [ "$flavor" != base ]; then requirement="$wheel_path[$flavor]"; fi
+            "$runtime" -m pip install -c test/constraints/${{ matrix.constraints }}.txt "$requirement"
+            (cd "$RUNNER_TEMP" && "$runtime" -c "import sys; import e6data_python_connector; assert 'httpx' not in sys.modules; assert 'e6data_python_connector.aio' not in sys.modules")
+            if [ "$flavor" != base ]; then
+              (cd "$RUNNER_TEMP" && "$runtime" -c 'from e6data_python_connector.aio import AsyncConnection')
+            fi
+            if [ "$flavor" = async-sqlalchemy ]; then
+              (cd "$RUNNER_TEMP" && "$runtime" -c "from sqlalchemy.dialects import registry; assert registry.load('e6data.asyncio').is_async; assert not registry.load('e6data').is_async")
+            fi
+          done
+
+  live:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live
+    environment: ${{ inputs.integration_environment }}
+    runs-on: ${{ inputs.integration_runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Require explicit runner configuration
+        env:
+          INTEGRATION_CONFIG: ${{ inputs.integration_config }}
+          INTEGRATION_ENVIRONMENT: ${{ inputs.integration_environment }}
+        run: |
+          test -n "$INTEGRATION_ENVIRONMENT"
+          test -n "$INTEGRATION_CONFIG"
+          case "$INTEGRATION_CONFIG" in /*) ;; *) exit 1 ;; esac
+          test -f "$INTEGRATION_CONFIG"
+      - name: Install pinned dependencies
+        run: python -m pip install -c test/constraints/current.txt -e '.[async-sqlalchemy]' -r requirements-test.txt
+      - name: Run declared real-service suite
+        env:
+          INTEGRATION_CONFIG: ${{ inputs.integration_config }}
+        run: python -m pytest test/integration --integration-config "$INTEGRATION_CONFIG" --tb=no --junitxml=live-results.xml
+      - name: Reject empty or skipped qualification
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('live-results.xml').getroot()
+          cases = root.findall('.//testcase')
+          assert cases, 'No real-service tests ran'
+          assert not root.findall('.//skipped'), 'Skipped real-service tests leave qualification incomplete'
+          assert not root.findall('.//failure'), 'Real-service tests failed'
+          assert not root.findall('.//error'), 'Real-service tests errored'
+          PY

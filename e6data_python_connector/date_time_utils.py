@@ -147,17 +147,13 @@ zone_map: Final = dict()
 
 
 def floor_div(x, y):
-    q = x // y
-    if x ^ y < 0 and q * y != x:
-        return q - 1
-    return q
+    # Python integer division already rounds toward negative infinity.
+    return x // y
 
 
 def floor_mod(x, y):
-    r = x % y
-    if (x ^ y) < 0 and r != 0:
-        return r + y
-    return r
+    # Python modulo already has the divisor's sign, matching floor division.
+    return x % y
 
 
 _SECONDS_PER_DAY = 86400

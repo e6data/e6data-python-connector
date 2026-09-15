@@ -3,3 +3,10 @@ requires = [
     "setuptools>=42",
     "wheel",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["e6data_python_connector"]
+# Runtime conformance tests launch isolated Python interpreters. Include their
+# executed package code in the same full-package report.
+patch = ["subprocess"]

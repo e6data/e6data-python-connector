@@ -1,10 +1,30 @@
 # e6data Python Connector
 
-![version](https://img.shields.io/badge/version-2.3.15-blue.svg)
+Package version and extras are defined in `setup.py`.
 
 ## Introduction
 
-The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations. It includes automatic support for blue-green deployments, ensuring seamless failover during server updates without query interruption.
+The e6data Connector for Python provides an interface for writing Python applications that can connect to e6data and perform operations. It includes routing support for blue-green deployments. Active query handles remain tied to the engine that accepted them; failover does not guarantee uninterrupted results.
+
+## Optional native asyncio API
+
+This branch adds native async connection, cursor, pooling and SQLAlchemy support for Python 3.11+. Release qualification remains incomplete. Install this branch's built package with `[async]` or `[async-sqlalchemy]`; these instructions do not assert that the feature is published.
+
+```python
+from e6data_python_connector.aio import AsyncConnection
+
+async def query(config, sql):
+    async with AsyncConnection(**config) as connection:
+        async with connection.cursor() as cursor:
+            await cursor.execute(sql)
+            return await cursor.fetchall()
+```
+
+`config` is application-supplied connection configuration. OAuth requires verified TLS. Native `fetchone()` preserves the one-row outer list, while SQLAlchemy `e6data+asyncio` adapts it to a normal row. Ambiguous submission and incomplete result errors must not be handled by blindly retrying the query. Use context managers for bounded cleanup.
+
+See [Async API](docs/ASYNC_API.md) for the complete API map, deadlines, pooling, SQLAlchemy and test configuration, [OAuth lifecycle](docs/OAUTH_LIFECYCLE.md) for renewal and failure behavior, and [the application example](examples/async_query.py).
+
+The new CI keeps the full-package coverage denominator and a greater-than-80% gate. The initial baseline was about 19%, so focused async test success is not a release pass. Real-service tests require explicit configuration and are qualified separately.
 
 ### Dependencies
 Make sure to install below dependencies and wheel before install e6data-python-connector.
@@ -105,11 +125,18 @@ As an alternative to username and password, a connection can authenticate with a
 token. The connector obtains a token using the client-credentials grant, caches it, and refreshes it
 shortly before it expires.
 
+Matching client-credentials configurations share one token cache and concurrent
+refresh across sync and async connections, separate pools and threads in the same
+process. Connection and transport ownership remain local. See the
+[OAuth lifecycle](docs/OAUTH_LIFECYCLE.md) for matching settings and expiry behavior.
+
 ```python
 conn = Connection(
     host=host,
-    port=port,
+    port=443,
     database=database,
+    cluster_name='<cluster-name>',
+    secure=True,
     client_id='<client_id>',
     client_secret='<client_secret>',
     token_url='https://<your-workspace>/oauth2/token',
@@ -120,22 +147,41 @@ If you mint tokens yourself, pass one directly instead. The connector will not r
 long-lived connection may outlive the token:
 
 ```python
-conn = Connection(host=host, port=port, database=database, access_token='<token>')
+conn = Connection(
+    host=host, port=443, database=database, cluster_name='<cluster-name>',
+    secure=True, access_token='<token>',
+)
 ```
 
 **Supply exactly one authentication method.** Passing both username/password and OAuth settings
 raises a `ValueError` rather than picking one, so a stale value left in a config file cannot quietly
 win.
 
-Two things to know:
+OAuth sends `authorization: Bearer <token>` on every RPC. It does not create an
+authentication session; protobuf username, password and session ID fields remain
+empty. The server stack must support and enable this bearer-only flow.
 
-- **The engine must have OAuth enabled** and must trust the token's issuer. An engine that predates
-  OAuth support ignores the token, sees empty credentials and refuses, which looks identical to a
-  rejected token. The connector raises `OAuthNotSupportedError` naming both possibilities rather than
-  guessing between them.
-- **Auto-resume is unavailable on an OAuth connection.** The cluster-manager service authenticates
-  with its own username and password, which an OAuth connection does not hold. Resume the cluster
-  before connecting, or connect with credentials.
+Use `secure=True` with your TLS endpoint and an HTTPS `token_url` to protect tokens
+and client credentials. OAuth does not enable TLS automatically; `secure` defaults
+to `False`. Set `cluster_name` to identify the target cluster explicitly.
+
+With `auto_resume=True` (the default), OAuth can recover an initial query prepare
+that returns the exact suspended-cluster response. This requires compatible,
+enabled server components that authorize resume and report readiness. The connector
+performs one recovery sequence and retries prepare after readiness. It never
+replays query execution, metadata retrieval or result fetching, and it does not
+treat generic connection failures as suspension.
+
+Recovery has a shared 300-second default deadline covering lock waits, token
+acquisition, status/resume calls, polling and the resumed prepare. Configure it with
+`grpc_options={'grpc_auto_resume_timeout_seconds': 300}`. The deadline starts after
+the suspended response; initial prepare has its own timeout. A dispatched resume
+may still complete after the client times out.
+
+Set `auto_resume=False` to disable recovery. Invalid credentials, denied permissions,
+unsupported servers and failed or unknown cluster states stop recovery without
+falling back to username/password authentication. Externally supplied access tokens
+are not refreshed.
 
 #### Secure Connection Example
 

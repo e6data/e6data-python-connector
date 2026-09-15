@@ -1,0 +1,7 @@
+# Targeted floors, with the same pinned shared HTTP/test dependencies.
+-c common.txt
+grpcio==1.65.1
+grpcio-tools==1.65.1
+protobuf==5.26.1
+SQLAlchemy==2.0.0
+thrift==0.20.0

@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "files": {
+    "test/__init__.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/analyze_38_nines.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/analyze_all_cases.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/analyze_binary.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/analyze_correct_value.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/analyze_fields.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/check_decimal_errors.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/cleanup_test_files.py": {
+      "kind": "utility",
+      "runner": "never",
+      "reason": "Destructive import-time filesystem operations; never collect"
+    },
+    "test/debug_38_nines.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/debug_binary.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/final_test.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/move_tests.py": {
+      "kind": "utility",
+      "runner": "never",
+      "reason": "Destructive import-time filesystem operations; never collect"
+    },
+    "test/quick_test.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_38_nines.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_all_decimal128_cases.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_cluster_manager_efficiency.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_cluster_manager_none_strategy.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_cluster_manager_oauth.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_cluster_manager_strategy.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_code_optimizations.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_comprehensive.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_connection_pool.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_connection_pool_e2e.py": {
+      "kind": "integration",
+      "runner": "pytest",
+      "reason": "Real cluster and documented environment/CSV prerequisites"
+    },
+    "test/test_current_implementation.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_decimal128_binary_parsing.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_decimal128_parsing.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_dialect_columns.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_fix.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_improved_parsing.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_known_case.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_manual_analysis.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_mock_server.py": {
+      "kind": "synthetic",
+      "runner": "manual",
+      "reason": "Manual loopback harness; indefinite loops or swallowed failures"
+    },
+    "test/test_multiprocessing_fix.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_new_implementation.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_oauth_authentication.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_oauth_auto_resume.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_oauth_resume_integration.py": {
+      "kind": "synthetic",
+      "runner": "pytest",
+      "reason": "Existing local synthetic HTTP/gRPC fixture; not product conformance"
+    },
+    "test/test_pool_concurrency_simple.py": {
+      "kind": "integration",
+      "runner": "pytest",
+      "reason": "Real cluster and documented environment/CSV prerequisites"
+    },
+    "test/test_pool_threading_multiprocessing.py": {
+      "kind": "integration",
+      "runner": "pytest",
+      "reason": "Real cluster and documented environment/CSV prerequisites"
+    },
+    "test/test_simple_connection_pool.py": {
+      "kind": "integration",
+      "runner": "pytest",
+      "reason": "Real cluster and documented environment/CSV prerequisites"
+    },
+    "test/test_specific_binary.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_strategy.py": {
+      "kind": "integration",
+      "runner": "manual",
+      "reason": "Real target diagnostic catches failures; no reliable automated pass verdict"
+    },
+    "test/test_strategy_logic.py": {
+      "kind": "synthetic",
+      "runner": "manual",
+      "reason": "Manual loopback harness; indefinite loops or swallowed failures"
+    },
+    "test/test_strategy_persistence_fix.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Inspected asserting offline regression; existing test doubles where present"
+    },
+    "test/test_strategy_sharing_fix.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/test_user_binary_value.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/tests.py": {
+      "kind": "integration",
+      "runner": "pytest",
+      "reason": "Real cluster and documented environment/CSV prerequisites"
+    },
+    "test/tests_grpc.py": {
+      "kind": "integration",
+      "runner": "pytest",
+      "reason": "Real cluster and documented environment/CSV prerequisites"
+    },
+    "test/validate_decimal128.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/validate_implementation.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test/verify_decimal_fix.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Historical decimal diagnostic or support module; not an asserting test"
+    },
+    "test_e6data_date_functions.py": {
+      "kind": "integration",
+      "runner": "manual",
+      "reason": "Real target diagnostic catches failures; no reliable automated pass verdict"
+    }
+  }
+}
