@@ -523,7 +523,7 @@ class AuthenticationFailureMessageTest(unittest.TestCase):
 
 
 class CatalogListingTest(unittest.TestCase):
-    """get_catalogs — the top of the metadata hierarchy.
+    """get_catalogs - the top of the metadata hierarchy.
 
     Untested until now, which mattered more than it looks: it is the only metadata call
     whose request message carries no session id at all, so the usual "does the credential
@@ -558,19 +558,25 @@ class CatalogListingTest(unittest.TestCase):
             [{'name': 'glue', 'isDefault': True}, {'name': 'hive', 'isDefault': False}],
         )
 
-    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    @patch('e6data_python_connector.oauth.urllib.request.OpenerDirector.open')
     def test_the_bearer_travels_even_though_the_request_is_empty(self, urlopen):
         # GetCatalogesRequest has no fields, so there is nowhere for a session id to go and
         # the credential can only arrive as call metadata. If that were dropped here the
-        # call would still succeed today — the planner does not check it — and would start
+        # call would still succeed today - the planner does not check it - and would start
         # failing the moment the engine begins to.
-        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
-        connection = self._connect(client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
+        urlopen.return_value = _FakeResponse({
+            'access_token': 'tok-1', 'token_type': 'Bearer', 'expires_in': 3600,
+        })
+        connection = self._connect(client_id=self.id(), client_secret='shhh', token_url=TOKEN_URL)
+        # Force an exchange even if this test's credential state survives an earlier run.
+        connection._token_provider.invalidate()
+        self.addCleanup(connection._token_provider.invalidate)
         connection._client = Mock()
         connection._client.getCataloges.return_value = self._catalogs(('glue', True))
 
         connection.get_catalogs()
 
+        urlopen.assert_called_once()
         metadata = dict(connection._client.getCataloges.call_args.kwargs['metadata'])
         self.assertEqual(metadata['authorization'], 'Bearer tok-1')
 
