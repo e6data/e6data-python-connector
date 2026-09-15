@@ -1,0 +1,6 @@
+-c common.txt
+grpcio==1.83.1
+grpcio-tools==1.83.1
+protobuf==7.36.1
+SQLAlchemy==2.0.52
+thrift==0.24.0

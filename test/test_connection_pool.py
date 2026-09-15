@@ -236,28 +236,38 @@ class TestConnectionPool(unittest.TestCase):
         mock_connection_class.return_value = mock_conn
         
         pool = ConnectionPool(
-            min_size=1,
+            min_size=2,
             max_size=2,
             max_overflow=2,
             **self.mock_connection_params
         )
         
-        connections = []
-        
-        # Get connections up to max_size + max_overflow
-        for i in range(4):
-            conn = pool.get_connection(timeout=1)
-            connections.append(conn)
-        
-        stats = pool.get_statistics()
-        self.assertEqual(stats['created_connections'], 4)
-        self.assertEqual(stats['overflow_connections'], 2)
-        
-        # Return all connections
-        for conn in connections:
-            pool.return_connection(conn)
-        
-        pool.close_all()
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier, Event
+        acquired, release = Barrier(5), Event()
+
+        def hold_lease():
+            conn = pool.get_connection(timeout=2)
+            try:
+                acquired.wait(timeout=5)
+                release.wait(timeout=5)
+            finally:
+                pool.return_connection(conn)
+
+        try:
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(hold_lease) for _ in range(4)]
+                try:
+                    acquired.wait(timeout=5)
+                    stats = pool.get_statistics()
+                    self.assertEqual(stats['created_connections'], 4)
+                    self.assertEqual(stats['overflow_connections'], 2)
+                finally:
+                    release.set()
+                for future in futures:
+                    future.result(timeout=5)
+        finally:
+            pool.close_all()
     
     @patch('e6data_python_connector.connection_pool.Connection')
     def test_timeout_when_pool_exhausted(self, mock_connection_class):
@@ -278,9 +288,12 @@ class TestConnectionPool(unittest.TestCase):
         # Get the only connection
         conn1 = pool.get_connection()
         
-        # Try to get another (should timeout)
-        with self.assertRaises(TimeoutError):
-            pool.get_connection(timeout=0.5)
+        # Another thread must exhaust the pool; the owner intentionally reuses its lease.
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(pool.get_connection, timeout=0.5)
+            with self.assertRaises(TimeoutError):
+                future.result(timeout=3)
         
         pool.return_connection(conn1)
         pool.close_all()

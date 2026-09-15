@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = (2, 3, 15,)
+VERSION = (3, 0, 0,)
 
 
 def get_long_desc():
@@ -52,6 +52,10 @@ setuptools.setup(
         'grpcio>=1.65.1',
         'grpcio-tools>=1.65.1',
     ],
+    extras_require={
+        'async': ['httpx>=0.28.1,<1'],
+        'async-sqlalchemy': ['httpx>=0.28.1,<1', 'SQLAlchemy[asyncio]>=2.0,<2.1'],
+    },
     classifiers=[
         "Operating System :: POSIX :: Linux",
         "License :: OSI Approved :: Apache Software License",
@@ -67,7 +71,8 @@ setuptools.setup(
     ],
     entry_points={
         'sqlalchemy.dialects': [
-            'e6data = e6data_python_connector.dialect:E6dataDialect'
+            'e6data = e6data_python_connector.dialect:E6dataDialect',
+            'e6data.asyncio = e6data_python_connector.async_dialect:E6dataAsyncDialect'
         ],
     }
 )

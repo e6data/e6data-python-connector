@@ -9,6 +9,14 @@ message AuthenticateRequest
   string  user = 1;
   string  password = 2;
   optional string  userNameForImpersonation = 3;
+  // Declared to keep field numbering in step with the engine's copy of this proto. The engine sets
+  // it for Unity Catalog ABAC; this client does not use it, but reserving the number stops a future
+  // change here from colliding with it on the wire.
+  optional string  customIdentityClaim = 4;
+  // OAuth 2.0 access tokens are NOT carried here. They travel in call metadata as
+  // "authorization: Bearer <token>", which is the gRPC convention. 5 is reserved to match the
+  // engine's copy, where it briefly held an in-body token.
+  reserved 5;
 }
 
 // passing session IP as a session and session objects are local to planner
