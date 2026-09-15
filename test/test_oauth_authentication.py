@@ -439,5 +439,65 @@ class AuthenticationFailureMessageTest(unittest.TestCase):
         self.assertIn('OAUTH_ENABLED', str(failure))
 
 
+class CatalogListingTest(unittest.TestCase):
+    """get_catalogs — the top of the metadata hierarchy.
+
+    Untested until now, which mattered more than it looks: it is the only metadata call
+    whose request message carries no session id at all, so the usual "does the credential
+    travel" question has a different answer here and nothing was checking it.
+    """
+
+    def _connect(self, **kwargs):
+        from e6data_python_connector.e6data_grpc import Connection
+        defaults = dict(host='localhost', port=80)
+        defaults.update(kwargs)
+        with patch.object(Connection, '_create_client', Mock(return_value=None)):
+            return Connection(**defaults)
+
+    @staticmethod
+    def _catalogs(*pairs):
+        response = Mock()
+        response.catalogResponses = [Mock(name=n, isDefault=d) for n, d in pairs]
+        # Mock(name=...) sets the mock's own name rather than an attribute, so the
+        # field has to be assigned afterwards to be readable as data.
+        for mock, (n, _) in zip(response.catalogResponses, pairs):
+            mock.name = n
+        response.new_strategy = ''
+        return response
+
+    def test_catalogs_are_unwrapped_to_name_and_default(self):
+        connection = self._connect(username='alice', password='secret')
+        connection._client = Mock()
+        connection._client.getCataloges.return_value = self._catalogs(('glue', True), ('hive', False))
+
+        self.assertEqual(
+            connection.get_catalogs(),
+            [{'name': 'glue', 'isDefault': True}, {'name': 'hive', 'isDefault': False}],
+        )
+
+    @patch('e6data_python_connector.oauth.urllib.request.urlopen')
+    def test_the_bearer_travels_even_though_the_request_is_empty(self, urlopen):
+        # GetCatalogesRequest has no fields, so there is nowhere for a session id to go and
+        # the credential can only arrive as call metadata. If that were dropped here the
+        # call would still succeed today — the planner does not check it — and would start
+        # failing the moment the engine begins to.
+        urlopen.return_value = _FakeResponse({'access_token': 'tok-1', 'expires_in': 3600})
+        connection = self._connect(client_id='client-a', client_secret='shhh', token_url=TOKEN_URL)
+        connection._client = Mock()
+        connection._client.getCataloges.return_value = self._catalogs(('glue', True))
+
+        connection.get_catalogs()
+
+        metadata = dict(connection._client.getCataloges.call_args.kwargs['metadata'])
+        self.assertEqual(metadata['authorization'], 'Bearer tok-1')
+
+    def test_no_catalogs_is_an_empty_list_not_a_failure(self):
+        connection = self._connect(username='alice', password='secret')
+        connection._client = Mock()
+        connection._client.getCataloges.return_value = self._catalogs()
+
+        self.assertEqual(connection.get_catalogs(), [])
+
+
 if __name__ == '__main__':
     unittest.main()

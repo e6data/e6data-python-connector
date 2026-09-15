@@ -1123,6 +1123,35 @@ class Connection(object):
             _set_pending_strategy(get_columns_response.new_strategy)
         return [{'fieldName': row.fieldName, 'fieldType': row.fieldType} for row in get_columns_response.fieldInfo]
 
+    def get_catalogs(self):
+        """
+        Retrieves the catalogs the cluster can see.
+
+        Completes the metadata trio -- catalogs, schemas, tables -- so a caller can walk
+        the whole hierarchy over one connection instead of reaching to a management API
+        for the top level.
+
+        Note the request carries no session id: GetCatalogesRequest is an empty message,
+        and the planner's handler performs no session or token check before answering. The
+        bearer is still sent, as on every other call, so this behaves identically if the
+        engine ever starts requiring one.
+
+        Returns:
+            list: A list of dicts with 'name' and 'isDefault'.
+        """
+        get_catalogs_response = self._client.getCataloges(
+            e6x_engine_pb2.GetCatalogesRequest(),
+            metadata=self._call_metadata(strategy=_get_active_strategy())
+        )
+
+        if hasattr(get_catalogs_response, 'new_strategy') and get_catalogs_response.new_strategy:
+            _set_pending_strategy(get_catalogs_response.new_strategy)
+
+        return [
+            {'name': c.name, 'isDefault': c.isDefault}
+            for c in get_catalogs_response.catalogResponses
+        ]
+
     def get_schema_names(self, catalog):
         """
         Retrieves the list of schema names from the specified catalog.
