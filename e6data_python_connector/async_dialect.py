@@ -216,7 +216,8 @@ class E6dataAsyncDialect(E6dataDialect):
         aliases = {'schema': 'database', 'cluster-name': 'cluster_name',
                    'cluster-uuid': 'cluster_name', 'auto-resume': 'auto_resume'}
         strings = {'catalog', 'database', 'cluster_name', 'ssl_cert'}
-        booleans = {'secure', 'auto_resume', 'debug', 'require_fastbinary'}
+        booleans = {'secure', 'auto_resume', 'debug', 'require_fastbinary',
+                    'enable_result_batch_v2'}
         floats = {'operation_timeout', 'cleanup_timeout', 'oauth_timeout', 'auto_resume_timeout'}
         options = {}
         if url.host is not None:
