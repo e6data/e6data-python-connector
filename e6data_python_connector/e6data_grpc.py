@@ -32,6 +32,7 @@ from e6data_python_connector.datainputstream import get_query_columns_info, read
     is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.oauth import ClientCredentialsTokenProvider
+from e6data_python_connector.result_batch import ResultBatchBuffer, decode_result_batches
 from e6data_python_connector.exceptions import (
     OAuthNotSupportedError, IncompleteResultError, ProgrammingError, OperationalError)
 from e6data_python_connector.strategy import _get_grpc_header
@@ -94,7 +95,8 @@ TYPES_CONVERTER = {
 
 def re_auth(func):
     def wrapper(self, *args, **kwargs):
-        if self.connection._uses_oauth:
+        if (self.connection._uses_oauth or self._result_batch_v2_enabled
+                or self.connection.enable_result_batch_v2):
             # OAuth retries belong to a safe individual RPC before admission. Never
             # replay execute or result retrieval after a query may have been submitted.
             return func(self, *args, **kwargs)
@@ -144,6 +146,26 @@ _escaper = HiveParamEscaper()
 
 # Logger for the module
 logger = logging.getLogger(__name__)
+
+
+def _log_result_batch_fetch(protocol, rpc_seconds, chunk_count=0, serialized_bytes=0,
+                            decode_seconds=0, status='ok'):
+    """Emit bounded metrics without query, identity, or result contents."""
+    logger.debug('Result batch fetch', extra={
+        'result_batch_protocol': protocol,
+        'result_batch_rpc_seconds': rpc_seconds,
+        'result_batch_chunk_count': chunk_count,
+        'result_batch_serialized_bytes': serialized_bytes,
+        'result_batch_decode_seconds': decode_seconds,
+        'result_batch_status': status,
+    })
+
+
+def _result_fetch_remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('Result fetch deadline exceeded.')
+    return remaining
 
 # Thread-safe and process-safe storage for active deployment strategy
 _strategy_lock = threading.Lock()
@@ -397,6 +419,7 @@ class Connection(object):
             oauth_scope: str = None,
             access_token: str = None,
             client_auth_method: str = 'basic',
+            enable_result_batch_v2: bool = False,
     ):
         """
         Parameters
@@ -459,6 +482,14 @@ class Connection(object):
         """
         if not host or not port:
             raise ValueError("host or port cannot be empty.")
+        if not isinstance(enable_result_batch_v2, bool):
+            raise ValueError('enable_result_batch_v2 must be a boolean.')
+        self.enable_result_batch_v2 = enable_result_batch_v2
+        if enable_result_batch_v2 and grpc_options is not None and 'grpc_prepare_timeout' in grpc_options:
+            timeout = grpc_options['grpc_prepare_timeout']
+            if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                    or not math.isfinite(timeout) or timeout <= 0):
+                raise ValueError('grpc_prepare_timeout must be positive finite seconds.')
 
         # Count the credential shapes present rather than picking one by precedence: silently
         # preferring one over another is how a stale value in a config file ends up authenticating
@@ -546,7 +577,9 @@ class Connection(object):
         self._grpc_options = grpc_options
         if self._grpc_options is None:
             self._grpc_options = dict()
-        self.grpc_prepare_timeout = self._grpc_options.get('grpc_prepare_timeout') or 10 * 60  # 10 minutes
+        self.grpc_prepare_timeout = (self._grpc_options.get('grpc_prepare_timeout', 10 * 60)
+                                     if enable_result_batch_v2 else
+                                     self._grpc_options.get('grpc_prepare_timeout') or 10 * 60)
         self.grpc_auto_resume_timeout_seconds = 60 * 5  # 5 minutes
         if 'grpc_auto_resume_timeout_seconds' in self._grpc_options:
             """
@@ -1060,7 +1093,7 @@ class Connection(object):
             query_id (str): The ID of the query to be cleared.
             engine_ip (str, optional): The IP address of the engine. Defaults to None.
         """
-        deadline = _cleanup_deadline(timeout) if self._uses_oauth else None
+        deadline = _cleanup_deadline(timeout) if self._uses_oauth or self.enable_result_batch_v2 else None
         clear_request = e6x_engine_pb2.ClearRequest(
             sessionId=self.get_session_id,
             queryId=query_id,
@@ -1316,14 +1349,29 @@ class Cursor(DBAPICursor):
         self._rowcount = 0
         self._database = self.connection.database if database is None else database
         self._catalog_name = catalog_name if catalog_name else self.connection.catalog_name
+        self._result_batches = ResultBatchBuffer()
+        self._reset_result_batch_state()
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
         pass
 
+    def _reset_result_batch_state(self):
+        self._result_batch_v2_enabled = self.connection.enable_result_batch_v2
+        self._result_protocol = 'v2' if self._result_batch_v2_enabled else 'v1'
+        self._result_session_id = None
+        self._result_batches.clear()
+
+    @property
+    def _uses_result_contract(self):
+        return self.connection._uses_oauth or self._result_batch_v2_enabled
+
     def _fail_result(self, reason):
         if self._result_failure is None:
             self._result_failure = IncompleteResultError(reason, query_id=self._query_id)
+        if self._result_batch_v2_enabled:
+            self._data = None
+            self._result_batches.clear()
         return self._result_failure
 
     def _check_result(self):
@@ -1486,7 +1534,7 @@ class Cursor(DBAPICursor):
         """
          Close the operation handle and reset the cursor state.
          """
-        if self.connection is not None and self.connection._uses_oauth:
+        if self.connection is not None and self._uses_result_contract:
             if self._closed:
                 return
             self._closed = True
@@ -1495,8 +1543,9 @@ class Cursor(DBAPICursor):
                     self.clear(timeout=timeout)
             except Exception:
                 self._cleanup_error = OperationalError('Query cleanup is unconfirmed; known handle retained.')
-                logging.getLogger(__name__).warning('OAuth cursor cleanup unconfirmed; retain query handle for cleanup.')
+                logging.getLogger(__name__).warning('Cursor cleanup unconfirmed; retain query handle for cleanup.')
             self._data = None
+            self._result_batches.clear()
             return
         try:
             self.clear()
@@ -1555,15 +1604,13 @@ class Cursor(DBAPICursor):
         if not query_id:
             query_id = self._query_id
 
-        deadline = _cleanup_deadline(timeout) if self.connection._uses_oauth else None
-        if self.connection._uses_oauth and not query_id:
+        deadline = _cleanup_deadline(timeout) if self._uses_result_contract else None
+        if self._uses_result_contract and not query_id:
+            if self._result_batch_v2_enabled:
+                self._reset_result_batch_state()
             return None
 
-        clear_request = e6x_engine_pb2.ClearOrCancelQueryRequest(
-            sessionId=self.connection.get_session_id,
-            queryId=query_id,
-            engineIP=self._engine_ip
-        )
+        clear_request = self._query_request(e6x_engine_pb2.ClearOrCancelQueryRequest, query_id)
         # Get fresh client after session access (may have been invalidated)
         client = self.connection.client
         if deadline is not None:
@@ -1594,7 +1641,7 @@ class Cursor(DBAPICursor):
                 _strategy_debug_log(f"Last query cleared, triggering pending strategy transition")
                 _apply_pending_strategy(deadline=deadline)
 
-        if self.connection._uses_oauth and query_id == self._query_id:
+        if self._uses_result_contract and query_id == self._query_id:
             self._query_id = self._engine_ip = None
             self._result_failure = None
             self._result_exhausted = False
@@ -1602,6 +1649,7 @@ class Cursor(DBAPICursor):
             self._is_metadata_updated = False
             self._query_columns_description = self._description = None
             self._cleanup_error = None
+            self._reset_result_batch_state()
         return clear_response
 
     def cancel(self, query_id):
@@ -1611,8 +1659,19 @@ class Cursor(DBAPICursor):
         Args:
             query_id (str): The ID of the query to be canceled.
         """
-        # Clean up query strategy mapping for cancelled query
-        self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
+        if self._result_batch_v2_enabled and query_id == self._query_id:
+            self._fail_result('cancelled_result')
+            deadline = _cleanup_deadline(None)
+            request = self._query_request(e6x_engine_pb2.CancelQueryRequest, query_id)
+            metadata = self.connection._call_metadata(
+                engine_ip=self._engine_ip, strategy=_get_query_strategy(query_id, deadline=deadline),
+                deadline=deadline)
+            response = self.connection.client.cancelQuery(
+                request, metadata=metadata, timeout=_result_fetch_remaining(deadline))
+            if response.new_strategy:
+                _set_pending_strategy(response.new_strategy, deadline=deadline)
+        else:
+            self.connection.query_cancel(engine_ip=self._engine_ip, query_id=query_id)
 
         if query_id:
             _cleanup_query_strategy(query_id)
@@ -1636,11 +1695,7 @@ class Cursor(DBAPICursor):
         Returns:
             StatusResponse: The status response of the query.
         """
-        status_request = e6x_engine_pb2.StatusRequest(
-            sessionId=self.connection.get_session_id,
-            queryId=query_id,
-            engineIP=self._engine_ip
-        )
+        status_request = self._query_request(e6x_engine_pb2.StatusRequest, query_id)
         status_response = self.connection.client.status(status_request, metadata=self.metadata)
 
         # Check for new strategy in status response
@@ -1661,8 +1716,12 @@ class Cursor(DBAPICursor):
         Returns:
             str: The query ID of the executed query.
         """
-        if self.connection._uses_oauth:
+        if self._uses_result_contract:
             self._check_result()
+        if ((self._result_batch_v2_enabled or self.connection.enable_result_batch_v2)
+                and self._query_id):
+            self.clear()
+        self._reset_result_batch_state()
         # Semicolon is now not supported. So removing it from query end.
         operation = operation.strip()  # Remove leading and trailing whitespaces.
         if operation.endswith(';'):
@@ -1685,7 +1744,7 @@ class Cursor(DBAPICursor):
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
-            if self.connection._uses_oauth:
+            if self._uses_result_contract:
                 self._result_exhausted = False
                 self._is_metadata_updated = False
                 self._data = self._description = None
@@ -1705,6 +1764,8 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id,
             )
+            if self._result_batch_v2_enabled:
+                self._result_session_id = execute_statement_request.sessionId
             # Get fresh client after session access (may have been invalidated)
             client = self.connection.client
             execute_response = client.executeStatement(
@@ -1729,7 +1790,7 @@ class Cursor(DBAPICursor):
 
             self._query_id = prepare_statement_response.queryId
             self._engine_ip = prepare_statement_response.engineIP
-            if self.connection._uses_oauth:
+            if self._uses_result_contract:
                 self._result_exhausted = False
                 self._is_metadata_updated = False
                 self._data = self._description = None
@@ -1749,6 +1810,8 @@ class Cursor(DBAPICursor):
                 sessionId=self.connection.get_session_id,
                 queryId=self._query_id
             )
+            if self._result_batch_v2_enabled:
+                self._result_session_id = execute_statement_request.sessionId
             # Get fresh client after session access (may have been invalidated)
             client = self.connection.client
             execute_response = client.executeStatementV2(
@@ -1775,21 +1838,21 @@ class Cursor(DBAPICursor):
         self.update_mete_data()
         return self._rowcount
 
-    def update_mete_data(self):
+    def update_mete_data(self, deadline=None):
         """
         Update the metadata for the current query.
         """
-        result_meta_data_request = e6x_engine_pb2.GetResultMetadataRequest(
-            engineIP=self._engine_ip,
-            sessionId=self.connection.get_session_id,
-            queryId=self._query_id
-        )
+        result_meta_data_request = self._query_request(e6x_engine_pb2.GetResultMetadataRequest)
         # Get fresh client after session access (may have been invalidated)
         client = self.connection.client
-        get_result_metadata_response = client.getResultMetadata(
-            result_meta_data_request,
-            metadata=self.metadata
-        )
+        if deadline is None:
+            get_result_metadata_response = client.getResultMetadata(result_meta_data_request, metadata=self.metadata)
+        else:
+            metadata = self.connection._call_metadata(
+                engine_ip=self._engine_ip, strategy=_get_query_strategy(self._query_id, deadline=deadline),
+                deadline=deadline)
+            get_result_metadata_response = client.getResultMetadata(
+                result_meta_data_request, metadata=metadata, timeout=_result_fetch_remaining(deadline))
 
         # Check for new strategy in metadata response
         if hasattr(get_result_metadata_response, 'new_strategy') and get_result_metadata_response.new_strategy:
@@ -1811,7 +1874,7 @@ class Cursor(DBAPICursor):
         batch_size = self._arraysize
         self._data = list()
         for i in range(batch_size):
-            rows = self.fetch_batch()
+            rows = self._next_result_chunk() if self._result_batch_v2_enabled else self.fetch_batch()
             if rows is None:
                 return
             try:
@@ -1829,20 +1892,20 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of all rows fetched from the server.
         """
-        if self.connection._uses_oauth:
+        if self._uses_result_contract:
             self._check_result()
             if self._data is None:
                 self._data = []
         else:
             self._data = list()
         while True:
-            rows = self.fetch_batch()
+            rows = self._next_result_chunk() if self._result_batch_v2_enabled else self.fetch_batch()
             if rows is None:
                 break
             try:
                 self._data = self._data + rows
             except Exception as error:
-                if self.connection._uses_oauth:
+                if self._uses_result_contract:
                     raise self._fail_result('aggregation_failed') from error
                 raise
         rows = self._data
@@ -1859,10 +1922,10 @@ class Cursor(DBAPICursor):
         Yields:
             list: A list of rows fetched from the server.
         """
-        if self.connection._uses_oauth:
+        if self._uses_result_contract:
             self._check_result()
             if query_id and query_id != self._query_id:
-                raise ValueError('Cannot replace the active OAuth query handle.')
+                raise ValueError('Cannot replace the active query handle.')
             if self._data:
                 rows, self._data = self._data, None
                 yield rows
@@ -1874,43 +1937,164 @@ class Cursor(DBAPICursor):
                 return
             yield rows
 
-    def fetch_batch(self):
-        """
-        Fetch a batch of rows from the server.
+    def _fetch_session_id(self):
+        """Use the active query's legacy session without reauthenticating a read."""
+        if self.connection._uses_oauth:
+            return ''
+        if self._result_session_id is None:
+            self._result_session_id = self.connection._session_id
+        if not self._result_session_id:
+            raise ProgrammingError('An active query session is required to fetch results.')
+        return self._result_session_id
 
-        Returns:
-            list: A list of rows fetched from the server.
-        """
+    def _query_request(self, request_type, query_id=None):
+        """Build an owned-query request without replacing its refreshed session."""
+        if query_id is None:
+            query_id = self._query_id
+        session_id = (self._fetch_session_id()
+                      if self._result_batch_v2_enabled and query_id == self._query_id
+                      else self.connection.get_session_id)
+        return request_type(engineIP=self._engine_ip, sessionId=session_id, queryId=query_id)
+
+    def _accept_result_batch(self, response, deadline):
+        """Decode atomically, then publish one envelope within its original budget."""
+        # Query identity is checked by the caller before accepting a response.
+        # Retain cleanup credentials even if row decoding or its deadline fails.
+        if not self.connection._uses_oauth and response.sessionId:
+            self._result_session_id = response.sessionId
+        try:
+            _result_fetch_remaining(deadline)
+        except TimeoutError as error:
+            raise self._fail_result('ambiguous_result') from error
+        try:
+            if self._result_protocol == 'v2':
+                chunks = decode_result_batches(self._query_columns_description, response.resultBatches)
+                terminal = response.endOfStream
+            else:
+                rows = (read_rows_from_chunk(self._query_columns_description, response.resultBatch, strict=True)
+                        if response.resultBatch else None)
+                chunks = [rows] if rows else []
+                terminal = not rows
+        except Exception as error:
+            raise self._fail_result('decode_failed') from error
+        try:
+            _result_fetch_remaining(deadline)
+            if response.new_strategy:
+                _set_pending_strategy(response.new_strategy.lower(), deadline=deadline)
+            self._result_batches.accept(chunks, end_of_stream=terminal)
+        except Exception as error:
+            raise self._fail_result('ambiguous_result') from error
+
+    def _next_result_chunk(self):
+        """Drain one query's envelope before another sequential result request."""
+        self._check_result()
+        rows = self._result_batches.pop()
+        if rows is not None:
+            return rows
+        if self._result_batches.finished or self._result_exhausted:
+            self._result_exhausted = True
+            return None
+        if not self._query_id:
+            raise ProgrammingError('No active query is available to fetch.')
+        deadline = time.monotonic() + self.connection.grpc_prepare_timeout
+        if not self._is_metadata_updated:
+            self.update_mete_data(deadline=deadline)
+        query_id, engine_ip = self._query_id, self._engine_ip
+        backoff = .01
+        consumed = False
+        while True:
+            try:
+                _result_fetch_remaining(deadline)
+                metadata = self.connection._call_metadata(
+                    engine_ip=engine_ip, strategy=_get_query_strategy(query_id, deadline=deadline),
+                    deadline=deadline)
+                request = e6x_engine_pb2.GetNextResultBatchRequest(
+                    engineIP=engine_ip, sessionId=self._fetch_session_id(), queryId=query_id)
+                remaining = _result_fetch_remaining(deadline)
+            except Exception as error:
+                if consumed:
+                    raise self._fail_result('ambiguous_result') from error
+                raise
+            protocol = self._result_protocol
+            method = (self.connection.client.getNextResultBatchV2 if protocol == 'v2'
+                      else self.connection.client.getNextResultBatch)
+            start = time.monotonic()
+            try:
+                response = method(request, metadata=metadata, timeout=remaining)
+            except Exception as error:
+                unimplemented = isinstance(error, grpc.RpcError) and error.code() == grpc.StatusCode.UNIMPLEMENTED
+                _log_result_batch_fetch(protocol, time.monotonic() - start,
+                                        status='unimplemented' if unimplemented else 'error')
+                if protocol == 'v2' and unimplemented:
+                    self._result_protocol = 'v1'
+                    logger.debug('Result batch compatibility fallback', extra={'result_batch_fallback': True})
+                    continue
+                raise self._fail_result('ambiguous_result') from error
+            rpc_seconds = time.monotonic() - start
+            consumed = True
+            decode_start = time.monotonic()
+            try:
+                if self._query_id != query_id or self._engine_ip != engine_ip:
+                    raise self._fail_result('ambiguous_result')
+                self._accept_result_batch(response, deadline)
+            except Exception:
+                _log_result_batch_fetch(protocol, rpc_seconds, status='error')
+                raise
+            _log_result_batch_fetch(
+                protocol, rpc_seconds,
+                len(response.resultBatches) if protocol == 'v2' else int(bool(response.resultBatch)),
+                response.ByteSize(), time.monotonic() - decode_start)
+            rows = self._result_batches.pop()
+            if rows is not None:
+                return rows
+            if self._result_batches.finished:
+                self._result_exhausted = True
+                return None
+            try:
+                time.sleep(min(backoff, _result_fetch_remaining(deadline)))
+            except Exception as error:
+                raise self._fail_result('ambiguous_result') from error
+            backoff = min(backoff * 2, .1)
+
+    def fetch_batch(self):
+        """Fetch one original result chunk, preserving buffered row leftovers."""
+        if self._result_batch_v2_enabled:
+            self._check_result()
+            if self._data:
+                rows, self._data = self._data, None
+                return rows
+            return self._next_result_chunk()
         if self.connection._uses_oauth:
             return self._fetch_batch_oauth()
-        get_next_result_batch_request = e6x_engine_pb2.GetNextResultBatchRequest(
-            engineIP=self._engine_ip,
-            sessionId=self.connection.get_session_id,
-            queryId=self._query_id
-        )
-        # Get fresh client after session access (may have been invalidated)
+        request = e6x_engine_pb2.GetNextResultBatchRequest(
+            engineIP=self._engine_ip, sessionId=self.connection.get_session_id, queryId=self._query_id)
         client = self.connection.client
-        get_next_result_batch_response = client.getNextResultBatch(
-            get_next_result_batch_request,
-            metadata=self.metadata
-        )
-
-        # Check for new strategy in batch response
-        if hasattr(get_next_result_batch_response, 'new_strategy') and get_next_result_batch_response.new_strategy:
-            new_strategy = get_next_result_batch_response.new_strategy.lower()
-            if new_strategy != _get_active_strategy():
-                _set_pending_strategy(new_strategy)
-
-        buffer = get_next_result_batch_response.resultBatch
-        if not self._is_metadata_updated:
-            self.update_mete_data()
-        if not buffer or len(buffer) == 0:
-            return None
-        # one batch retrieves the predefined set of rows
-        return read_rows_from_chunk(
-            self._query_columns_description,
-            buffer
-        )
+        metadata = self.metadata
+        start = time.monotonic()
+        try:
+            response = client.getNextResultBatch(request, metadata=metadata)
+        except Exception as error:
+            unimplemented = isinstance(error, grpc.RpcError) and error.code() == grpc.StatusCode.UNIMPLEMENTED
+            _log_result_batch_fetch('v1', time.monotonic() - start,
+                                    status='unimplemented' if unimplemented else 'error')
+            raise
+        rpc_seconds = time.monotonic() - start
+        try:
+            if response.new_strategy:
+                new_strategy = response.new_strategy.lower()
+                if new_strategy != _get_active_strategy():
+                    _set_pending_strategy(new_strategy)
+            buffer = response.resultBatch
+            if not self._is_metadata_updated:
+                self.update_mete_data()
+            decode_start = time.monotonic()
+            rows = read_rows_from_chunk(self._query_columns_description, buffer) if buffer else None
+        except Exception:
+            _log_result_batch_fetch('v1', rpc_seconds, status='error')
+            raise
+        _log_result_batch_fetch('v1', rpc_seconds, int(bool(buffer)), response.ByteSize(),
+                                time.monotonic() - decode_start)
+        return rows
 
     def _decode_batch_oauth(self, buffer):
         try:
@@ -1936,17 +2120,29 @@ class Cursor(DBAPICursor):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('Result deadline exceeded before dispatch.')
+        start = time.monotonic()
         try:
             response = self.connection.client.getNextResultBatch(request, metadata=metadata, timeout=remaining)
         except Exception as error:
+            unimplemented = isinstance(error, grpc.RpcError) and error.code() == grpc.StatusCode.UNIMPLEMENTED
+            _log_result_batch_fetch('v1', time.monotonic() - start,
+                                    status='unimplemented' if unimplemented else 'error')
             raise self._fail_result('ambiguous_result') from error
+        rpc_seconds = time.monotonic() - start
         buffer = response.resultBatch
+        decode_start = time.monotonic()
         if not buffer:
             self._result_exhausted = True
+            _log_result_batch_fetch('v1', rpc_seconds, serialized_bytes=response.ByteSize())
             return None
-        rows = self._decode_batch_oauth(buffer)
-        if response.new_strategy:
-            _set_pending_strategy(response.new_strategy.lower())
+        try:
+            rows = self._decode_batch_oauth(buffer)
+            if response.new_strategy:
+                _set_pending_strategy(response.new_strategy.lower())
+        except Exception:
+            _log_result_batch_fetch('v1', rpc_seconds, status='error')
+            raise
+        _log_result_batch_fetch('v1', rpc_seconds, 1, response.ByteSize(), time.monotonic() - decode_start)
         return rows
 
     def fetchall(self):
@@ -1968,20 +2164,20 @@ class Cursor(DBAPICursor):
         Returns:
             list: A list of rows fetched from the server.
         """
-        if self.connection._uses_oauth:
+        if self._uses_result_contract:
             self._check_result()
         if size is None:
             size = self.arraysize
         if self._data is None:
             self._data = list()
         while len(self._data) < size:
-            rows = self.fetch_batch()
+            rows = self._next_result_chunk() if self._result_batch_v2_enabled else self.fetch_batch()
             if rows is None:
                 break
             try:
                 self._data += rows
             except Exception as error:
-                if self.connection._uses_oauth:
+                if self._uses_result_contract:
                     raise self._fail_result('aggregation_failed') from error
                 raise
         if len(self._data) <= size:
@@ -2011,11 +2207,7 @@ class Cursor(DBAPICursor):
         Returns:
             str: The execution plan of the query.
         """
-        explain_request = e6x_engine_pb2.ExplainRequest(
-            engineIP=self._engine_ip,
-            sessionId=self.connection.get_session_id,
-            queryId=self._query_id
-        )
+        explain_request = self._query_request(e6x_engine_pb2.ExplainRequest)
         explain_response = self.connection.client.explain(
             explain_request,
             metadata=self.metadata
@@ -2029,11 +2221,7 @@ class Cursor(DBAPICursor):
         Returns:
             dict: The execution plan of the query.
         """
-        explain_analyze_request = e6x_engine_pb2.ExplainAnalyzeRequest(
-            engineIP=self._engine_ip,
-            sessionId=self.connection.get_session_id,
-            queryId=self._query_id
-        )
+        explain_analyze_request = self._query_request(e6x_engine_pb2.ExplainAnalyzeRequest)
         # Get fresh client after session access (may have been invalidated)
         client = self.connection.client
         explain_analyze_response = client.explainAnalyze(

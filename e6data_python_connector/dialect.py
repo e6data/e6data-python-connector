@@ -248,6 +248,9 @@ class E6dataDialect(default.DefaultDialect):
         self.secure = url.query.get("secure") == "true"
         self.auto_resume = url.query.get("auto-resume", "true") == "true"  # default to True
         self.debug = url.query.get("debug", "false") == "true"  # default to True
+        result_batch_v2 = url.query.get('enable_result_batch_v2', 'false')
+        if result_batch_v2 not in ('true', 'false'):
+            raise ValueError('enable_result_batch_v2 must be true or false.')
         if not self.catalog_name:
             raise Exception('Please specify catalog in query parameter.')
 
@@ -255,7 +258,7 @@ class E6dataDialect(default.DefaultDialect):
         grpc_options = {}
         for key, value in url.query.items():
             # Skip known parameters that are not grpc_options
-            if key not in {"schema", "catalog", "cluster-uuid", "secure", "auto-resume"}:
+            if key not in {"schema", "catalog", "cluster-uuid", "secure", "auto-resume", "enable_result_batch_v2"}:
                 grpc_options[key] = value
 
         kwargs = {
@@ -270,8 +273,10 @@ class E6dataDialect(default.DefaultDialect):
             'secure': self.secure,
             'auto_resume': self.auto_resume,
             'grpc_options': grpc_options,
-            'debug': self.debug
+            'debug': self.debug,
         }
+        if 'enable_result_batch_v2' in url.query:
+            kwargs['enable_result_batch_v2'] = result_batch_v2 == 'true'
         return [], kwargs
 
     def get_schema_names(self, connection, **kw):
