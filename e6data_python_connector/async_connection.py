@@ -50,7 +50,8 @@ class AsyncConnection:
                  token_url=None, oauth_scope=None, access_token=None,
                  client_auth_method='basic', *, operation_timeout=600.0,
                  oauth_timeout=10.0, cleanup_timeout=10.0, auto_resume_timeout=300.0,
-                 max_receive_message_bytes=64 * 1024 * 1024):
+                 max_receive_message_bytes=64 * 1024 * 1024,
+                 enable_result_batch_v2=False):
         if sys.version_info < (3, 11):
             raise RuntimeError('The async API requires Python 3.11 or newer.')
         try:
@@ -78,13 +79,16 @@ class AsyncConnection:
             raise ValueError('Async OAuth requires verified TLS (secure=True).')
         if ssl_cert is not None and not isinstance(ssl_cert, (str, bytes)):
             raise ValueError('ssl_cert must be a certificate path or PEM bytes.')
+        if not isinstance(enable_result_batch_v2, bool):
+            raise ValueError('enable_result_batch_v2 must be a boolean.')
         settings = dict(host=host, port=port, username=username, password=password,
                         catalog=catalog, database=database, cluster_name=cluster_name,
                         secure=bool(secure), ssl_cert=ssl_cert, auto_resume=auto_resume,
                         scheme=scheme, debug=debug, require_fastbinary=require_fastbinary,
                         client_id=client_id, client_secret=client_secret, token_url=token_url,
                         oauth_scope=oauth_scope, access_token=access_token,
-                        client_auth_method=client_auth_method)
+                        client_auth_method=client_auth_method,
+                        enable_result_batch_v2=enable_result_batch_v2)
         for name, value in [('operation_timeout', operation_timeout), ('oauth_timeout', oauth_timeout),
                             ('cleanup_timeout', cleanup_timeout), ('auto_resume_timeout', auto_resume_timeout)]:
             settings[name] = validate_positive_timeout(value, name)

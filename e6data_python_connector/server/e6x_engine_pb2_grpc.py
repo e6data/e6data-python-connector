@@ -84,6 +84,11 @@ class QueryEngineServiceStub(object):
                 request_serializer=e6x__engine__pb2.GetNextResultBatchRequest.SerializeToString,
                 response_deserializer=e6x__engine__pb2.GetNextResultBatchResponse.FromString,
                 _registered_method=True)
+        self.getNextResultBatchV2 = channel.unary_unary(
+                '/QueryEngineService/getNextResultBatchV2',
+                request_serializer=e6x__engine__pb2.GetNextResultBatchRequest.SerializeToString,
+                response_deserializer=e6x__engine__pb2.GetNextResultBatchV2Response.FromString,
+                _registered_method=True)
         self.explainAnalyze = channel.unary_unary(
                 '/QueryEngineService/explainAnalyze',
                 request_serializer=e6x__engine__pb2.ExplainAnalyzeRequest.SerializeToString,
@@ -301,6 +306,12 @@ class QueryEngineServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getNextResultBatch(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getNextResultBatchV2(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -552,6 +563,11 @@ def add_QueryEngineServiceServicer_to_server(servicer, server):
                     servicer.getNextResultBatch,
                     request_deserializer=e6x__engine__pb2.GetNextResultBatchRequest.FromString,
                     response_serializer=e6x__engine__pb2.GetNextResultBatchResponse.SerializeToString,
+            ),
+            'getNextResultBatchV2': grpc.unary_unary_rpc_method_handler(
+                    servicer.getNextResultBatchV2,
+                    request_deserializer=e6x__engine__pb2.GetNextResultBatchRequest.FromString,
+                    response_serializer=e6x__engine__pb2.GetNextResultBatchV2Response.SerializeToString,
             ),
             'explainAnalyze': grpc.unary_unary_rpc_method_handler(
                     servicer.explainAnalyze,
@@ -957,6 +973,33 @@ class QueryEngineService(object):
             '/QueryEngineService/getNextResultBatch',
             e6x__engine__pb2.GetNextResultBatchRequest.SerializeToString,
             e6x__engine__pb2.GetNextResultBatchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def getNextResultBatchV2(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/QueryEngineService/getNextResultBatchV2',
+            e6x__engine__pb2.GetNextResultBatchRequest.SerializeToString,
+            e6x__engine__pb2.GetNextResultBatchV2Response.FromString,
             options,
             channel_credentials,
             insecure,

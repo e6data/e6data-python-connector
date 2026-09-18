@@ -423,6 +423,88 @@ database = '<new_database_name>'  # Replace with the new database.
 cursor = conn.cursor(database, catalog_name)
 ```
 
+### Opt in to multi-chunk result batches
+
+`enable_result_batch_v2=True` lets a compatible planner return several result
+chunks in one `getNextResultBatchV2` response. The default is `False`, which keeps
+the existing V1 protocol. Increasing `arraysize` or `fetchmany(size)` changes how
+many rows your application receives per call; it does not change the planner's
+response size.
+
+The planner must support V2 and have `ENABLE_GET_NEXT_RESULT_BATCH_V2` enabled.
+`ENABLE_GET_NEXT_CHUNK_V2` controls the separate executor-to-planner boundary.
+Record both flags when qualifying a deployment. V2 can reduce network round
+trips, but it does not reduce the number of result bytes or extend the planner's
+query lifetime. Completion of a 20-million-row result within 900 seconds must be
+measured against the actual workload and deployment.
+
+The following examples use your existing `connection_options`, `sql`, and
+`consume` function. Choose a positive `result_receive_limit_bytes` from measured
+V2 response sizes and the client's memory budget. The sync API preserves its
+existing gRPC options, so supply a finite receive limit for a V2 rollout:
+
+```python
+from e6data_python_connector import Connection
+
+sync_options = {
+    **connection_options,
+    "enable_result_batch_v2": True,
+    "grpc_options": {
+        **connection_options.get("grpc_options", {}),
+        "max_receive_message_length": result_receive_limit_bytes,
+    },
+}
+with Connection(**sync_options) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        for rows in cursor.fetchall_buffer():
+            consume(rows)
+```
+
+The async API keeps its finite 64 MiB default. Set
+`max_receive_message_bytes` to change that limit. If `grpc_options` also contains
+a receive limit, it must agree with this value.
+
+```python
+from e6data_python_connector.aio import AsyncConnection
+
+async_options = {
+    **connection_options,
+    "enable_result_batch_v2": True,
+    "max_receive_message_bytes": result_receive_limit_bytes,
+}
+async with AsyncConnection(**async_options) as connection:
+    async with connection.cursor() as cursor:
+        await cursor.execute(sql)
+        async for rows in cursor.fetchall_buffer():
+            consume(rows)
+```
+
+SQLAlchemy accepts the same opt-in through `connect_args`:
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine
+
+engine = create_engine("e6data://", connect_args=sync_options)
+async_engine = create_async_engine("e6data+asyncio://", connect_args=async_options)
+```
+
+Fetch return shapes and row order stay the same. `fetchall_buffer()` yields
+decoded chunks; a V2 response can contain several chunks. All chunks in an
+envelope are decoded before any are exposed, so V2 may use more memory and delay
+the first chunk compared with V1. `fetchall()` still retains the full result.
+There is no prefetch or parallel fetching for a query.
+
+An `UNIMPLEMENTED` response switches that query to V1. A later query may try V2
+again. Other fetch failures do not trigger a protocol fallback or query replay.
+To disable V2 for new connections, omit the option or set it to `False`.
+
+The [result batch qualification instructions](test/README.md#result-batch-v2-qualification)
+cover protocol parity and the explicit large-result benchmark. Real-engine
+qualification and the 900-second acceptance measurement have not been run for
+this change.
+
 ### Get Query Time Metrics
 ```python
 import json

@@ -19,6 +19,27 @@ from e6data_python_connector.cluster_server import cluster_pb2, cluster_pb2_grpc
 from e6data_python_connector.server import e6x_engine_pb2, e6x_engine_pb2_grpc
 
 
+def test_result_batch_v2_wire_contract():
+    service = e6x_engine_pb2.DESCRIPTOR.services_by_name['QueryEngineService']
+    assert 'getNextResultBatchV2' in service.methods_by_name
+    method = service.methods_by_name['getNextResultBatchV2']
+    assert method.input_type.full_name == e6x_engine_pb2.GetNextResultBatchRequest.DESCRIPTOR.full_name
+    response = e6x_engine_pb2.GetNextResultBatchV2Response(
+        resultBatches=[b'first', b'second'], sessionId='session',
+        new_strategy='green', endOfStream=True,
+    )
+    restored = type(response).FromString(response.SerializeToString())
+    assert list(restored.resultBatches) == [b'first', b'second']
+    assert restored.endOfStream
+    assert method.output_type.full_name == response.DESCRIPTOR.full_name
+    assert {name: field.number for name, field in response.DESCRIPTOR.fields_by_name.items()} == {
+        'resultBatches': 1, 'sessionId': 2, 'new_strategy': 3, 'endOfStream': 4,
+    }
+    assert response.HasField('new_strategy')
+    assert not type(response)().HasField('new_strategy')
+    assert e6x_engine_pb2.GetNextResultBatchResponse.DESCRIPTOR.fields_by_name['resultBatch'].number == 2
+
+
 SERVICES = (
     (e6x_engine_pb2, e6x_engine_pb2_grpc, "QueryEngineService"),
     (cluster_pb2, cluster_pb2_grpc, "ClusterService"),
@@ -76,5 +97,5 @@ def test_python_and_native_protobuf_runtimes_have_identical_wire_contracts():
         assert result.returncode == 0, result.stderr
         results[runtime] = json.loads(result.stdout)
         assert results[runtime]["runtime"] == runtime
-        assert len(results[runtime]["wires"]) == 88
+        assert len(results[runtime]["wires"]) == 89
     assert results["python"]["wires"] == results["upb"]["wires"]

@@ -139,6 +139,13 @@ message GetNextResultBatchResponse
   optional string new_strategy = 4;
 }
 
+message GetNextResultBatchV2Response {
+  repeated bytes resultBatches = 1;
+  string sessionId = 2;
+  optional string new_strategy = 3;
+  bool endOfStream = 4;
+}
+
 message ExplainAnalyzeRequest
 {
   string engineIP = 1;
@@ -588,6 +595,7 @@ service QueryEngineService
   rpc getDynamicParams(GetDynamicParamsRequest) returns (GetDynamicParamsResponse);
 
   rpc getNextResultBatch(GetNextResultBatchRequest) returns (GetNextResultBatchResponse);
+  rpc getNextResultBatchV2(GetNextResultBatchRequest) returns (GetNextResultBatchV2Response);
 
   rpc explainAnalyze(ExplainAnalyzeRequest) returns (ExplainAnalyzeResponse);
 
