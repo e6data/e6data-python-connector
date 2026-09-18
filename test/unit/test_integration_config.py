@@ -191,3 +191,20 @@ def test_rejects_non_object_json_without_echoing_file_contents(tmp_path):
 
     assert "JSON object" in str(raised.value)
     assert "sensitive-test-input" not in str(raised.value)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_result_batch_v2_option_reaches_live_connection(tmp_path, enabled):
+    path = write_config(tmp_path, connection_kwargs={
+        "host": "localhost", "port": 1, "enable_result_batch_v2": enabled,
+    })
+    assert load_integration_config(path, environ={}).connection_kwargs["enable_result_batch_v2"] is enabled
+
+
+@pytest.mark.parametrize("enabled", ["true", 1, None])
+def test_result_batch_v2_live_option_requires_actual_boolean(tmp_path, enabled):
+    path = write_config(tmp_path, connection_kwargs={
+        "host": "localhost", "port": 1, "enable_result_batch_v2": enabled,
+    })
+    with pytest.raises(IntegrationConfigError, match="boolean"):
+        load_integration_config(path, environ={})
