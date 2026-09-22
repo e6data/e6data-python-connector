@@ -265,6 +265,8 @@ def test_actual_dispatched_connection_failure_does_not_switch_to_v1(name, caplog
     async def run(port):
         async with connection(host='127.0.0.1', port=port, enable_result_batch_v2=True,
                               operation_timeout=.05, cleanup_timeout=.02) as conn:
+            # The injected query skips execute, which normally starts workers.
+            await conn._ensure_decoder(asyncio.get_running_loop().time() + 5)
             cursor = active_cursor(conn)
             cursor._route = conn._register_route(QueryRoute(conn.target, 'unissued', '', conn.strategy))
             with pytest.raises(grpc.aio.AioRpcError) as caught:

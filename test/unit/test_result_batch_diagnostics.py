@@ -181,7 +181,9 @@ def test_async_fetch_preserves_rpc_error_and_blocks_later_fetches(generated_serv
         host, port = generated_server[0].rsplit(':', 1)
         async with AsyncConnection(host=host, port=int(port), username='local-user', password='local-input',
                                    auto_resume=False, require_fastbinary=False, enable_result_batch_v2=v2,
-                                   operation_timeout=.5, cleanup_timeout=.05) as conn:
+                                    operation_timeout=.5, cleanup_timeout=.05) as conn:
+            # Injected queries skip execute, which normally starts the decoder.
+            await conn._ensure_decoder(asyncio.get_running_loop().time() + 5)
             conn._session_id = 'unissued-local-session'
             cursor = AsyncCursor(conn)
             cursor._state = 'ACTIVE'
@@ -214,7 +216,8 @@ def test_async_failed_aggregate_discards_buffered_rows(generated_server, name, v
         host, port = generated_server[0].rsplit(':', 1)
         async with AsyncConnection(host=host, port=int(port), username='local-user', password='local-input',
                                    auto_resume=False, require_fastbinary=False, enable_result_batch_v2=v2,
-                                   operation_timeout=.5, cleanup_timeout=.05) as conn:
+                                    operation_timeout=.5, cleanup_timeout=.05) as conn:
+            await conn._ensure_decoder(asyncio.get_running_loop().time() + 5)
             conn._session_id = 'unissued-local-session'
             cursor = AsyncCursor(conn)
             cursor._state = 'ACTIVE'
@@ -284,7 +287,8 @@ def test_async_fetch_returns_the_same_transport_exception(generated_server, v2):
         async with grpc.aio.insecure_channel(generated_server[0], interceptors=[observer]) as channel:
             async with AsyncConnection(host=host, port=int(port), username='local-user', password='local-input',
                                        auto_resume=False, require_fastbinary=False, enable_result_batch_v2=v2,
-                                       operation_timeout=.5, cleanup_timeout=.05) as conn:
+                                        operation_timeout=.5, cleanup_timeout=.05) as conn:
+                await conn._ensure_decoder(asyncio.get_running_loop().time() + 5)
                 conn._client = bindings.QueryEngineServiceStub(channel)
                 conn._session_id = 'unissued-local-session'
                 cursor = AsyncCursor(conn)

@@ -316,6 +316,8 @@ class AsyncConnectionPool:
                     healthy = healthy and cursor._state != 'SUBMISSION_UNKNOWN'
                     await cursor._close_owned(deadline)
                     healthy = healthy and cursor.cleanup_error is None
+                    healthy = (healthy and cursor._pending_result is None
+                               and not cursor._retired_results)
                 healthy = (healthy and not connection._routes and not connection._ambiguous_submissions
                            and connection._state == 'open')
         except (Exception, asyncio.CancelledError):

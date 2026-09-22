@@ -425,90 +425,112 @@ cursor = conn.cursor(database, catalog_name)
 
 ### Opt in to multi-chunk result batches
 
-`enable_result_batch_v2=True` lets a compatible planner return several result
-chunks in one `getNextResultBatchV2` response. The default is `False`, which keeps
-the existing V1 protocol. Increasing `arraysize` or `fetchmany(size)` changes how
-many rows your application receives per call; it does not change the planner's
-response size.
+Set `enable_result_batch_v2=True` to enable V2 batches, one-envelope prefetch,
+and bounded parallel chunk decoding together. It defaults to `False`. There
+are no separate public prefetch or decoding switches. `arraysize` and
+`fetchmany(size)` only change the number of rows returned to the application.
 
 The planner must support V2 and have `ENABLE_GET_NEXT_RESULT_BATCH_V2` enabled.
-`ENABLE_GET_NEXT_CHUNK_V2` controls the separate executor-to-planner boundary.
-Record both flags when qualifying a deployment. V2 can reduce network round
-trips, but it does not reduce the number of result bytes or extend the planner's
-query lifetime. Completion of a 20-million-row result within 900 seconds must be
-measured against the actual workload and deployment.
+`ENABLE_GET_NEXT_CHUNK_V2` controls a separate executor-to-planner boundary.
+These flags do not extend the planner's query lifetime. Finishing a large result
+within 900 seconds still needs a measurement on the target deployment.
 
-The following examples use your existing `connection_options`, `sql`, and
-`consume` function. Choose a positive `result_receive_limit_bytes` from measured
-V2 response sizes and the client's memory budget. The sync API preserves its
-existing gRPC options, so supply a finite receive limit for a V2 rollout:
+The optimized path requires ordinary GIL-enabled CPython 3.11 through 3.13 and
+an import-safe application entry point. Put application startup inside
+`if __name__ == "__main__":`, including when using SQLAlchemy. Interactive,
+daemon and frozen applications are rejected before query submission. Two
+workers use the explicit `spawn` method; the application's global multiprocessing
+start method is unchanged. An unguarded main script can run its other import
+side effects, so keep all application startup inside the guard.
+
+Both APIs default to a 64 MiB receive limit when V2 is enabled. A positive finite
+custom limit is allowed; unlimited receive sizes are rejected for V2. The sync
+flag-off path keeps its existing options. For async, set
+`max_receive_message_bytes`; any receive limit in `grpc_options` must agree.
+Choose limits from measured envelope sizes and the client's memory budget.
+
+These examples use your existing `connection_options`, `sql`, and `consume`:
 
 ```python
 from e6data_python_connector import Connection
 
-sync_options = {
-    **connection_options,
-    "enable_result_batch_v2": True,
-    "grpc_options": {
-        **connection_options.get("grpc_options", {}),
-        "max_receive_message_length": result_receive_limit_bytes,
-    },
-}
-with Connection(**sync_options) as connection:
-    with connection.cursor() as cursor:
-        cursor.execute(sql)
-        for rows in cursor.fetchall_buffer():
-            consume(rows)
+
+def main():
+    options = {**connection_options, "enable_result_batch_v2": True}
+    with Connection(**options) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql)
+            for rows in cursor.fetchall_buffer():
+                consume(rows)
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-The async API keeps its finite 64 MiB default. Set
-`max_receive_message_bytes` to change that limit. If `grpc_options` also contains
-a receive limit, it must agree with this value.
-
 ```python
+import asyncio
 from e6data_python_connector.aio import AsyncConnection
 
-async_options = {
-    **connection_options,
-    "enable_result_batch_v2": True,
-    "max_receive_message_bytes": result_receive_limit_bytes,
-}
-async with AsyncConnection(**async_options) as connection:
-    async with connection.cursor() as cursor:
-        await cursor.execute(sql)
-        async for rows in cursor.fetchall_buffer():
-            consume(rows)
+
+async def main():
+    options = {**connection_options, "enable_result_batch_v2": True}
+    async with AsyncConnection(**options) as connection:
+        async with connection.cursor() as cursor:
+            await cursor.execute(sql)
+            async for rows in cursor.fetchall_buffer():
+                consume(rows)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-SQLAlchemy accepts the same opt-in through `connect_args`:
+SQLAlchemy accepts the same flag through `connect_args`. Create and use engines
+inside the guarded application entry point:
 
 ```python
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import create_async_engine
-
-engine = create_engine("e6data://", connect_args=sync_options)
-async_engine = create_async_engine("e6data+asyncio://", connect_args=async_options)
+connect_args = {**connection_options, "enable_result_batch_v2": True}
+engine = create_engine("e6data://", connect_args=connect_args)
+async_engine = create_async_engine("e6data+asyncio://", connect_args=connect_args)
 ```
 
-Fetch return shapes and row order stay the same. `fetchall_buffer()` yields
-decoded chunks; a V2 response can contain several chunks. All chunks in an
-envelope are decoded before any are exposed, so V2 may use more memory and delay
-the first chunk compared with V1. `fetchall()` still retains the full result.
-There is no prefetch or parallel fetching for a query.
+The connector starts the next result RPC after the current response arrives,
+before decoding its chunks. There is at most one pending envelope per cursor
+and four across the process. A completed response keeps its slot until consumed
+or discarded. Result RPCs for the same query never overlap. A completed success
+can wait while the application is idle; an in-flight request keeps its original
+transport deadline. The next fetch uses its remaining budget for decoding.
+Async `fetchall` keeps one deadline for the entire operation.
 
-An `UNIMPLEMENTED` response switches that query to V1. A later query may try V2
-again. Other fetch failures do not trigger protocol fallback or query replay.
-A fetch that fails with an RPC error raises the original `grpc.RpcError` (or
-`grpc.aio.AioRpcError`), so the caller can inspect its status, details, and trailing
-metadata. V2, async V1, and sync OAuth V1 cursors then discard pending rows and reject
-later fetches with `IncompleteResultError`. Decode, cancellation, and local deadline
-errors keep their existing behavior.
-To disable V2 for new connections, omit the option or set it to `False`.
+Two shared worker processes can decode one multi-chunk envelope at a time.
+Other envelopes use the sequential path. Workers receive chunk bytes and column
+positions, not connections or credentials. Process startup and copying add cost,
+so parallel decoding is not a promise of better performance for every result.
 
-The [result batch qualification instructions](test/README.md#result-batch-v2-qualification)
-cover protocol parity and the explicit large-result benchmark. Real-engine
-qualification and the 900-second acceptance measurement have not been run for
-this change.
+Fetch return shapes and row order stay the same. `fetchall_buffer()` yields the
+original decoded chunks. All chunks in an envelope must decode successfully
+before any are exposed. Prefetch and workers add serialized buffers, Python
+objects and process copies; the receive limit is not a limit on total memory.
+`fetchall()` still retains the full result.
+
+Only a V2 `UNIMPLEMENTED` response switches that query to V1 and disables its
+optimizations. Other RPC failures reach the caller as the original
+`grpc.RpcError` or `grpc.aio.AioRpcError`. A failed pending RPC is raised when
+its envelope is needed, after current valid chunks have been consumed. Failed
+or cancelled queries are not replayed. Later fetches on an incomplete result
+raise `IncompleteResultError`. Clear, cancel, close and pool return retire
+pending work; unsafe connections must not be reused.
+
+Use `debug=True` for payload-free RPC, decode and worker diagnostics. Serialized
+Protobuf bytes are uncompressed payload size, not bytes sent over the network.
+
+For rollback, close old cursors and connections, then omit
+`enable_result_batch_v2` or set it to `False` on new connections. Closing the
+last V2 connection also stops its shared workers. See the
+[qualification instructions](test/README.md#result-batch-v2-qualification).
+Local synthetic results do not prove customer performance or the 900-second
+query requirement.
 
 ### Get Query Time Metrics
 ```python

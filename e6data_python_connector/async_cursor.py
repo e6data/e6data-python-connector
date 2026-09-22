@@ -14,6 +14,7 @@ from .exceptions import (AmbiguousSubmissionError, IncompleteResultError,
                          NotSupportedError, OperationalError, ProgrammingError, OAuthError)
 from .server import e6x_engine_pb2 as pb
 from .result_batch import ResultBatchBuffer, decode_result_batches
+from .result_prefetch import PendingFetch, reserve_prefetch
 
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,9 @@ class AsyncCursor:
         self._close_task = None
         self._cleanup_error = None
         self._result_batches = ResultBatchBuffer()
+        self._pending_result = None
+        self._retired_results = []
+        self._decode_owner = None
         self._reset_result_protocol()
         connection._cursors.add(self)
 
@@ -164,6 +168,8 @@ class AsyncCursor:
                 self._active_call = None
 
     def _fail_result(self, reason):
+        self._retire_prefetch()
+        self._cancel_decode()
         if self._failure is None:
             self._failure = IncompleteResultError(reason, query_id=self.query_id)
         if self._state != 'CLOSED':
@@ -215,6 +221,7 @@ class AsyncCursor:
         sql = operation.strip().removesuffix(';')
         if parameters is not None:
             sql = sql % _escaper.escape_args(parameters)
+        await self._connection._ensure_decoder(deadline)
         session = await self._connection.get_session_id(deadline=deadline)
         v2 = bool(self._catalog)
         request_type = pb.PrepareStatementV2Request if v2 else pb.PrepareStatementRequest
@@ -366,14 +373,93 @@ class AsyncCursor:
         if self._result_batch_v2 and not self._connection._oauth_enabled and response.sessionId:
             self._result_session_id = response.sessionId
 
-    async def _decode_v2_response(self, response, reservation, revision):
+    async def _decode_v2_response(self, response, reservation, revision, deadline=None):
         self._retain_result_session(response, revision)
+        owner = None
         try:
-            chunks = await reservation.run(decode_result_batches, self._columns, response.resultBatches)
+            if self._connection._decoder_started:
+                owner = self._connection._decoder_lease.new_owner()
+                self._decode_owner = owner
+                chunks = await reservation.run(
+                    self._connection._decoder_lease.decode, tuple(self._columns),
+                    tuple(response.resultBatches), deadline, owner)
+            else:
+                chunks = await reservation.run(decode_result_batches, self._columns, response.resultBatches)
+        except asyncio.CancelledError:
+            self._cancel_decode()
+            raise
         except Exception as error:
             raise self._fail_result('decode_failed') from error
+        finally:
+            if self._decode_owner is owner:
+                self._decode_owner = None
         self._publish(revision)
         self._result_batches.accept(chunks, response.endOfStream)
+
+    def _cancel_decode(self):
+        if self._decode_owner is not None:
+            self._connection._decoder_lease.cancel(self._decode_owner)
+
+    def _retire_prefetch(self):
+        if self._pending_result is not None:
+            pending, _, _ = self._pending_result
+            self._pending_result = None
+            pending.retire()
+            self._retired_results.append(pending)
+
+    async def _dispatch_result(self, deadline, permit=None):
+        """Freeze identity in the owner; the background task only runs transport."""
+        revision, route = self._revision, self._route
+        request = await self._query_request(pb.GetNextResultBatchRequest, deadline)
+        metadata = await self._connection._metadata(deadline, route)
+        self._publish(revision)
+        self._connection._remaining(deadline)
+        method = 'getNextResultBatchV2' if self._result_protocol == 'v2' else 'getNextResultBatch'
+        task = asyncio.create_task(self._connection._raw_result_rpc(method, request, tuple(metadata), deadline))
+        pending = PendingFetch(task, permit, session_id=request.sessionId, deadline=deadline)
+        self._pending_result = (pending, revision, route)
+
+    async def _take_pending_result(self, deadline):
+        pending, revision, route = self._pending_result
+        handle = pending.handle
+        if handle is not None and not pending.settled:
+            done, _ = await asyncio.wait({handle}, timeout=self._connection._remaining(deadline))
+            if not done:
+                raise TimeoutError('Result transport exceeded the operation deadline.')
+        self._publish(revision)
+        if route != self._route:
+            raise asyncio.CancelledError()
+        if not self._connection._oauth_enabled and pending.session_id:
+            self._result_session_id = pending.session_id
+        self._pending_result = None
+        response = pending.take()
+        new_strategy = getattr(response, 'new_strategy', None)
+        if new_strategy in ('blue', 'green'):
+            self._connection._pending_strategy = new_strategy
+            self._connection._apply_pending_strategy()
+        return response, pending.elapsed
+
+    async def _start_prefetch(self, response, deadline):
+        if (self._result_protocol != 'v2' or response.endOfStream
+                or not response.resultBatches or self._pending_result is not None):
+            return
+        permit = reserve_prefetch()
+        if permit is None:
+            logger.debug('Result prefetch capacity unavailable.', extra={
+                'result_batch_prefetch_admitted': 0,
+                'result_batch_prefetch_status': 'capacity_unavailable'})
+            return
+        try:
+            await self._dispatch_result(deadline, permit)
+            logger.debug('Result prefetch dispatched.', extra={
+                'result_batch_prefetch_admitted': 1,
+                'result_batch_prefetch_status': 'dispatched'})
+        except BaseException:
+            permit.release()
+            logger.debug('Result prefetch preparation failed.', extra={
+                'result_batch_prefetch_admitted': 0,
+                'result_batch_prefetch_status': 'preparation_failed'})
+            raise
 
     async def _next_v2_batch(self, deadline):
         from .async_work import reserve_work
@@ -383,13 +469,14 @@ class AsyncCursor:
         if self._result_batches.finished or self._state == 'EXHAUSTED':
             self._state = 'EXHAUSTED'
             return None
-        if self._columns is None:
-            await self._refresh_metadata(deadline)
-        consumed = False
+        consumed = self._pending_result is not None
         backoff = .01
         try:
+            await self._connection._ensure_decoder(deadline)
+            if self._columns is None:
+                await self._refresh_metadata(deadline)
             while True:
-                request = await self._query_request(pb.GetNextResultBatchRequest, deadline)
+                consumed = consumed or self._pending_result is not None
                 reservation = await reserve_work(deadline=deadline)
                 revision = self._revision
                 protocol = self._result_protocol
@@ -399,6 +486,9 @@ class AsyncCursor:
                 status = 'error'
                 rpc_seconds = decode_seconds = 0.0
                 started = time.monotonic()
+                prefetched = self._pending_result is not None
+                transport_record = None
+                transport_status = 'error'
 
                 def mark_dispatch():
                     nonlocal consumed, dispatched
@@ -406,9 +496,12 @@ class AsyncCursor:
 
                 try:
                     try:
-                        response = await self._call(
-                            'getNextResultBatchV2' if protocol == 'v2' else 'getNextResultBatch',
-                            request, deadline, on_dispatch=mark_dispatch)
+                        if self._pending_result is None:
+                            await self._dispatch_result(deadline)
+                        transport_record = self._pending_result[0]
+                        mark_dispatch()
+                        response, rpc_seconds = await self._take_pending_result(deadline)
+                        transport_status = 'ok'
                     except grpc.RpcError as error:
                         if protocol == 'v2' and error.code() == grpc.StatusCode.UNIMPLEMENTED:
                             consumed = previously_consumed
@@ -419,11 +512,21 @@ class AsyncCursor:
                             continue
                         raise
                     finally:
-                        rpc_seconds = time.monotonic() - started
+                        wait_seconds = time.monotonic() - started
+                        rpc_seconds = (transport_record.elapsed
+                                       if transport_record is not None and transport_record.settled
+                                       else wait_seconds)
+                        if prefetched:
+                            logger.debug('Result prefetched RPC seconds=%.6f wait_seconds=%.6f status=%s',
+                                         rpc_seconds, wait_seconds, transport_status, extra={
+                                             'result_batch_prefetched_rpc_seconds': rpc_seconds,
+                                             'result_batch_prefetch_wait_seconds': wait_seconds,
+                                             'result_batch_prefetch_status': transport_status})
                     decode_started = time.monotonic()
                     try:
                         if protocol == 'v2':
-                            await self._decode_v2_response(response, reservation, revision)
+                            await self._start_prefetch(response, deadline)
+                            await self._decode_v2_response(response, reservation, revision, deadline)
                         else:
                             self._retain_result_session(response, revision)
                             if response.resultBatch:
@@ -608,11 +711,20 @@ class AsyncCursor:
             return await self._connection.get_schema_names(self._catalog, timeout=timeout)
 
     async def _stop_active(self):
+        self._cancel_decode()
+        self._retire_prefetch()
         self._revision += 1
         task = self._operation_task or self._active_call
         if task is not None and task is not asyncio.current_task():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        for pending in self._retired_results:
+            handle = pending.handle
+            if handle is not None and not pending.settled:
+                await asyncio.gather(asyncio.shield(handle), return_exceptions=True)
+            if not self._connection._oauth_enabled and pending.session_id:
+                self._result_session_id = pending.session_id
+        self._retired_results.clear()
 
     async def _clear(self, deadline, owned=False):
         await self._stop_active()
@@ -673,7 +785,7 @@ class AsyncCursor:
             raise _operational(error) from error
 
     async def _close_owned(self, deadline):
-        if self._state == 'CLOSED':
+        if self._state == 'CLOSED' and self._route is None and not self._retired_results:
             return
         unknown_without_handle = self._state == 'SUBMISSION_UNKNOWN' and self._route is None
         if unknown_without_handle:
@@ -693,8 +805,9 @@ class AsyncCursor:
         finally:
             self._rows.clear()
             self._result_batches.clear()
-            self._result_session_id = None
-            self._connection._cursors.discard(self)
+            if self._route is None and not self._retired_results:
+                self._result_session_id = None
+                self._connection._cursors.discard(self)
 
     async def close(self):
         if self._lease_guard is not None:

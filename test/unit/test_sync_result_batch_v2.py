@@ -33,13 +33,15 @@ def connection(**changes):
 def local_cursor():
     conn = connection()
     cursor = conn.cursor()
-    conn.close()
     cursor._query_id = "unissued-local-query"
     cursor._engine_ip = "127.0.0.1"
     cursor._is_metadata_updated = True
     cursor._query_columns_description = ["value"]
     cursor._result_session_id = "unissued-local-session"
-    return cursor
+    try:
+        yield cursor
+    finally:
+        conn.close()
 
 
 def response(values=(), terminal=False, session="", strategy=""):

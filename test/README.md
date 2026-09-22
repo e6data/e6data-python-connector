@@ -191,3 +191,23 @@ The test suite covers:
 - Port 80 must be open for inbound connections
 - Tests require a running e6data cluster with valid credentials
 - DECIMAL128 tests use mock data and don't require cluster access
+
+### Local prefetch and process decoder checks
+
+The offline suite now includes real loopback gRPC tests for V2 prefetch and
+real spawned-process tests for the decoder. They cover ordered publication,
+original RPC errors, deadlines, cancellation, pool return, worker failure,
+Decimal conversion, and process cleanup. The combined feature uses only
+`enable_result_batch_v2=True`; flag-off keeps the existing V1 path.
+
+Run the complete offline suite with coverage in Linux before publishing:
+
+```bash
+python -m pytest --cov=e6data_python_connector --cov-branch --cov-fail-under=80.01
+```
+
+The CI matrix checks Python 3.11 with minimum and current dependencies, and
+Python 3.12/3.13 with current dependencies. The local performance tools and their
+measurement limits are documented in [performance/README.md](performance/README.md).
+Use the frozen fixtures for comparisons. Local transport and decoding tests do
+not replace target-engine correctness or performance qualification.

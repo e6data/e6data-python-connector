@@ -52,6 +52,9 @@ class AsyncConnection:
                  oauth_timeout=10.0, cleanup_timeout=10.0, auto_resume_timeout=300.0,
                  max_receive_message_bytes=64 * 1024 * 1024,
                  enable_result_batch_v2=False):
+        from .result_decode_worker import is_decode_worker
+        if is_decode_worker():
+            raise RuntimeError('A result decode worker cannot create a connection.')
         if sys.version_info < (3, 11):
             raise RuntimeError('The async API requires Python 3.11 or newer.')
         try:
@@ -81,6 +84,9 @@ class AsyncConnection:
             raise ValueError('ssl_cert must be a certificate path or PEM bytes.')
         if not isinstance(enable_result_batch_v2, bool):
             raise ValueError('enable_result_batch_v2 must be a boolean.')
+        if enable_result_batch_v2:
+            from .result_decode import validate_decode_runtime
+            validate_decode_runtime()
         settings = dict(host=host, port=port, username=username, password=password,
                         catalog=catalog, database=database, cluster_name=cluster_name,
                         secure=bool(secure), ssl_cert=ssl_cert, auto_resume=auto_resume,
@@ -132,6 +138,11 @@ class AsyncConnection:
         self._cleanup_error = None
         self._cluster_manager = None
         self._owns_cluster_manager = True
+        self._decoder_started = False
+        self._decoder_lease = None
+        if enable_result_batch_v2:
+            from .result_decode import DecoderLease
+            self._decoder_lease = DecoderLease()
 
     def __getattr__(self, name):
         config = self.__dict__.get('_config', {})
@@ -306,6 +317,24 @@ class AsyncConnection:
             metadata.append(('authorization', 'Bearer ' + token))
         self._check_owner(_cleanup=_cleanup, _internal=True)
         return metadata
+
+    async def _ensure_decoder(self, deadline):
+        self._check_owner()
+        if self._decoder_lease is not None and not self._decoder_started:
+            from .async_work import run_blocking
+            await run_blocking(self._decoder_lease.start, deadline, deadline=deadline)
+            self._check_owner()
+            self._decoder_started = True
+
+    async def _raw_result_rpc(self, method_name, request, metadata, deadline):
+        """Transport only: the owning task already froze identity and metadata."""
+        call = getattr(self._client, method_name)(
+            request, metadata=metadata, timeout=self._remaining(deadline))
+        self._calls.add(call)
+        try:
+            return await call
+        finally:
+            self._calls.discard(call)
 
     async def _rpc(self, method_name, request, *, deadline, route=None, safe_retry=False, _cleanup=False, _on_dispatch=None, _response_metadata=None):
         self._check_owner(_cleanup=_cleanup, _internal=True)
@@ -507,6 +536,15 @@ class AsyncConnection:
             # Native channel close with no grace cancels transports without waiting.
             if self._channel is not None:
                 await self._channel.close()
+            if self._decoder_lease is not None:
+                # Retirement must survive loop shutdown and saturated work slots.
+                self._decoder_lease.retire(deadline)
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        while self._decoder_lease.cleanup_pending:
+                            await asyncio.sleep(min(0.005, self._remaining(deadline)))
+                except (Exception, asyncio.CancelledError):
+                    self._cleanup_error = OperationalError('Result decoder cleanup remains pending.')
             for resource, owned in ((self._cluster_manager, self._owns_cluster_manager),
                                     (self._token_provider, self._owns_token_provider)):
                 if owned and resource is not None:
@@ -545,6 +583,12 @@ class AsyncConnection:
         if self._owner is not None and self._owner != (os.getpid(), threading.get_ident(), asyncio.get_running_loop()):
             raise ProgrammingError('Connection belongs to another owner.')
         await self.close()
+        if self._decoder_lease is not None and self._decoder_lease.cleanup_pending:
+            raise ProgrammingError('Cannot reopen while result decoder cleanup remains pending.')
+        if self.enable_result_batch_v2:
+            from .result_decode import DecoderLease
+            self._decoder_lease = DecoderLease()
+            self._decoder_started = False
         self._state = 'new'
         self._session_id = self._session_task = self._close_task = self._open_task = None
         if self._owns_token_provider:

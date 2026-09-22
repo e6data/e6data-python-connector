@@ -7,6 +7,7 @@ import grpc
 from grpc._channel import _InactiveRpcError
 import multiprocessing
 from contextlib import contextmanager
+from e6data_python_connector.result_decode_worker import is_decode_worker
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,8 @@ class _StatusLock:
         thread and multiprocessing locks and sets the active flag to False.
         """
         self._status_thread_lock = threading.Lock()
-        self._status_multiprocessing_lock = multiprocessing.Semaphore()
+        self._status_multiprocessing_lock = (threading.Semaphore() if is_decode_worker()
+                                             else multiprocessing.Semaphore())
         self._is_active = False
 
     @property
