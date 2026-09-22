@@ -197,7 +197,9 @@ The test suite covers:
 The offline suite now includes real loopback gRPC tests for V2 prefetch and
 real spawned-process tests for the decoder. They cover ordered publication,
 original RPC errors, deadlines, cancellation, pool return, worker failure,
-Decimal conversion, and process cleanup. The combined feature uses only
+Decimal conversion, and process cleanup. Download tests hold decoding and consumption while more than
+four raw envelopes arrive, then verify order, late sessions, EOF, queued errors
+and cleanup. The combined feature uses only
 `enable_result_batch_v2=True`; flag-off keeps the existing V1 path.
 
 Run the complete offline suite with coverage in Linux before publishing:

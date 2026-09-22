@@ -1,4 +1,4 @@
-"""Synthetic local gRPC contracts for one-envelope sync prefetch.
+"""Synthetic local gRPC contracts for continuous sync result download.
 
 The service supplies serialized test rows only. It is not a production query engine.
 """
@@ -14,7 +14,6 @@ from e6data_python_connector import Connection
 from e6data_python_connector import e6data_grpc as engine
 from e6data_python_connector.datainputstream import FieldInfo
 from e6data_python_connector.exceptions import IncompleteResultError, ProgrammingError
-from e6data_python_connector.result_prefetch import reserve_prefetch
 from e6data_python_connector.server import e6x_engine_pb2 as pb, e6x_engine_pb2_grpc as bindings
 from test.unit.test_async_result_batch_v2 import chunk
 
@@ -23,9 +22,13 @@ class SyntheticResults(bindings.QueryEngineServiceServicer):
     def __init__(self, responses):
         self.responses = responses
         self.requests = []
+        self.v1_requests = []
+        self.v1_responses = []
         self.cleanups = []
         self.entered = [threading.Event() for _ in responses]
         self.lock = threading.Lock()
+        self.response_delay = 0
+        self.request_budgets = []
         self.prepare_remaining = None
         self.prepare_requests = []
 
@@ -36,10 +39,21 @@ class SyntheticResults(bindings.QueryEngineServiceServicer):
         if index >= len(self.responses):
             context.abort(grpc.StatusCode.OUT_OF_RANGE, 'Unexpected synthetic fetch.')
         self.entered[index].set()
+        self.request_budgets.append(context.time_remaining())
+        if self.response_delay:
+            threading.Event().wait(self.response_delay)
         response = self.responses[index]
         if isinstance(response, grpc.StatusCode):
             context.abort(response, 'Synthetic result transport failure.')
         return response
+
+    def getNextResultBatch(self, request, context):
+        with self.lock:
+            index = len(self.v1_requests)
+            self.v1_requests.append(request)
+        if index >= len(self.v1_responses):
+            context.abort(grpc.StatusCode.UNIMPLEMENTED, 'No synthetic V1 response configured.')
+        return self.v1_responses[index]
 
     def prepareStatement(self, request, context):
         self.prepare_requests.append(request)
@@ -113,12 +127,11 @@ def test_pending_error_waits_until_valid_current_chunks_are_drained(local_result
     assert cursor.fetch_batch() == [[1]]
     assert service.entered[1].wait(1)
     pending = cursor._pending_fetch
-    with pytest.raises(grpc.RpcError) as transport:
-        pending.handle.result(timeout=1)
+    pending.handle.result(timeout=1)
     assert cursor.fetch_batch() == [[2]]
     with pytest.raises(grpc.RpcError) as caught:
         cursor.fetch_batch()
-    assert caught.value is transport.value
+    assert caught.value.code() == grpc.StatusCode.UNAVAILABLE
     with pytest.raises(IncompleteResultError):
         cursor.fetch_batch()
     assert len(service.requests) == 2
@@ -342,18 +355,91 @@ def test_terminal_envelope_does_not_prefetch(local_results):
     assert len(service.requests) == 1
 
 
-def test_full_prefetch_capacity_keeps_foreground_fetching(local_results):
-    permits = [reserve_prefetch() for _ in range(4)]
-    assert all(permits)
-    try:
-        service, _, cursor = local_results([envelope([[1]]), envelope([[2]], terminal=True)])
-        assert cursor.fetch_batch() == [[1]]
-        assert len(service.requests) == 1
-        assert cursor._pending_fetch is None
-        assert cursor.fetchall() == [[2]]
-    finally:
-        for permit in permits:
-            permit.release()
+def test_downloads_all_serialized_responses_before_first_decode(local_results, monkeypatch):
+    responses = [envelope([[i]], terminal=i == 7, session='session-%s' % i)
+                 for i in range(8)]
+    service, _, cursor = local_results(responses)
+    original_decode = engine.decode_result_batches
+    observed = []
+
+    def decode_after_all_downloads(columns, payloads):
+        if not observed:
+            assert service.entered[-1].wait(2), 'All RPCs must run while first decode waits.'
+            cursor._pending_fetch.handle.result(timeout=2)
+            observed.append(cursor._pending_fetch.queued_count)
+            assert cursor._pending_fetch.queued_count == 7
+            assert cursor._pending_fetch.queued_bytes > 0
+        return original_decode(columns, payloads)
+
+    monkeypatch.setattr(engine, 'decode_result_batches', decode_after_all_downloads)
+    assert cursor.fetchall() == [[i] for i in range(8)]
+    assert observed == [7]
+    assert len(service.requests) == 8
+    assert [request.sessionId for request in service.requests[1:]] == [
+        'session-%s' % i for i in range(7)]
+
+
+def test_slow_application_does_not_pause_serialized_download(local_results):
+    responses = [envelope([[i]], terminal=i == 6, session='session-%s' % i)
+                 for i in range(7)]
+    service, _, cursor = local_results(responses)
+    assert cursor.fetch_batch() == [[0]]
+    assert service.entered[-1].wait(2)
+    record = cursor._pending_fetch
+    record.handle.result(timeout=2)
+    assert record.queued_count == 6
+    assert record.session_id == 'session-6'
+    assert cursor.fetchall() == [[i] for i in range(1, 7)]
+    assert len(service.requests) == 7
+
+
+def test_queued_transport_error_follows_all_successful_envelopes(local_results, monkeypatch):
+    responses = [envelope([[i]], session='session-%s' % i) for i in range(6)]
+    service, conn, cursor = local_results(responses + [grpc.StatusCode.UNAVAILABLE])
+    original_rpc = conn.client.getNextResultBatchV2
+    errors = []
+
+    class ObserveTransport:
+        """Minimal test double recording the actual local gRPC exception."""
+        def __call__(self, *args, **kwargs):
+            return original_rpc(*args, **kwargs)
+
+        def future(self, *args, **kwargs):
+            handle = original_rpc.future(*args, **kwargs)
+            def record_error(completed):
+                try:
+                    completed.result()
+                except grpc.RpcError as error:
+                    errors.append(error)
+            handle.add_done_callback(record_error)
+            return handle
+
+    monkeypatch.setattr(conn.client, 'getNextResultBatchV2', ObserveTransport())
+    assert cursor.fetch_batch() == [[0]]
+    assert service.entered[-1].wait(2)
+    cursor._pending_fetch.handle.result(timeout=2)
+    assert [cursor.fetch_batch() for _ in range(5)] == [[[i]] for i in range(1, 6)]
+    with pytest.raises(grpc.RpcError) as caught:
+        cursor.fetch_batch()
+    assert caught.value is errors[0]
+    assert len(service.requests) == 7
+    with pytest.raises(IncompleteResultError):
+        cursor.fetch_batch()
+
+
+def test_close_clears_every_queued_payload_and_uses_latest_session(local_results):
+    responses = [envelope([[i]], terminal=i == 6, session='session-%s' % i)
+                 for i in range(7)]
+    service, _, cursor = local_results(responses)
+    assert cursor.fetch_batch() == [[0]]
+    assert service.entered[-1].wait(2)
+    record = cursor._pending_fetch
+    record.handle.result(timeout=2)
+    assert record.queued_count == 6
+    cursor.close(timeout=1)
+    assert record.queued_count == 0
+    assert record.queued_bytes == 0
+    assert service.cleanups[-1].sessionId == 'session-6'
 
 
 def test_close_uses_rotated_session_from_discarded_pending_response(local_results):
@@ -421,7 +507,7 @@ def test_completed_prefetch_is_valid_after_its_transport_deadline(local_results)
     assert service.entered[1].wait(1)
     pending = cursor._pending_fetch
     pending.handle.result(timeout=1)
-    threading.Event().wait(max(0, pending.deadline - time.monotonic()) + .01)
+    threading.Event().wait(conn.grpc_prepare_timeout + .01)
     assert cursor.fetch_batch() == [[2]]
     assert len(service.requests) == 2
 
@@ -560,7 +646,7 @@ def test_unsettled_retirement_keeps_old_query_and_late_cleanup_session(local_res
     service, conn, cursor = local_results([])
     transport = Future()
     transport.set_running_or_notify_cancel()
-    record = PendingFetch(transport, reserve_prefetch(), session_id='synthetic-session')
+    record = PendingFetch(transport, None, session_id='synthetic-session')
     record.identity = cursor._result_identity()
     cursor._pending_fetch = record
     cursor.close(timeout=.01)
@@ -695,15 +781,18 @@ def test_prefetch_dispatch_rpc_error_is_original_and_never_replayed(local_result
     assert len(service.requests) == 1
 
 
-@pytest.mark.parametrize('failure_point', ['factory', 'callback'])
-def test_pending_record_failure_retires_transport_without_releasing_capacity_early(local_results, monkeypatch, failure_point):
+@pytest.mark.parametrize('failure_point', ['registration', 'callback'])
+def test_stream_registration_failure_retains_actual_transport_until_settled(
+        local_results, monkeypatch, failure_point):
     from concurrent.futures import Future
+    from e6data_python_connector.result_prefetch import ContinuousResultStream
+
     service, conn, cursor = local_results([envelope([[1]])])
     original_method = conn.client.getNextResultBatchV2
-    creation_error = RuntimeError('Synthetic pending-record creation failure.')
+    creation_error = RuntimeError('Synthetic stream registration failure.')
 
     class RejectFirstCallback(Future):
-        """A test double for the record constructor's callback attachment boundary."""
+        """Test double for failure registering the transport completion callback."""
         def __init__(self):
             super().__init__()
             self.attachments = 0
@@ -718,49 +807,42 @@ def test_pending_record_failure_retires_transport_without_releasing_capacity_ear
     transport.set_running_or_notify_cancel()
 
     class RunningDispatch:
-        """Keep a real Future running after cancellation for ownership assertions."""
+        """Keep an actual Future running after cancellation to test late ownership."""
         def __call__(self, *args, **kwargs):
             return original_method(*args, **kwargs)
 
         def future(self, *args, **kwargs):
             return transport
 
-    original_pending = engine.PendingFetch
+    original_set_transport = ContinuousResultStream.set_transport
 
-    def fail_record(handle, permit, **kwargs):
-        if permit is None:
-            return original_pending(handle, permit, **kwargs)
-        raise creation_error
+    def fail_registration(stream, handle):
+        original_set_transport(stream, handle)
+        if failure_point == 'registration':
+            raise creation_error
 
     monkeypatch.setattr(conn.client, 'getNextResultBatchV2', RunningDispatch())
-    if failure_point == 'factory':
-        monkeypatch.setattr(engine, 'PendingFetch', fail_record)
-    other_permits = [reserve_prefetch() for _ in range(3)]
-    assert all(other_permits)
+    monkeypatch.setattr(ContinuousResultStream, 'set_transport', fail_registration)
     try:
+        assert cursor.fetch_batch() == [[1]]
+        record = cursor._pending_fetch
+        record.handle.result(timeout=1)
         with pytest.raises(IncompleteResultError) as caught:
             cursor.fetch_batch()
         assert caught.value.__cause__ is creation_error
-        assert reserve_prefetch() is None
+        assert not record.settled
         assert cursor._pending_fetch is None
-        assert len(cursor._retired_fetches) == 1
-        retired_record = cursor._retired_fetches[0]
+        assert record in cursor._retired_fetches
         transport.set_result(envelope([], terminal=True, session='late-after-registration-failure'))
-        assert retired_record.settled
-        assert retired_record.handle is None
-        released = reserve_prefetch()
-        assert released is not None
-        released.release()
+        assert record.settled
         cursor.clear(timeout=1)
         assert service.cleanups[-1].sessionId == 'late-after-registration-failure'
     finally:
         if not transport.done():
             transport.set_result(envelope([], terminal=True))
-        for permit in other_permits:
-            permit.release()
 
 
-def test_prefetch_metadata_failure_before_dispatch_keeps_safe_foreground_path(local_results, monkeypatch):
+def test_download_metadata_failure_is_delivered_after_current_rows(local_results, monkeypatch):
     service, conn, cursor = local_results([envelope([[1]]), envelope([[2]], terminal=True)])
     original_metadata = conn._call_metadata
     calls = 0
@@ -773,8 +855,11 @@ def test_prefetch_metadata_failure_before_dispatch_keeps_safe_foreground_path(lo
         return original_metadata(**options)
 
     monkeypatch.setattr(conn, '_call_metadata', preparation_failure)
-    assert cursor.fetchall() == [[1], [2]]
-    assert len(service.requests) == 2
+    assert cursor.fetch_batch() == [[1]]
+    with pytest.raises(IncompleteResultError) as caught:
+        cursor.fetch_batch()
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert len(service.requests) == 1
 
 
 def test_two_cursors_start_exactly_one_connection_decoder_lease(local_results, monkeypatch):
@@ -867,3 +952,156 @@ def test_connection_close_during_decoder_startup_prevents_prepare(local_results,
     for pid in worker_pids:
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+def test_each_download_uses_fresh_rpc_budget(local_results):
+    responses = [envelope([[i]], terminal=i == 6) for i in range(7)]
+    service, conn, cursor = local_results(responses)
+    service.response_delay = .03
+    conn.grpc_prepare_timeout = .12
+    assert cursor.fetch_batch() == [[0]]
+    record = cursor._pending_fetch
+    record.handle.result(timeout=2)
+    assert record.queued_count == 6
+    assert min(service.request_budgets) > .08
+    assert cursor.fetchall() == [[i] for i in range(1, 7)]
+    assert len(service.requests) == 7
+
+
+def test_empty_downloads_stop_after_no_progress_deadline(local_results):
+    service, conn, cursor = local_results([envelope([[0]])] + [envelope([])] * 30)
+    conn.grpc_prepare_timeout = .08
+    assert cursor.fetch_batch() == [[0]]
+    record = cursor._pending_fetch
+    record.handle.result(timeout=1)
+    assert 2 <= len(service.requests) < 10
+    with pytest.raises(IncompleteResultError):
+        cursor.fetchall()
+    assert len(service.requests) < 10
+
+
+def test_more_than_four_cursors_download_while_decoders_wait(local_results, monkeypatch):
+    resources = [local_results([envelope([[i]]), envelope([[i + 10]], terminal=True)])
+                 for i in range(6)]
+    original_decode = engine.decode_result_batches
+    release_decoders = threading.Event()
+
+    def paused_decode(columns, payloads):
+        assert release_decoders.wait(3)
+        return original_decode(columns, payloads)
+
+    monkeypatch.setattr(engine, 'decode_result_batches', paused_decode)
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        reads = [executor.submit(cursor.fetch_batch) for _, _, cursor in resources]
+        try:
+            assert all(service.entered[1].wait(2) for service, _, _ in resources)
+        finally:
+            release_decoders.set()
+        assert [read.result(timeout=2) for read in reads] == [[[i]] for i in range(6)]
+    assert [cursor.fetch_batch() for _, _, cursor in resources] == [[[i + 10]] for i in range(6)]
+
+
+def test_unimplemented_fallback_drains_all_queued_v2_rows_first(local_results, monkeypatch):
+    responses = [envelope([[i]], session='session-%s' % i) for i in range(6)]
+    service, conn, cursor = local_results(responses + [grpc.StatusCode.UNIMPLEMENTED])
+    calls = []
+
+    def v1(request, **options):
+        calls.append(request)
+        return pb.GetNextResultBatchResponse(resultBatch=chunk([6]))
+
+    monkeypatch.setattr(conn.client, 'getNextResultBatch', v1)
+    assert cursor.fetch_batch() == [[0]]
+    record = cursor._pending_fetch
+    record.handle.result(timeout=2)
+    assert [cursor.fetch_batch() for _ in range(5)] == [[[i]] for i in range(1, 6)]
+    assert calls == []
+    assert cursor.fetch_batch() == [[6]]
+    assert len(calls) == 1
+    assert calls[0].sessionId == 'session-5'
+    assert cursor._result_protocol == 'v1'
+    assert len(service.requests) == 7
+
+
+@pytest.mark.parametrize('cleanup', ['clear', 'pool_return'])
+def test_v1_fallback_cleanup_preserves_newer_rotated_session(local_results, cleanup):
+    service, conn, cursor = local_results([
+        envelope([[1]], session='v2-session'), grpc.StatusCode.UNIMPLEMENTED])
+    service.v1_responses = [
+        pb.GetNextResultBatchResponse(resultBatch=chunk([2]), sessionId='v1-row-session'),
+        pb.GetNextResultBatchResponse(sessionId='v1-eof-session')]
+    assert cursor.fetchall() == [[1], [2]]
+    assert [request.sessionId for request in service.v1_requests] == [
+        'v2-session', 'v1-row-session']
+    assert cursor._result_session_id == 'v1-eof-session'
+    if cleanup == 'clear':
+        cursor.clear(timeout=1)
+    else:
+        from e6data_python_connector.connection_pool import ConnectionPool, PooledConnection
+        pool = ConnectionPool(host='127.0.0.1', port=1, username='synthetic-user',
+                              password='synthetic-input', min_size=0, max_size=1, pre_ping=False,
+                              require_fastbinary=False, auto_resume=False,
+                              enable_result_batch_v2=True)
+        pooled = PooledConnection(conn, pool)
+        pooled._cursor = cursor
+        pooled.in_use = True
+        pool._all_connections.append(pooled)
+        pool._created_connections = 1
+        pool._active_connections = 1
+        pool.return_connection(pooled)
+    assert service.cleanups[-1].sessionId == 'v1-eof-session'
+    assert cursor._retired_fetches == []
+
+
+def test_cancel_while_fallback_waits_for_producer_preserves_ownership(local_results, monkeypatch):
+    from e6data_python_connector.result_prefetch import ContinuousResultStream
+
+    service, _, cursor = local_results([
+        envelope([[1]], session='v2-session'), grpc.StatusCode.UNIMPLEMENTED])
+    service.v1_responses = [pb.GetNextResultBatchResponse(sessionId='v1-session')]
+    producer_finishing = threading.Event()
+    release_producer = threading.Event()
+    fallback_waiting = threading.Event()
+    cancellation_started = threading.Event()
+    original_finish = ContinuousResultStream.finish
+    original_settle = cursor._settle_download_before_fallback
+    original_retire = cursor._retire_result_work
+
+    def paused_finish(stream):
+        producer_finishing.set()
+        assert release_producer.wait(3)
+        return original_finish(stream)
+
+    def observed_settle(*args):
+        fallback_waiting.set()
+        return original_settle(*args)
+
+    def observed_retire(**options):
+        result = original_retire(**options)
+        if not options.get('wait'):
+            cancellation_started.set()
+        return result
+
+    monkeypatch.setattr(ContinuousResultStream, 'finish', paused_finish)
+    monkeypatch.setattr(cursor, '_settle_download_before_fallback', observed_settle)
+    monkeypatch.setattr(cursor, '_retire_result_work', observed_retire)
+    try:
+        assert cursor.fetch_batch() == [[1]]
+        assert producer_finishing.wait(1)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fetch = executor.submit(cursor.fetch_batch)
+            try:
+                assert fallback_waiting.wait(1)
+                cancel = executor.submit(cursor.cancel, cursor.query_id)
+                assert cancellation_started.wait(1)
+            finally:
+                release_producer.set()
+            with pytest.raises(IncompleteResultError):
+                fetch.result(timeout=2)
+            cancel.result(timeout=2)
+        assert service.v1_requests == []
+        assert cursor._result_protocol == 'v2'
+        assert service.cleanups[-1].sessionId == 'v2-session'
+        assert cursor._retired_fetches == []
+    finally:
+        release_producer.set()

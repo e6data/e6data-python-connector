@@ -34,7 +34,7 @@ from e6data_python_connector.datainputstream import get_query_columns_info, read
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.oauth import ClientCredentialsTokenProvider
 from e6data_python_connector.result_batch import ResultBatchBuffer, decode_result_batches
-from e6data_python_connector.result_prefetch import PendingFetch, reserve_prefetch
+from e6data_python_connector.result_prefetch import ContinuousResultStream, PendingFetch
 from e6data_python_connector.exceptions import (
     OAuthNotSupportedError, IncompleteResultError, ProgrammingError, OperationalError)
 from e6data_python_connector.strategy import _get_grpc_header
@@ -1398,57 +1398,6 @@ class Connection(object):
         return self._client
 
 
-class _RetiredResultTransport:
-    """Keep failed pending-record attachment owned until its transport settles."""
-
-    def __init__(self, handle, permit, identity, session_id):
-        self.handle = handle
-        self.identity = identity
-        self._permit = permit
-        self._session_id = session_id
-        self._settled = False
-        self._lock = threading.Lock()
-        try:
-            handle.add_done_callback(self._release_if_settled)
-        except Exception:
-            # Owner cleanup also observes settlement if callback attachment fails.
-            pass
-
-    def _release_if_settled(self, handle):
-        if handle.done():
-            with self._lock:
-                if self._settled:
-                    return
-                try:
-                    response = handle.result()
-                except BaseException:
-                    pass
-                else:
-                    self._session_id = getattr(response, 'sessionId', '') or self._session_id
-                self._settled = True
-                self.handle = None
-                self._permit.release()
-
-    @property
-    def settled(self):
-        handle = self.handle
-        if handle is not None:
-            self._release_if_settled(handle)
-        with self._lock:
-            return self._settled
-
-    @property
-    def session_id(self):
-        self.settled
-        return self._session_id
-
-    def retire(self):
-        handle = self.handle
-        if handle is not None:
-            handle.cancel()
-            self._release_if_settled(handle)
-
-
 class Cursor(DBAPICursor):
     """
     These objects represent a database cursor, which is used to manage the context of a fetch
@@ -1531,63 +1480,91 @@ class Cursor(DBAPICursor):
             raise TimeoutError('Result transport retirement is still in progress.')
         return not self._retired_fetches
 
-    def _start_prefetch(self, deadline, identity=None):
-        if self._pending_fetch is not None or self._result_protocol != 'v2':
-            return
-        permit = reserve_prefetch()
-        if permit is None:
-            logger.debug('Result prefetch capacity unavailable.', extra={'result_batch_prefetch_admitted': 0})
-            return
-        try:
+    def _start_prefetch(self, deadline, identity=None, empty=False):
+        """Download serialized responses without waiting for decode or consumption."""
+        with self._result_lock:
+            if self._pending_fetch is not None or self._result_protocol != 'v2':
+                return
             self._check_result()
             identity = self._result_identity() if identity is None else identity
             if identity != self._result_identity():
-                raise ProgrammingError('Result ownership changed before prefetch preparation.')
-            metadata = self.connection._call_metadata(
-                engine_ip=self._engine_ip, strategy=_get_query_strategy(self._query_id, deadline=deadline),
-                deadline=deadline)
-            request = e6x_engine_pb2.GetNextResultBatchRequest(
-                engineIP=self._engine_ip, sessionId=self._fetch_session_id(), queryId=self._query_id)
-            dispatch = self.connection.client.getNextResultBatchV2.future
-        except BaseException as error:
-            permit.release()
-            if not isinstance(error, Exception):
-                raise
-            logger.debug('Result prefetch preparation skipped.', extra={'result_batch_prefetch_admitted': 0})
-            return
-        with self._result_lock:
+                raise self._fail_result('ambiguous_result', identity=identity)
+            completion = Future()
+            completion.set_running_or_notify_cancel()
+            stream = ContinuousResultStream(session_id=self._result_session_id)
+            stream.identity = identity
+            stream.set_handle(completion)
+            self._pending_fetch = stream
+            producer = threading.Thread(
+                target=self._download_result_stream,
+                args=(stream, completion, identity, empty),
+                name='e6-result-download', daemon=True)
             try:
-                self._check_result()
-                if identity != self._result_identity():
-                    raise ProgrammingError('Result ownership changed before prefetch dispatch.')
-                remaining = _result_fetch_remaining(deadline)
+                producer.start()
             except BaseException as error:
-                permit.release()
-                if not isinstance(error, Exception):
-                    raise
-                logger.debug('Result prefetch preparation skipped.', extra={'result_batch_prefetch_admitted': 0})
-                return
-            try:
-                handle = dispatch(request, metadata=metadata, timeout=remaining)
-            except grpc.RpcError as error:
-                # This is the next envelope's outcome, consumed only after current rows.
-                handle = Future()
-                handle.set_exception(error)
-            except BaseException:
-                permit.release()
-                self._fail_result('ambiguous_result', identity=identity)
+                stream.fail(error, 0)
+                stream.finish()
+                completion.set_result(None)
                 raise
-            try:
-                record = PendingFetch(handle, permit, session_id=self._result_session_id, deadline=deadline)
-            except BaseException:
-                record = _RetiredResultTransport(handle, permit, identity, self._result_session_id)
-                self._retired_fetches.append(record)
-                record.retire()
-                self._fail_result('ambiguous_result', identity=identity)
-                raise
-            record.identity = identity
-            self._pending_fetch = record
-        logger.debug('Result prefetch dispatched.', extra={'result_batch_prefetch_admitted': 1})
+
+    def _download_result_stream(self, stream, completion, identity, empty):
+        """One consuming RPC at a time; only the consumer publishes decoded rows."""
+        query_id, engine_ip = identity[3:]
+        budget = self.connection.grpc_prepare_timeout
+        no_progress_deadline = time.monotonic() + budget if empty else None
+        backoff = .01
+        try:
+            while not stream.retired:
+                deadline = time.monotonic() + budget
+                if no_progress_deadline is not None:
+                    deadline = min(deadline, no_progress_deadline)
+                started = time.monotonic()
+                handle = None
+                try:
+                    _result_fetch_remaining(deadline)
+                    metadata = self.connection._call_metadata(
+                        engine_ip=engine_ip,
+                        strategy=_get_query_strategy(query_id, deadline=deadline),
+                        deadline=deadline)
+                    request = e6x_engine_pb2.GetNextResultBatchRequest(
+                        engineIP=engine_ip,
+                        sessionId='' if self.connection._uses_oauth else stream.session_id,
+                        queryId=query_id)
+                    # Register the transport under the same lock used by retirement.
+                    # Authentication and transport waiting happen outside this lock.
+                    with self._result_lock:
+                        if stream.retired or identity != self._result_identity():
+                            return
+                        handle = self.connection.client.getNextResultBatchV2.future(
+                            request, metadata=metadata,
+                            timeout=_result_fetch_remaining(deadline))
+                        stream.set_transport(handle)
+                    response = handle.result()
+                    stream.push(response, time.monotonic() - started)
+                except BaseException as error:
+                    if not stream.retired:
+                        stream.fail(error, time.monotonic() - started)
+                    return
+                finally:
+                    if handle is not None:
+                        stream.clear_transport(handle)
+                if stream.retired or response.endOfStream:
+                    return
+                if response.resultBatches:
+                    no_progress_deadline = None
+                    backoff = .01
+                else:
+                    if no_progress_deadline is None:
+                        no_progress_deadline = time.monotonic() + budget
+                    remaining = _result_fetch_remaining(no_progress_deadline)
+                    time.sleep(min(backoff, remaining))
+                    backoff = min(backoff * 2, .1)
+        except BaseException as error:
+            if not stream.retired:
+                stream.fail(error, 0)
+        finally:
+            stream.finish()
+            completion.set_result(None)
 
     def _call_foreground_result(self, method, request, metadata, deadline, identity):
         # Keep the synchronous transport seam, but track its actual settlement
@@ -1616,6 +1593,8 @@ class Cursor(DBAPICursor):
         identity = record.identity if identity is None else identity
         if record.identity != identity or identity != self._result_identity():
             raise self._fail_result('ambiguous_result', identity=identity)
+        if isinstance(record, ContinuousResultStream):
+            return self._take_downloaded_result(record, deadline, identity)
         started = time.monotonic()
         handle = record.handle
         try:
@@ -1642,6 +1621,65 @@ class Cursor(DBAPICursor):
                          extra={'result_batch_prefetched_rpc_seconds': record.elapsed,
                                 'result_batch_prefetch_wait_seconds': time.monotonic() - started})
         return record.take(), record.elapsed
+
+    def _take_downloaded_result(self, record, deadline, identity):
+        started = time.monotonic()
+        try:
+            record.wait(_result_fetch_remaining(deadline))
+        except TimeoutError as error:
+            raise self._fail_result('ambiguous_result', identity=identity) from error
+        with self._result_lock:
+            if (self._pending_fetch is not record or record.identity != identity
+                    or identity != self._result_identity()):
+                raise self._fail_result('ambiguous_result', identity=identity)
+            if not self.connection._uses_oauth and record.session_id:
+                self._result_session_id = record.session_id
+        try:
+            response = record.take()
+        except BaseException as error:
+            with self._result_lock:
+                if identity != self._result_identity() or record.retired:
+                    raise self._fail_result('ambiguous_result', identity=identity) from error
+                if self._pending_fetch is record:
+                    self._pending_fetch = None
+                    self._retired_fetches.append(record)
+                    record.retire()
+            raise
+        with self._result_lock:
+            if (self._pending_fetch is not record or identity != self._result_identity()):
+                raise self._fail_result('ambiguous_result', identity=identity)
+            if not self.connection._uses_oauth and record.session_id:
+                self._result_session_id = record.session_id
+            if response.endOfStream:
+                self._pending_fetch = None
+                self._retired_fetches.append(record)
+                record.retire()
+        logger.debug(
+            'Result downloaded RPC seconds=%.6f wait_seconds=%.6f queued_batches=%d queued_bytes=%d',
+            record.elapsed, time.monotonic() - started, record.queued_count, record.queued_bytes,
+            extra={'result_batch_prefetched_rpc_seconds': record.elapsed,
+                   'result_batch_prefetch_wait_seconds': time.monotonic() - started,
+                   'result_batch_queued_batches': record.queued_count,
+                   'result_batch_queued_bytes': record.queued_bytes})
+        return response, record.elapsed
+
+    def _settle_download_before_fallback(self, record, deadline, identity):
+        """Finish old V2 ownership before a V1 response can rotate the session."""
+        try:
+            handle = record.handle
+            if not record.settled and handle is not None:
+                handle.result(timeout=_result_fetch_remaining(deadline))
+            if not record.settled:
+                raise TimeoutError('Result transport retirement still in progress.')
+        except Exception as error:
+            raise self._fail_result('ambiguous_result', identity=identity) from error
+        with self._result_lock:
+            if identity != self._result_identity():
+                raise self._fail_result('ambiguous_result', identity=identity)
+            if not self.connection._uses_oauth and record.session_id:
+                self._result_session_id = record.session_id
+            if record in self._retired_fetches:
+                self._retired_fetches.remove(record)
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
@@ -2283,7 +2321,8 @@ class Cursor(DBAPICursor):
         with self._result_lock:
             if identity != self._result_identity():
                 raise self._fail_result('ambiguous_result', identity=identity)
-            if not self.connection._uses_oauth and response.sessionId:
+            if (not self.connection._uses_oauth and response.sessionId
+                    and not isinstance(self._pending_fetch, ContinuousResultStream)):
                 self._result_session_id = response.sessionId
         try:
             _result_fetch_remaining(deadline)
@@ -2294,7 +2333,7 @@ class Cursor(DBAPICursor):
             if self._result_protocol == 'v2':
                 terminal = response.endOfStream
                 if not terminal:
-                    self._start_prefetch(deadline, identity=identity)
+                    self._start_prefetch(deadline, identity=identity, empty=not response.resultBatches)
                 with self._result_lock:
                     if identity != self._result_identity():
                         raise self._fail_result('ambiguous_result', identity=identity)
@@ -2386,7 +2425,12 @@ class Cursor(DBAPICursor):
                 if identity != self._result_identity():
                     raise
                 if protocol == 'v2' and unimplemented:
-                    self._result_protocol = 'v1'
+                    if isinstance(prefetch_record, ContinuousResultStream):
+                        self._settle_download_before_fallback(prefetch_record, deadline, identity)
+                    with self._result_lock:
+                        if identity != self._result_identity():
+                            raise self._fail_result('ambiguous_result', identity=identity)
+                        self._result_protocol = 'v1'
                     logger.debug('Result batch compatibility fallback', extra={'result_batch_fallback': True})
                     continue
                 if isinstance(error, grpc.RpcError):

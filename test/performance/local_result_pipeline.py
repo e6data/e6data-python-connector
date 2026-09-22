@@ -88,6 +88,55 @@ class FetchMetrics(logging.Handler):
             self.samples.append(fields)
 
 
+class TransportMetrics:
+    """Observe actual receive completion before any connector row decoding.
+
+    This test-only RPC uses the generated serializer and Protobuf parser. The
+    receive timestamp is recorded inside the response deserializer, before the
+    gRPC Future becomes ready, so callback scheduling cannot move it past decode.
+    """
+
+    def __init__(self, channel):
+        self.samples = []
+        self._lock = threading.Lock()
+        self._active = None
+        self._call = channel.unary_unary(
+            '/QueryEngineService/getNextResultBatchV2',
+            request_serializer=pb.GetNextResultBatchRequest.SerializeToString,
+            response_deserializer=self._received)
+
+    def reset(self):
+        with self._lock:
+            if self._active is not None:
+                raise ValueError('Previous synthetic transport is still running')
+            self.samples.clear()
+
+    def _start(self):
+        with self._lock:
+            if self._active is not None:
+                raise ValueError('Overlapping consuming result RPCs')
+            self._active = time.perf_counter()
+
+    def _received(self, payload):
+        response = pb.GetNextResultBatchV2Response.FromString(payload)
+        completed = time.perf_counter()
+        with self._lock:
+            self.samples.append({
+                'started_at': self._active, 'received_at': completed,
+                'duration_seconds': completed - self._active,
+                'serialized_bytes': len(payload), 'terminal': response.endOfStream})
+            self._active = None
+        return response
+
+    def __call__(self, *args, **kwargs):
+        self._start()
+        return self._call(*args, **kwargs)
+
+    def future(self, *args, **kwargs):
+        self._start()
+        return self._call.future(*args, **kwargs)
+
+
 def _source_file(path):
     path = Path(path).resolve()
     return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
@@ -196,6 +245,8 @@ def run_pipeline(dataset, profile, envelopes=8, repeats=3, server_delay_seconds=
             password="synthetic-unissued-input", auto_resume=False,
             enable_result_batch_v2=True, require_fastbinary=True,
             grpc_options={"grpc_prepare_timeout": 120})
+        transport = TransportMetrics(connection._channel)
+        connection.client.getNextResultBatchV2 = transport
         sampler.start()
         if hasattr(connection, '_start_result_decoder'):
             started = time.perf_counter()
@@ -206,6 +257,7 @@ def run_pipeline(dataset, profile, envelopes=8, repeats=3, server_delay_seconds=
         for index in range(repeats):
             service.samples.clear()
             metrics.samples.clear()
+            transport.reset()
             cursor = connection.cursor()
             cursor._query_id, cursor._engine_ip = QUERY_ID, ENGINE_IP
             cursor._result_session_id = SESSION_ID
@@ -214,6 +266,14 @@ def run_pipeline(dataset, profile, envelopes=8, repeats=3, server_delay_seconds=
             trial = _drain(cursor, selected, envelopes)
             trial.update({"index": index, "server_rpc_samples": list(service.samples),
                           "client_rpc_samples": list(metrics.samples)})
+            received = list(transport.samples)
+            if len(received) != envelopes or not received[-1]["terminal"]:
+                raise ValueError('Incomplete synthetic client receive sequence')
+            trial["client_transport_samples"] = received
+            trial["client_download_seconds"] = (
+                received[-1]["received_at"] - received[0]["started_at"])
+            trial["decode_seconds"] = sum(
+                sample.get("decode_seconds", 0.0) for sample in metrics.samples)
             if len(service.samples) != envelopes:
                 raise ValueError("Unexpected synthetic RPC count")
             # The injected query never existed on an engine and needs no clear RPC.

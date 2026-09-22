@@ -162,3 +162,24 @@ selected source first in `PYTHONPATH`, followed by `test/performance`. Use
 and hashes in every report. Use the same harness, files, limits and delay for
 both sources. Do not run other tests or benchmarks during timed runs. Retain
 all raw samples and report regressions as well as gains.
+
+
+### Continuous-download comparison
+
+The pipeline report now separates `client_download_seconds` from
+`end_to_end_seconds` and `decode_seconds` for each trial. Download time runs
+from the first result RPC dispatch to receipt and Protobuf parsing of the final
+response, before its Thrift/row decoding. A test-only transport wrapper records
+this timestamp inside the gRPC response deserializer. It also checks that
+consuming RPCs never overlap and records serialized Protobuf bytes per response.
+
+Download, decode and row-validation work can overlap, so these durations must
+not be added together. `decode_seconds` sums the connector's existing envelope
+decode diagnostics, including its envelope acceptance work. Use the isolated
+decoder harness when measuring only deserialization. End-to-end time still
+includes row-digest checking.
+Worker startup remains separate. The added measurement uses the same generated
+wire serializers and the same frozen payloads for every compared source. It
+measures loopback client receipt, not production engine execution or network
+bandwidth. Use a new output path; retain the earlier one-envelope-prefetch
+reports as historical evidence.

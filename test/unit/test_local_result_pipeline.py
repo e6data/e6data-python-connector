@@ -34,6 +34,11 @@ def test_real_cursor_drains_all_envelopes_and_checks_every_row(tmp_path, profile
     assert all(sample["query_identity_valid"] for sample in trial["server_rpc_samples"])
     assert all(sample["duration_seconds"] >= 0.002 for sample in trial["server_rpc_samples"])
     assert trial["end_to_end_seconds"] >= trial["fetch_wait_seconds"] > 0
+    assert 0 < trial["client_download_seconds"] <= trial["end_to_end_seconds"]
+    assert len(trial["client_transport_samples"]) == 3
+    assert [s["terminal"] for s in trial["client_transport_samples"]] == [False, False, True]
+    assert all(s["serialized_bytes"] > 0 for s in trial["client_transport_samples"])
+    assert trial["decode_seconds"] > 0
     assert trial["validation_seconds"] > 0
     assert trial["parent_process_cpu_seconds"] > 0
     assert trial["parent_peak_rss_bytes"] > 0

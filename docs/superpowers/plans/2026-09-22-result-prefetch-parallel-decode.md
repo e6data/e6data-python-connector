@@ -1,5 +1,10 @@
 # Result prefetch and parallel chunk decoding plan
 
+September 23 update: the user replaced the one-envelope prefetch limit with
+continuous downloading into an uncapped queue while decoding runs concurrently.
+See [the follow-up plan](2026-09-23-continuous-result-download.md). This document
+and its original measurements describe the earlier implementation at `359cb49`.
+
 Status: implementation authorized on September 22 with the existing `enable_result_batch_v2` flag. Frozen local decoding and pipeline baselines are saved. Local implementation, offline validation, measurements and independent review are complete. Customer qualification and publication remain separate.
 
 Goal: download the next result envelope while decoding the current envelope, and optionally decode its independent chunks on two CPU workers, without changing result values, row order, or public fetch return shapes.

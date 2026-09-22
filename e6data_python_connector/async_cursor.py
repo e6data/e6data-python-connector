@@ -14,7 +14,7 @@ from .exceptions import (AmbiguousSubmissionError, IncompleteResultError,
                          NotSupportedError, OperationalError, ProgrammingError, OAuthError)
 from .server import e6x_engine_pb2 as pb
 from .result_batch import ResultBatchBuffer, decode_result_batches
-from .result_prefetch import PendingFetch, reserve_prefetch
+from .result_prefetch import ContinuousResultStream, PendingFetch
 
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ class AsyncCursor:
         self._cleanup_error = None
         self._result_batches = ResultBatchBuffer()
         self._pending_result = None
+        self._result_available = None
         self._retired_results = []
         self._decode_owner = None
         self._reset_result_protocol()
@@ -371,7 +372,9 @@ class AsyncCursor:
     def _retain_result_session(self, response, revision):
         self._publish(revision)
         if self._result_batch_v2 and not self._connection._oauth_enabled and response.sessionId:
-            self._result_session_id = response.sessionId
+            pending = self._pending_result[0] if self._pending_result is not None else None
+            self._result_session_id = (pending.session_id if isinstance(pending, ContinuousResultStream)
+                                       and pending.session_id else response.sessionId)
 
     async def _decode_v2_response(self, response, reservation, revision, deadline=None):
         self._retain_result_session(response, revision)
@@ -404,6 +407,7 @@ class AsyncCursor:
         if self._pending_result is not None:
             pending, _, _ = self._pending_result
             self._pending_result = None
+            self._result_available = None
             pending.retire()
             self._retired_results.append(pending)
 
@@ -421,17 +425,27 @@ class AsyncCursor:
 
     async def _take_pending_result(self, deadline):
         pending, revision, route = self._pending_result
-        handle = pending.handle
-        if handle is not None and not pending.settled:
-            done, _ = await asyncio.wait({handle}, timeout=self._connection._remaining(deadline))
-            if not done:
-                raise TimeoutError('Result transport exceeded the operation deadline.')
+        if isinstance(pending, ContinuousResultStream):
+            event = self._result_available
+            while not pending.ready:
+                event.clear()
+                if pending.ready:
+                    break
+                async with asyncio.timeout_at(deadline):
+                    await event.wait()
+        else:
+            handle = pending.handle
+            if handle is not None and not pending.settled:
+                done, _ = await asyncio.wait({handle}, timeout=self._connection._remaining(deadline))
+                if not done:
+                    raise TimeoutError('Result transport exceeded the operation deadline.')
         self._publish(revision)
         if route != self._route:
             raise asyncio.CancelledError()
         if not self._connection._oauth_enabled and pending.session_id:
             self._result_session_id = pending.session_id
-        self._pending_result = None
+        if not isinstance(pending, ContinuousResultStream):
+            self._pending_result = None
         response = pending.take()
         new_strategy = getattr(response, 'new_strategy', None)
         if new_strategy in ('blue', 'green'):
@@ -441,25 +455,72 @@ class AsyncCursor:
 
     async def _start_prefetch(self, response, deadline):
         if (self._result_protocol != 'v2' or response.endOfStream
-                or not response.resultBatches or self._pending_result is not None):
+                or self._pending_result is not None):
             return
-        permit = reserve_prefetch()
-        if permit is None:
-            logger.debug('Result prefetch capacity unavailable.', extra={
-                'result_batch_prefetch_admitted': 0,
-                'result_batch_prefetch_status': 'capacity_unavailable'})
-            return
+        revision, route = self._revision, self._route
         try:
-            await self._dispatch_result(deadline, permit)
-            logger.debug('Result prefetch dispatched.', extra={
-                'result_batch_prefetch_admitted': 1,
-                'result_batch_prefetch_status': 'dispatched'})
+            self._publish(revision)
+            self._connection._remaining(deadline)
         except BaseException:
-            permit.release()
-            logger.debug('Result prefetch preparation failed.', extra={
-                'result_batch_prefetch_admitted': 0,
-                'result_batch_prefetch_status': 'preparation_failed'})
+            logger.debug('Continuous result download preparation failed.', extra={
+                'result_batch_download_status': 'preparation_failed'})
             raise
+        event = asyncio.Event()
+        stream = ContinuousResultStream(session_id=self._result_session_id, notify=event.set)
+        producer = asyncio.create_task(self._download_results(stream, revision, route))
+        stream.set_handle(producer)
+        self._result_available = event
+        self._pending_result = (stream, revision, route)
+        logger.debug('Continuous result download started.', extra={'result_batch_download_status': 'started'})
+
+    async def _download_results(self, stream, revision, route):
+        """Download ordered envelopes without using any decode/work reservation."""
+        budget = self._connection.operation_timeout
+        no_progress_deadline = time.monotonic() + budget
+        backoff = .01
+        rpc_started = None
+        try:
+            while not stream.retired:
+                deadline = min(time.monotonic() + budget, no_progress_deadline)
+                rpc_started = None
+                metadata = await self._connection._metadata(deadline, route)
+                if stream.retired or revision != self._revision or route != self._route:
+                    stream.retire()
+                    return
+                if self._lease_guard is not None:
+                    self._lease_guard(internal=True)
+                self._connection._check_owner(_internal=True)
+                self._connection._remaining(deadline)
+                session = '' if self._connection._oauth_enabled else stream.session_id
+                if not self._connection._oauth_enabled and not session:
+                    raise ProgrammingError('An active query session is required to download results.')
+                request = pb.GetNextResultBatchRequest(
+                    sessionId=session, queryId=route.query_id, engineIP=route.engine_ip)
+                rpc_started = time.monotonic()
+                transport = asyncio.create_task(self._connection._raw_result_rpc(
+                    'getNextResultBatchV2', request, tuple(metadata), deadline))
+                stream.set_transport(transport)
+                try:
+                    response = await asyncio.shield(transport)
+                finally:
+                    if transport.done():
+                        stream.clear_transport(transport)
+                stream.push(response, time.monotonic() - rpc_started)
+                if stream.retired or response.endOfStream:
+                    return
+                if any(response.resultBatches):
+                    no_progress_deadline = time.monotonic() + budget
+                    backoff = .01
+                else:
+                    await asyncio.sleep(min(backoff, self._connection._remaining(no_progress_deadline)))
+                    backoff = min(backoff * 2, .1)
+        except asyncio.CancelledError:
+            stream.retire()
+            raise
+        except Exception as error:
+            stream.fail(error, 0.0 if rpc_started is None else time.monotonic() - rpc_started)
+        finally:
+            stream.finish()
 
     async def _next_v2_batch(self, deadline):
         from .async_work import reserve_work
@@ -477,7 +538,7 @@ class AsyncCursor:
                 await self._refresh_metadata(deadline)
             while True:
                 consumed = consumed or self._pending_result is not None
-                reservation = await reserve_work(deadline=deadline)
+                reservation = None
                 revision = self._revision
                 protocol = self._result_protocol
                 previously_consumed = consumed
@@ -505,6 +566,11 @@ class AsyncCursor:
                     except grpc.RpcError as error:
                         if protocol == 'v2' and error.code() == grpc.StatusCode.UNIMPLEMENTED:
                             consumed = previously_consumed
+                            self._retire_prefetch()
+                            # Settle V2 before V1 can advance the same query session.
+                            async with asyncio.timeout_at(deadline):
+                                await self._settle_retired_results()
+                            self._publish(revision)
                             self._result_protocol = 'v1'
                             status = 'unimplemented'
                             logger.debug('Result batch compatibility fallback.',
@@ -514,7 +580,9 @@ class AsyncCursor:
                     finally:
                         wait_seconds = time.monotonic() - started
                         rpc_seconds = (transport_record.elapsed
-                                       if transport_record is not None and transport_record.settled
+                                       if transport_record is not None and (
+                                           isinstance(transport_record, ContinuousResultStream)
+                                           or transport_record.settled)
                                        else wait_seconds)
                         if prefetched:
                             logger.debug('Result prefetched RPC seconds=%.6f wait_seconds=%.6f status=%s',
@@ -526,10 +594,12 @@ class AsyncCursor:
                     try:
                         if protocol == 'v2':
                             await self._start_prefetch(response, deadline)
+                            reservation = await reserve_work(deadline=deadline)
                             await self._decode_v2_response(response, reservation, revision, deadline)
                         else:
                             self._retain_result_session(response, revision)
                             if response.resultBatch:
+                                reservation = await reserve_work(deadline=deadline)
                                 batch = await self._decode_batch(response.resultBatch, reservation, revision)
                             else:
                                 self._state = 'EXHAUSTED'
@@ -546,13 +616,15 @@ class AsyncCursor:
                         self._state = 'EXHAUSTED'
                         return None
                 finally:
-                    reservation.release()
+                    if reservation is not None:
+                        reservation.release()
                     if dispatched:
                         _log_result_batch(protocol, rpc_seconds, status,
                                           response if status == 'ok' else None,
                                           decode_seconds if status == 'ok' else 0.0)
-                await asyncio.sleep(min(backoff, self._connection._remaining(deadline)))
-                backoff = min(backoff * 2, .1)
+                if not isinstance(transport_record, ContinuousResultStream):
+                    await asyncio.sleep(min(backoff, self._connection._remaining(deadline)))
+                    backoff = min(backoff * 2, .1)
         except asyncio.CancelledError:
             if consumed:
                 self._fail_result('ambiguous_result')
@@ -718,13 +790,18 @@ class AsyncCursor:
         if task is not None and task is not asyncio.current_task():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-        for pending in self._retired_results:
+        await self._settle_retired_results()
+
+    async def _settle_retired_results(self):
+        for pending in tuple(self._retired_results):
             handle = pending.handle
             if handle is not None and not pending.settled:
                 await asyncio.gather(asyncio.shield(handle), return_exceptions=True)
+            while not pending.settled:
+                await asyncio.sleep(.005)
             if not self._connection._oauth_enabled and pending.session_id:
                 self._result_session_id = pending.session_id
-        self._retired_results.clear()
+            self._retired_results.remove(pending)
 
     async def _clear(self, deadline, owned=False):
         await self._stop_active()

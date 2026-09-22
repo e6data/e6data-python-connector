@@ -425,7 +425,7 @@ cursor = conn.cursor(database, catalog_name)
 
 ### Opt in to multi-chunk result batches
 
-Set `enable_result_batch_v2=True` to enable V2 batches, one-envelope prefetch,
+Set `enable_result_batch_v2=True` to enable V2 batches, continuous result downloading,
 and bounded parallel chunk decoding together. It defaults to `False`. There
 are no separate public prefetch or decoding switches. `arraysize` and
 `fetchmany(size)` only change the number of rows returned to the application.
@@ -495,13 +495,19 @@ engine = create_engine("e6data://", connect_args=connect_args)
 async_engine = create_async_engine("e6data+asyncio://", connect_args=connect_args)
 ```
 
-The connector starts the next result RPC after the current response arrives,
-before decoding its chunks. There is at most one pending envelope per cursor
-and four across the process. A completed response keeps its slot until consumed
-or discarded. Result RPCs for the same query never overlap. A completed success
-can wait while the application is idle; an in-flight request keeps its original
-transport deadline. The next fetch uses its remaining budget for decoding.
-Async `fetchall` keeps one deadline for the entire operation.
+After the first V2 response, a download thread (sync) or task (async) keeps
+fetching serialized batches until the engine returns end-of-stream. Decoding
+runs concurrently and takes batches from the queue in order. Downloading does
+not wait for decoding or application row processing. There is no queue-size
+limit and no process-wide limit on active downloaders. Result RPCs for the same
+query never overlap.
+
+Each background RPC gets a fresh configured transport budget when it starts;
+that deadline never extends after dispatch. An empty nonterminal response uses
+backoff with a finite no-progress deadline. Completed responses can wait while
+the application is idle. Public fetch deadlines still cover waiting and decoding,
+and expiry or cancellation stops the downloader. Async `fetchall` keeps one
+deadline for its entire operation.
 
 Two shared worker processes can decode one multi-chunk envelope at a time.
 Other envelopes use the sequential path. Workers receive chunk bytes and column
@@ -510,7 +516,8 @@ so parallel decoding is not a promise of better performance for every result.
 
 Fetch return shapes and row order stay the same. `fetchall_buffer()` yields the
 original decoded chunks. All chunks in an envelope must decode successfully
-before any are exposed. Prefetch and workers add serialized buffers, Python
+before any are exposed. The serialized queue can hold the entire result when
+downloading is faster than decoding or application reads. Workers add Python
 objects and process copies; the receive limit is not a limit on total memory.
 `fetchall()` still retains the full result.
 

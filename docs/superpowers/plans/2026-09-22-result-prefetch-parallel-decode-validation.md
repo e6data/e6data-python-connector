@@ -1,5 +1,9 @@
 # Result prefetch and parallel decode validation
 
+Historical snapshot for commit `359cb49`. The September 23
+[continuous-download follow-up](2026-09-23-continuous-result-download.md)
+changes the one-envelope fetch limit and requires separate measurements.
+
 Ticket: PLT-10376. Local implementation and validation complete. Customer
 qualification and package publication remain deferred.
 
