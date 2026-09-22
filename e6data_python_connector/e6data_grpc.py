@@ -148,10 +148,32 @@ _escaper = HiveParamEscaper()
 logger = logging.getLogger(__name__)
 
 
+def _configure_debug_logging():
+    """Enable connector output without changing application logging handlers."""
+    connector_logger = logging.getLogger('e6data_python_connector')
+    connector_logger.setLevel(logging.DEBUG)
+    current = connector_logger
+    while current is not None:
+        if any(handler.level <= logging.DEBUG and not isinstance(handler, logging.NullHandler)
+               for handler in current.handlers):
+            return
+        if not current.propagate:
+            break
+        current = current.parent
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        '[%(name)s] %(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'))
+    connector_logger.addHandler(handler)
+
+
 def _log_result_batch_fetch(protocol, rpc_seconds, chunk_count=0, serialized_bytes=0,
                             decode_seconds=0, status='ok'):
     """Emit bounded metrics without query, identity, or result contents."""
-    logger.debug('Result batch fetch', extra={
+    logger.debug(
+        'Result batch fetch protocol=%s rpc_seconds=%.6f decode_seconds=%.6f '
+        'chunk_count=%d serialized_bytes=%d status=%s',
+        protocol, rpc_seconds, decode_seconds, chunk_count, serialized_bytes, status, extra={
         'result_batch_protocol': protocol,
         'result_batch_rpc_seconds': rpc_seconds,
         'result_batch_chunk_count': chunk_count,
@@ -594,13 +616,7 @@ class Connection(object):
 
         # Enable comprehensive debugging if debug flag is set
         if self._debug:
-            # Configure root logger for DEBUG level
-            logging.basicConfig(
-                level=logging.DEBUG,
-                format='[%(name)s] %(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S',
-                force=True  # Force reconfiguration even if logging is already configured
-            )
+            _configure_debug_logging()
 
             # Note: gRPC C++ core tracing (GRPC_VERBOSITY and GRPC_TRACE) must be set
             # BEFORE the gRPC module is imported to take effect. Setting them at runtime
@@ -1369,9 +1385,8 @@ class Cursor(DBAPICursor):
     def _fail_result(self, reason):
         if self._result_failure is None:
             self._result_failure = IncompleteResultError(reason, query_id=self._query_id)
-        if self._result_batch_v2_enabled:
-            self._data = None
-            self._result_batches.clear()
+        self._data = None
+        self._result_batches.clear()
         return self._result_failure
 
     def _check_result(self):
@@ -2029,6 +2044,9 @@ class Cursor(DBAPICursor):
                     self._result_protocol = 'v1'
                     logger.debug('Result batch compatibility fallback', extra={'result_batch_fallback': True})
                     continue
+                if isinstance(error, grpc.RpcError):
+                    self._fail_result('ambiguous_result')
+                    raise
                 raise self._fail_result('ambiguous_result') from error
             rpc_seconds = time.monotonic() - start
             consumed = True
@@ -2127,6 +2145,9 @@ class Cursor(DBAPICursor):
             unimplemented = isinstance(error, grpc.RpcError) and error.code() == grpc.StatusCode.UNIMPLEMENTED
             _log_result_batch_fetch('v1', time.monotonic() - start,
                                     status='unimplemented' if unimplemented else 'error')
+            if isinstance(error, grpc.RpcError):
+                self._fail_result('ambiguous_result')
+                raise
             raise self._fail_result('ambiguous_result') from error
         rpc_seconds = time.monotonic() - start
         buffer = response.resultBatch

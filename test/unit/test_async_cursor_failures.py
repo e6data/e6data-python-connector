@@ -119,13 +119,14 @@ def test_dispatched_fetch_failure_is_terminal(name):
             async with conn:
                 cursor = route_cursor(conn)
                 cursor._columns = []
-                with pytest.raises(IncompleteResultError) as caught:
+                with pytest.raises(grpc.aio.AioRpcError) as caught:
                     await getattr(cursor, name)()
                 assert cursor._state == 'RESULT_FAILED'
-                assert cursor.query_id == caught.value.query_id
+                assert caught.value.code() == grpc.StatusCode.UNAVAILABLE
+                assert cursor.query_id == cursor._failure.query_id
                 with pytest.raises(IncompleteResultError) as again:
                     await cursor.fetchone()
-                assert again.value is caught.value
+                assert again.value is cursor._failure
     asyncio.run(run())
 
 

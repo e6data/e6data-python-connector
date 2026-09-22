@@ -245,12 +245,13 @@ def test_real_unimplemented_v2_falls_back_once_then_failure_is_terminal(generate
     cursor._result_session_id = "unissued-local-session"
     try:
         with caplog.at_level(logging.DEBUG, logger=engine.__name__):
-            with pytest.raises(IncompleteResultError) as caught:
+            with pytest.raises(grpc.RpcError) as caught:
                 cursor.fetch_batch()
             assert cursor._result_protocol == "v1"
             with pytest.raises(IncompleteResultError) as repeated:
                 cursor.fetch_batch()
-        assert repeated.value is caught.value
+        assert repeated.value is cursor._result_failure
+        assert caught.value.code() == grpc.StatusCode.UNIMPLEMENTED
         attempts = [record for record in caplog.records if hasattr(record, "result_batch_status")]
         assert [record.result_batch_protocol for record in attempts] == ["v2", "v1"]
         assert [record.result_batch_status for record in attempts] == ["unimplemented", "unimplemented"]
@@ -276,7 +277,7 @@ def test_default_v1_real_rpc_failure_has_metrics_without_fallback(generated_serv
     cursor._is_metadata_updated = True
     try:
         with caplog.at_level(logging.DEBUG, logger=engine.__name__):
-            with pytest.raises(IncompleteResultError if oauth else grpc.RpcError):
+            with pytest.raises(grpc.RpcError):
                 cursor.fetch_batch()
         attempts = [record for record in caplog.records if hasattr(record, "result_batch_status")]
         assert len(attempts) == 1

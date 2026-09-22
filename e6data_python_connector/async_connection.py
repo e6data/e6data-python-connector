@@ -107,6 +107,9 @@ class AsyncConnection:
         settings['grpc_options'] = MappingProxyType(options)
         settings['max_receive_message_bytes'] = max_receive_message_bytes
         self._config = MappingProxyType(settings)
+        if debug:
+            from .e6data_grpc import _configure_debug_logging
+            _configure_debug_logging()
         self._oauth_enabled = not modes[0]
         self._channel = self._client = self._token_provider = None
         self._owns_token_provider = True

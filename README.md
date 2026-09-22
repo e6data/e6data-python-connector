@@ -497,7 +497,12 @@ the first chunk compared with V1. `fetchall()` still retains the full result.
 There is no prefetch or parallel fetching for a query.
 
 An `UNIMPLEMENTED` response switches that query to V1. A later query may try V2
-again. Other fetch failures do not trigger a protocol fallback or query replay.
+again. Other fetch failures do not trigger protocol fallback or query replay.
+A fetch that fails with an RPC error raises the original `grpc.RpcError` (or
+`grpc.aio.AioRpcError`), so the caller can inspect its status, details, and trailing
+metadata. V2, async V1, and sync OAuth V1 cursors then discard pending rows and reject
+later fetches with `IncompleteResultError`. Decode, cancellation, and local deadline
+errors keep their existing behavior.
 To disable V2 for new connections, omit the option or set it to `False`.
 
 The [result batch qualification instructions](test/README.md#result-batch-v2-qualification)
@@ -950,10 +955,26 @@ conn = Connection(
 ```
 
 When `debug=True`, the following features are enabled:
-- Python logging at DEBUG level for all operations
+- Connector logging at DEBUG level, for both sync and async connections. Existing
+  application logging handlers and the root logger level are kept.
 - Blue-green strategy transition logging
 - Connection lifecycle logging
 - Query execution detailed logging
+
+Each result fetch writes a normal debug message with `protocol`, `rpc_seconds`,
+`decode_seconds`, `chunk_count`, `serialized_bytes`, and `status`. The timing values
+are seconds. `rpc_seconds` measures the client RPC call, including waiting for its
+response. `decode_seconds` measures client response processing. `serialized_bytes`
+is the protobuf response size, not the number of bytes on the network. A failed
+attempt reports zero response size and chunk count. The same values remain available
+as `result_batch_*` attributes for structured log handlers.
+
+These metrics do not add SQL, credentials, session IDs, result values, or raw metadata
+to logs. `debug=False` keeps the normal quiet default. Applications can also enable
+DEBUG on the `e6data_python_connector` logger themselves. `debug=True` adds a connector
+stream handler only when no existing handler in its logger path accepts DEBUG.
+As with normal Python logging, enabling the package logger also affects other open
+connector connections in that process.
 
 ### gRPC Network Tracing
 

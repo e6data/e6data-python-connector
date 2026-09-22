@@ -20,12 +20,17 @@ logger = logging.getLogger(__name__)
 
 
 def _log_result_batch(protocol, rpc_seconds, status, response=None, decode_seconds=0.0):
-    logger.debug('Result batch fetch completed.', extra={
+    chunk_count = ((len(response.resultBatches) if protocol == 'v2'
+                    else int(bool(response.resultBatch))) if response else 0)
+    serialized_bytes = response.ByteSize() if response else 0
+    logger.debug(
+        'Result batch fetch protocol=%s rpc_seconds=%.6f decode_seconds=%.6f '
+        'chunk_count=%d serialized_bytes=%d status=%s',
+        protocol, rpc_seconds, decode_seconds, chunk_count, serialized_bytes, status, extra={
         'result_batch_protocol': protocol,
         'result_batch_rpc_seconds': rpc_seconds,
-        'result_batch_chunk_count': (len(response.resultBatches) if protocol == 'v2'
-                                     else int(bool(response.resultBatch))) if response else 0,
-        'result_batch_serialized_bytes': response.ByteSize() if response else 0,
+        'result_batch_chunk_count': chunk_count,
+        'result_batch_serialized_bytes': serialized_bytes,
         'result_batch_decode_seconds': decode_seconds,
         'result_batch_status': status,
     })
@@ -163,9 +168,8 @@ class AsyncCursor:
             self._failure = IncompleteResultError(reason, query_id=self.query_id)
         if self._state != 'CLOSED':
             self._state = 'RESULT_FAILED'
-        if self._result_batch_v2:
-            self._rows.clear()
-            self._result_batches.clear()
+        self._rows.clear()
+        self._result_batches.clear()
         return self._failure
 
     def _accept_rows(self, rows):
@@ -340,6 +344,10 @@ class AsyncCursor:
             if consumed:
                 self._fail_result('ambiguous_result')
             raise
+        except grpc.RpcError:
+            if consumed:
+                self._fail_result('ambiguous_result')
+            raise
         except IncompleteResultError:
             raise
         except Exception as error:
@@ -446,6 +454,10 @@ class AsyncCursor:
             if consumed:
                 self._fail_result('ambiguous_result')
             raise
+        except grpc.RpcError:
+            if consumed:
+                self._fail_result('ambiguous_result')
+            raise
         except IncompleteResultError:
             raise
         except Exception as error:
@@ -471,7 +483,7 @@ class AsyncCursor:
                 raise ProgrammingError('Fetch size must be a nonnegative integer.')
             try:
                 return await self._fetchmany(size, self._connection._deadline(timeout))
-            except (asyncio.CancelledError, OperationalError, ProgrammingError, OAuthError):
+            except (asyncio.CancelledError, grpc.RpcError, OperationalError, ProgrammingError, OAuthError):
                 raise
             except Exception as error:
                 raise _operational(error) from error
@@ -489,7 +501,7 @@ class AsyncCursor:
                 if rows is not None:
                     self._rownumber += len(rows)
                 return rows
-            except (asyncio.CancelledError, OperationalError, ProgrammingError, OAuthError):
+            except (asyncio.CancelledError, grpc.RpcError, OperationalError, ProgrammingError, OAuthError):
                 raise
             except Exception as error:
                 raise _operational(error) from error
@@ -507,6 +519,8 @@ class AsyncCursor:
                         return rows
                     rows.extend(batch)
                     self._rownumber += len(batch)
+            except grpc.RpcError:
+                raise
             except asyncio.CancelledError:
                 if rows:
                     self._fail_result('aggregation_failed')

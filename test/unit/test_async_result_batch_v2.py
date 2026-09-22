@@ -200,7 +200,7 @@ def test_v2_unimplemented_falls_back_once_then_v1_failure_is_terminal(caplog):
             conn._session_id = 'local-unissued-session'
             cursor = active_cursor(conn)
             cursor._route = conn._register_route(QueryRoute(conn.target, 'unissued-query', '', conn.strategy))
-            with pytest.raises(IncompleteResultError):
+            with pytest.raises(grpc.aio.AioRpcError):
                 await cursor.fetch_batch()
             assert cursor._result_protocol == 'v1'
             assert cursor.query_id in conn._routes
@@ -267,14 +267,15 @@ def test_actual_dispatched_connection_failure_does_not_switch_to_v1(name, caplog
                               operation_timeout=.05, cleanup_timeout=.02) as conn:
             cursor = active_cursor(conn)
             cursor._route = conn._register_route(QueryRoute(conn.target, 'unissued', '', conn.strategy))
-            with pytest.raises(IncompleteResultError) as caught:
+            with pytest.raises(grpc.aio.AioRpcError) as caught:
                 await getattr(cursor, name)()
             assert cursor._result_protocol == 'v2'
             assert cursor._state == 'RESULT_FAILED'
-            assert cursor.query_id == caught.value.query_id
+            assert caught.value.code() == grpc.StatusCode.UNAVAILABLE
+            assert cursor.query_id == cursor._failure.query_id
             with pytest.raises(IncompleteResultError) as again:
                 await cursor.fetchone()
-            assert again.value is caught.value
+            assert again.value is cursor._failure
             assert cursor.query_id in conn._routes
     with socket.socket() as reserved_port:
         reserved_port.bind(('127.0.0.1', 0))
