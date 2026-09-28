@@ -349,7 +349,9 @@ def test_legacy_suspend_resume_baseline(cached, active):
     connector._set_active_strategy(cached)
     state = ['suspended']
     seen = []
-    connection = make_connection(access_token=None, username='fixture-user', password='fixture-password')
+    connection = make_connection(access_token=None, username='fixture-user', password='fixture-password',
+                                 grpc_options={'max_receive_message_length': 4096,
+                                               'max_send_message_length': 8192})
     def authenticate(request, metadata):
         assert request.user == 'fixture-user'
         assert request.password == 'fixture-password'
@@ -361,7 +363,10 @@ def test_legacy_suspend_resume_baseline(cached, active):
         if headers['strategy'] != active:
             raise rpc_error(grpc.StatusCode.UNKNOWN, 'status: 456')
         return engine_pb.AuthenticateResponse(sessionId='legacy-session')
-    def resume(_):
+    def resume(manager):
+        options = dict(manager._grpc_options)
+        assert options['grpc.max_receive_message_length'] == 4096
+        assert options['grpc.max_send_message_length'] == 8192
         state[0] = 'active'
         return True
     connection._client = SimpleNamespace(authenticate=authenticate)

@@ -22,7 +22,8 @@ def test_local_constructor_and_defaults():
     assert conn.cleanup_timeout == 10
     assert conn.oauth_timeout == 10
     assert conn.auto_resume_timeout == 300
-    assert conn.max_receive_message_bytes == 64 * 1024 * 1024
+    assert conn.max_receive_message_bytes == -1
+    assert conn.grpc_options['grpc.max_send_message_length'] == -1
     assert conn._channel is None
 
 
@@ -79,10 +80,94 @@ def test_oauth_rejects_insecure(kwargs):
         AsyncConnection('localhost', 1, **kwargs)
 
 
-@pytest.mark.parametrize('kwargs', [dict(operation_timeout=0), dict(cleanup_timeout=float('inf')), dict(max_receive_message_bytes=-1), dict(grpc_options={'max_receive_message_length': -1})])
+@pytest.mark.parametrize('kwargs', [dict(operation_timeout=0), dict(cleanup_timeout=float('inf')), dict(max_receive_message_bytes=0), dict(grpc_options={'max_receive_message_length': 0})])
 def test_invalid_limits(kwargs):
     with pytest.raises(ValueError):
         connection(**kwargs)
+
+
+@pytest.mark.parametrize('value', [-1, 1024])
+@pytest.mark.parametrize('name', ['max_receive_message_length', 'grpc.max_receive_message_length'])
+def test_explicit_receive_limit_preserves_unlimited_and_positive_values(value, name):
+    conn = connection(max_receive_message_bytes=value, grpc_options={name: value})
+    assert conn.max_receive_message_bytes == value
+    assert name not in conn.grpc_options
+
+
+@pytest.mark.parametrize('name', ['max_receive_message_length', 'grpc.max_receive_message_length'])
+def test_legacy_explicit_receive_alias_is_honored_when_public_argument_is_omitted(name):
+    limit = 64 * 1024 * 1024
+    conn = connection(grpc_options={name: limit})
+    assert conn.max_receive_message_bytes == limit
+    assert name not in conn.grpc_options
+
+
+@pytest.mark.parametrize('name', ['max_receive_message_length', 'grpc.max_receive_message_length'])
+def test_explicit_unlimited_public_receive_limit_cannot_be_overridden_by_alias(name):
+    with pytest.raises(ValueError, match='max_receive_message_bytes'):
+        connection(max_receive_message_bytes=-1, grpc_options={name: 64 * 1024 * 1024})
+
+
+@pytest.mark.parametrize('value', [-1, 1024])
+def test_matching_receive_aliases_are_honored_when_public_argument_is_omitted(value):
+    conn = connection(grpc_options={
+        'max_receive_message_length': value, 'grpc.max_receive_message_length': value})
+    assert conn.max_receive_message_bytes == value
+    assert 'max_receive_message_length' not in conn.grpc_options
+    assert 'grpc.max_receive_message_length' not in conn.grpc_options
+
+
+def test_conflicting_receive_aliases_are_rejected_when_public_argument_is_omitted():
+    with pytest.raises(ValueError, match='Conflicting.*max_receive_message_length'):
+        connection(grpc_options={
+            'max_receive_message_length': -1, 'grpc.max_receive_message_length': 1024})
+
+
+@pytest.mark.parametrize('name', ['max_send_message_length', 'grpc.max_send_message_length'])
+@pytest.mark.parametrize('value', [-1, 1024])
+def test_explicit_send_limit_preserves_unlimited_and_positive_values(name, value):
+    conn = connection(grpc_options={name: value})
+    assert conn.grpc_options['grpc.max_send_message_length'] == value
+    assert len([key for key in conn.grpc_options if key.endswith('max_send_message_length')]) == 1
+
+
+@pytest.mark.parametrize('value', [-1, 1024])
+def test_matching_send_aliases_use_one_canonical_option(value):
+    conn = connection(grpc_options={
+        'max_send_message_length': value, 'grpc.max_send_message_length': value})
+    assert conn.grpc_options['grpc.max_send_message_length'] == value
+    assert 'max_send_message_length' not in conn.grpc_options
+
+
+def test_conflicting_send_aliases_are_rejected():
+    with pytest.raises(ValueError, match='Conflicting.*max_send_message_length'):
+        connection(grpc_options={
+            'max_send_message_length': -1, 'grpc.max_send_message_length': 1024})
+
+
+@pytest.mark.parametrize('value', [0, -2, True, False, 1.5, '1024', None])
+def test_invalid_receive_message_limits(value):
+    with pytest.raises(ValueError, match='max_receive_message_bytes'):
+        connection(max_receive_message_bytes=value)
+
+
+@pytest.mark.parametrize('name', ['max_receive_message_length', 'grpc.max_receive_message_length'])
+@pytest.mark.parametrize('value', [True, 1.0])
+def test_receive_alias_requires_integer_even_when_equal_to_explicit_limit(name, value):
+    with pytest.raises(ValueError, match='max_receive_message'):
+        connection(max_receive_message_bytes=1, grpc_options={name: value})
+
+
+@pytest.mark.parametrize('name', ['max_send_message_length', 'grpc.max_send_message_length'])
+@pytest.mark.parametrize('value', [0, -2, True, False, 1.5, '1024', None])
+def test_invalid_send_message_limits(name, value):
+    with pytest.raises(ValueError, match='max_send_message_length'):
+        connection(grpc_options={name: value})
+
+
+def test_conflicting_receive_option_remains_rejected():
+    with pytest.raises(ValueError, match='max_receive_message_bytes'):
+        connection(max_receive_message_bytes=1024, grpc_options={'max_receive_message_length': 2048})
 
 
 def test_network_methods_explicit():
@@ -157,6 +242,26 @@ def test_native_transport_failure_is_bounded():
                     await conn.get_session_id()
                 assert isinstance(caught.value.__cause__, (grpc.RpcError, TimeoutError))
                 assert conn._session_id is None
+        asyncio.run(run())
+
+
+@pytest.mark.parametrize('receive_limit,send_limit', [(1024, 2048), (-1, -1)])
+def test_recovery_manager_inherits_explicit_message_size_limits(receive_limit, send_limit):
+    with socket.socket() as unavailable:
+        unavailable.bind(('127.0.0.1', 0))
+        port = unavailable.getsockname()[1]
+
+        async def run():
+            async with AsyncConnection(
+                    '127.0.0.1', port, username='unit-user', password='unit-input',
+                    max_receive_message_bytes=receive_limit,
+                    grpc_options={'max_send_message_length': send_limit}) as conn:
+                with pytest.raises(OperationalError):
+                    await conn._resume_cluster(asyncio.get_running_loop().time() - 1)
+                options = dict(conn._cluster_manager._grpc_options)
+                assert options['grpc.max_receive_message_length'] == receive_limit
+                assert options['grpc.max_send_message_length'] == send_limit
+
         asyncio.run(run())
 
 

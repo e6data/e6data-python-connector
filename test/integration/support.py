@@ -49,6 +49,7 @@ _CONNECTION_SETTINGS = frozenset(
         "oauth_scope",
         "access_token",
         "client_auth_method",
+        "enable_result_batch_v2",
     }
 )
 
@@ -126,6 +127,8 @@ def _connection_kwargs(raw: Any, environ: Mapping[str, str]) -> dict[str, Any]:
             resolved[key] = value
     if not resolved.get("host") or not resolved.get("port"):
         raise IntegrationConfigError("connection_kwargs requires host and port")
+    if "enable_result_batch_v2" in resolved and not isinstance(resolved["enable_result_batch_v2"], bool):
+        raise IntegrationConfigError("enable_result_batch_v2 must be a boolean")
     return resolved
 
 

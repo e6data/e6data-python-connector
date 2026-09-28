@@ -327,7 +327,10 @@ def test_sync_oauth_actual_decode_phase_preserves_handle_and_terminal_state(case
         assert caught.value.query_id==cursor.query_id
         with pytest.raises(IncompleteResultError) as again:
             cursor.fetchone()
-        assert again.value is caught.value
+        assert again.value is not caught.value
+        assert again.value.reason == caught.value.reason
+        assert again.value.query_id == caught.value.query_id
+        assert cursor._result_failure.__traceback__ is None
     else:
         result=cursor._decode_batch_oauth(decode_phase_payload(case))
         assert result==(None if case=='eof' else [['Failed to parse.']])
@@ -365,7 +368,10 @@ def test_async_actual_decode_phase_preserves_handle_and_terminal_state(case):
                 await connection._channel.close()
                 with pytest.raises(IncompleteResultError) as again:
                     await cursor.fetchone()
-                assert again.value is caught.value
+                assert again.value is not caught.value
+                assert again.value.reason == caught.value.reason
+                assert again.value.query_id == caught.value.query_id
+                assert cursor._failure.__traceback__ is None
                 assert caught.value.query_id==cursor.query_id
             else:
                 result=await cursor._decode_batch(decode_phase_payload(case),reservation,cursor._revision)

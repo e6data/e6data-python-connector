@@ -423,6 +423,135 @@ database = '<new_database_name>'  # Replace with the new database.
 cursor = conn.cursor(database, catalog_name)
 ```
 
+### Opt in to multi-chunk result batches
+
+Set `enable_result_batch_v2=True` to enable V2 batches, continuous result downloading,
+and bounded parallel chunk decoding together. It defaults to `False`. There
+are no separate public prefetch or decoding switches. `arraysize` and
+`fetchmany(size)` only change the number of rows returned to the application.
+
+The planner must support V2 and have `ENABLE_GET_NEXT_RESULT_BATCH_V2` enabled.
+`ENABLE_GET_NEXT_CHUNK_V2` controls a separate executor-to-planner boundary.
+These flags do not extend the planner's query lifetime. Finishing a large result
+within 900 seconds still needs a measurement on the target deployment.
+
+The optimized path requires ordinary GIL-enabled CPython 3.11 through 3.13 and
+an import-safe application entry point. Put application startup inside
+`if __name__ == "__main__":`, including when using SQLAlchemy. Interactive,
+daemon and frozen applications are rejected before query submission. Two
+workers use the explicit `spawn` method; the application's global multiprocessing
+start method is unchanged. An unguarded main script can run its other import
+side effects, so keep all application startup inside the guard.
+
+Both APIs default to unlimited gRPC send and receive message sizes (`-1`).
+Explicit positive byte limits are still honored. For sync, set
+`max_receive_message_length` and `max_send_message_length` in `grpc_options`.
+For async, set the receive limit with `max_receive_message_bytes` or
+`max_receive_message_length` in `grpc_options`; if both are supplied, they must
+agree. Set `max_send_message_length` in `grpc_options` for the send limit.
+The receive limit applies to each message after transport decompression, not the
+total query result. Unlimited receiving does not limit client memory use;
+continuous downloading can retain serialized batches while decoding catches up.
+
+These examples use your existing `connection_options`, `sql`, and `consume`:
+
+```python
+from e6data_python_connector import Connection
+
+
+def main():
+    options = {**connection_options, "enable_result_batch_v2": True}
+    with Connection(**options) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql)
+            for rows in cursor.fetchall_buffer():
+                consume(rows)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+```python
+import asyncio
+from e6data_python_connector.aio import AsyncConnection
+
+
+async def main():
+    options = {**connection_options, "enable_result_batch_v2": True}
+    async with AsyncConnection(**options) as connection:
+        async with connection.cursor() as cursor:
+            await cursor.execute(sql)
+            async for rows in cursor.fetchall_buffer():
+                consume(rows)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+SQLAlchemy accepts the same flag through `connect_args`. Create and use engines
+inside the guarded application entry point:
+
+```python
+connect_args = {**connection_options, "enable_result_batch_v2": True}
+engine = create_engine("e6data://", connect_args=connect_args)
+async_engine = create_async_engine("e6data+asyncio://", connect_args=connect_args)
+```
+
+After the first V2 response, a download thread (sync) or task (async) keeps
+fetching serialized batches until the engine returns end-of-stream. Decoding
+runs concurrently and takes batches from the queue in order. Downloading does
+not wait for decoding or application row processing. There is no queue-size
+limit and no process-wide limit on active downloaders. Result RPCs for the same
+query never overlap.
+
+Each background RPC gets a fresh configured transport budget when it starts;
+that deadline never extends after dispatch. An empty nonterminal response uses
+backoff with a finite no-progress deadline. Completed responses can wait while
+the application is idle. Public fetch deadlines still cover waiting and decoding,
+and expiry or cancellation stops the downloader. Async `fetchall` keeps one
+deadline for its entire operation.
+
+Two shared worker processes can decode one multi-chunk envelope at a time.
+Other envelopes use the sequential path. Workers receive chunk bytes and column
+positions, not connections or credentials. Process startup and copying add cost,
+so parallel decoding is not a promise of better performance for every result.
+
+Fetch return shapes and row order stay the same. `fetchall_buffer()` yields the
+original decoded chunks. All chunks in an envelope must decode successfully
+before any are exposed. The serialized queue can hold the entire result when
+downloading is faster than decoding or application reads. Workers add Python
+objects and process copies; the receive limit is not a limit on total memory.
+`fetchall()` still retains the full result.
+
+If a decoder worker exits or its local pipe breaks, the connector stops the
+failed workers and decodes that complete serialized envelope once in the parent
+process. It uses the same deadline and makes no extra result RPC. Continuous
+downloading stays active and uncapped during this recovery. Later envelopes use
+sequential decoding until the decoder runtime is replaced through its normal
+lifecycle. Cancellation, expired deadlines, invalid worker replies, and errors
+reported while decoding data are still failures. Their original cause is kept
+on the first error delivered to the caller.
+
+Only a V2 `UNIMPLEMENTED` response switches that query to V1 and disables its
+optimizations. Other RPC failures reach the caller as the original
+`grpc.RpcError` or `grpc.aio.AioRpcError`. A failed pending RPC is raised when
+its envelope is needed, after current valid chunks have been consumed. Failed
+or cancelled queries are not replayed. Later fetches on an incomplete result
+raise `IncompleteResultError`. Clear, cancel, close and pool return retire
+pending work; unsafe connections must not be reused.
+
+Use `debug=True` for payload-free RPC, decode and worker diagnostics. Serialized
+Protobuf bytes are uncompressed payload size, not bytes sent over the network.
+
+For rollback, close old cursors and connections, then omit
+`enable_result_batch_v2` or set it to `False` on new connections. Closing the
+last V2 connection also stops its shared workers. See the
+[qualification instructions](test/README.md#result-batch-v2-qualification).
+Local synthetic results do not prove customer performance or the 900-second
+query requirement.
+
 ### Get Query Time Metrics
 ```python
 import json
@@ -868,10 +997,26 @@ conn = Connection(
 ```
 
 When `debug=True`, the following features are enabled:
-- Python logging at DEBUG level for all operations
+- Connector logging at DEBUG level, for both sync and async connections. Existing
+  application logging handlers and the root logger level are kept.
 - Blue-green strategy transition logging
 - Connection lifecycle logging
 - Query execution detailed logging
+
+Each result fetch writes a normal debug message with `protocol`, `rpc_seconds`,
+`decode_seconds`, `chunk_count`, `serialized_bytes`, and `status`. The timing values
+are seconds. `rpc_seconds` measures the client RPC call, including waiting for its
+response. `decode_seconds` measures client response processing. `serialized_bytes`
+is the protobuf response size, not the number of bytes on the network. A failed
+attempt reports zero response size and chunk count. The same values remain available
+as `result_batch_*` attributes for structured log handlers.
+
+These metrics do not add SQL, credentials, session IDs, result values, or raw metadata
+to logs. `debug=False` keeps the normal quiet default. Applications can also enable
+DEBUG on the `e6data_python_connector` logger themselves. `debug=True` adds a connector
+stream handler only when no existing handler in its logger path accepts DEBUG.
+As with normal Python logging, enabling the package logger also affects other open
+connector connections in that process.
 
 ### gRPC Network Tracing
 

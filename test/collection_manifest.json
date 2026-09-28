@@ -260,6 +260,26 @@
       "kind": "integration",
       "runner": "manual",
       "reason": "Real target diagnostic catches failures; no reliable automated pass verdict"
+    },
+    "test/performance/local_decode_baseline.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Synthetic local performance harness; no live engine target"
+    },
+    "test/performance/local_result_pipeline.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Synthetic local performance harness; no live engine target"
+    },
+    "test/performance/parallel_decode_benchmark.py": {
+      "kind": "utility",
+      "runner": "manual",
+      "reason": "Synthetic local performance harness; no live engine target"
+    },
+    "test/performance/test_local_decode_baseline.py": {
+      "kind": "offline",
+      "runner": "pytest",
+      "reason": "Frozen synthetic dataset and eager decoder measurement contracts"
     }
   }
 }

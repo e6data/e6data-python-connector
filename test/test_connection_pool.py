@@ -377,6 +377,9 @@ class TestPooledConnection(unittest.TestCase):
         """Test cursor creation and caching in pooled connection."""
         mock_conn = MagicMock(spec=Connection)
         mock_cursor = MagicMock()
+        mock_cursor._cleanup_error = None
+        mock_cursor._retired_fetches = []
+        mock_conn._result_cleanup_safe = True
         mock_conn.cursor.return_value = mock_cursor
         mock_conn.check_connection.return_value = True
         
