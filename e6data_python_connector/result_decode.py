@@ -32,6 +32,32 @@ class ResultDecodeError(ValueError):
     """A worker failed before a complete envelope could be published."""
 
 
+class _WorkerTransportError(ResultDecodeError):
+    """Only worker exit and pipe I/O failures permit a local sequential retry."""
+
+    def __init__(self, stage, index, pid, exitcode=None, exception_type=None):
+        self.stage = stage
+        self.index = index
+        self.pid = pid
+        self.exitcode = exitcode
+        self.exception_type = exception_type
+        super().__init__(
+            'Decode worker unavailable: stage=%s worker=%s pid=%s exitcode=%s error_type=%s.'
+            % (stage, index, pid, exitcode, exception_type))
+
+
+def _detached_error(error):
+    """Keep safe failure metadata without retaining result-bearing tracebacks."""
+    if isinstance(error, _WorkerTransportError):
+        return _WorkerTransportError(error.stage, error.index, error.pid,
+                                     error.exitcode, error.exception_type)
+    if isinstance(error, TimeoutError):
+        return TimeoutError('Result decoding deadline exceeded.')
+    if isinstance(error, ResultDecodeError):
+        return ResultDecodeError(str(error))
+    return ResultDecodeError('Result decoder failed (%s).' % type(error).__name__)
+
+
 class _DecodeOwner:
     """One lease's cancellation latch for one envelope, with identity semantics."""
 
@@ -81,6 +107,7 @@ class _Slot:
         self.error = None
 
     def io(self):
+        stage = 'handshake'
         try:
             ready = self.channel.recv()
             if not isinstance(ready, tuple) or len(ready) != 2 or ready[0] != 'ready':
@@ -94,16 +121,22 @@ class _Slot:
             # so it cannot wait forever on the now-empty queue.
             while self.runtime.state in ('starting', 'ready'):
                 job = self.jobs.get()
+                stage = 'send'
                 self.channel.send(job)
                 if job is None:
                     return
+                stage = 'receive'
                 result = self.channel.recv()
                 with self.runtime.condition:
                     self.result = result
                     self.runtime.condition.notify_all()
         except (Exception, SystemExit) as error:
             with self.runtime.condition:
-                self.error = error
+                if isinstance(error, (EOFError, OSError)):
+                    self.error = _WorkerTransportError(
+                        stage, self.index, self.pid, exception_type=type(error).__name__)
+                else:
+                    self.error = _detached_error(error)
                 self.runtime.condition.notify_all()
 
 
@@ -115,6 +148,7 @@ class _Runtime:
         self.state = 'starting'
         self.error = None
         self._active = None
+        self._active_cancelled = False
         self._sequence = 0
         self.cleanup_thread = None
         self.stopped = threading.Event()
@@ -125,17 +159,23 @@ class _Runtime:
     def pids(self):
         return tuple(slot.pid for slot in self.slots if slot.pid is not None)
 
-    def _worker_failed(self):
+    def _worker_failure(self):
+        # A protocol failure remains fatal even if another worker exits.
         for slot in self.slots:
-            if slot.error is not None:
-                return True
+            if slot.error is not None and not isinstance(slot.error, _WorkerTransportError):
+                return _detached_error(slot.error)
+        for slot in self.slots:
             if slot.process is not None and slot.pid is not None:
                 try:
                     if wait([slot.process.sentinel], timeout=0):
-                        return True
-                except (ValueError, OSError):
-                    return True
-        return False
+                        return _WorkerTransportError('exit', slot.index, slot.pid,
+                                                     exitcode=slot.process.exitcode)
+                except (ValueError, OSError) as error:
+                    return ResultDecodeError('Decode worker health check failed (%s).'
+                                             % type(error).__name__)
+            if slot.error is not None:
+                return _detached_error(slot.error)
+        return None
 
     def start(self, deadline):
         try:
@@ -144,7 +184,7 @@ class _Runtime:
                 _remaining(deadline)
                 with self.condition:
                     if self.error is not None:
-                        raise self.error
+                        raise _detached_error(self.error)
                     if self.state != 'starting':
                         raise ResultDecodeError('Decoder closed during worker startup.')
                 slot = _Slot(self, index)
@@ -164,20 +204,21 @@ class _Runtime:
             with self.condition:
                 while not all(slot.ready for slot in self.slots):
                     if self.error is not None:
-                        raise self.error
-                    if self._worker_failed():
-                        raise ResultDecodeError('Decode worker failed before startup completed.')
+                        raise _detached_error(self.error)
+                    failure = self._worker_failure()
+                    if failure is not None:
+                        raise failure
                     self.condition.wait(min(.02, _remaining(deadline)))
                 _remaining(deadline)
                 if self.error is not None:
-                    raise self.error
+                    raise _detached_error(self.error)
                 if self.state != 'starting':
                     raise ResultDecodeError('Decoder closed during worker startup.')
                 self.state = 'ready'
                 self.startup_done.set()
                 self.condition.notify_all()
         except BaseException as error:
-            self.startup_error = error
+            self.startup_error = _detached_error(error)
             self.startup_done.set()
             self.quarantine(error, deadline)
             self.stopped.wait(max(0, deadline - time.monotonic()))
@@ -188,13 +229,13 @@ class _Runtime:
             while not self.startup_done.is_set():
                 self.condition.wait(min(.02, _remaining(deadline)))
             if self.startup_error is not None:
-                raise self.startup_error
+                raise _detached_error(self.startup_error)
             # A runtime that failed after startup is usable only sequentially.
 
     def quarantine(self, error, deadline=None):
         with self.condition:
             if self.error is None:
-                self.error = error
+                self.error = _detached_error(error)
             self.state = 'failed'
             self.condition.notify_all()
             self._request_cleanup(deadline if deadline is not None else time.monotonic() + .5)
@@ -244,6 +285,13 @@ class _Runtime:
                 slot.thread.join()
             if slot.process is not None:
                 slot.process.close()
+            # No I/O thread can add another result or retain a queued job now.
+            slot.result = None
+            while True:
+                try:
+                    slot.jobs.get_nowait()
+                except queue.Empty:
+                    break
         with self.condition:
             self.state = 'closed'
             self.stopped.set()
@@ -258,6 +306,7 @@ class _Runtime:
                 owner.cancelled = True
             active = self._active
             if active is not None and active[0] is lease and (owner is None or active[1] is owner):
+                self._active_cancelled = True
                 self.quarantine(ResultDecodeError('Result decoding was cancelled.'))
 
     def release(self, lease, deadline, wait=True):
@@ -276,20 +325,26 @@ class _Runtime:
             _logger.debug('result_decode cleanup=%s workers=%d',
                           'stopped' if self.stopped.is_set() else 'pending', len(self.pids))
 
+    def _check_decode(self, lease, owner, deadline):
+        _remaining(deadline)
+        if lease._closed:
+            raise ValueError('Decoder lease is closed.')
+        if isinstance(owner, _DecodeOwner):
+            if owner.lease is not lease:
+                raise ValueError('Decode owner belongs to another lease.')
+            if owner.cancelled:
+                raise ResultDecodeError('Result decoding was cancelled.')
+        if (self._active is not None and self._active[0] is lease
+                and self._active[1] is owner and self._active_cancelled):
+            raise ResultDecodeError('Result decoding was cancelled.')
+
     def decode(self, lease, columns, payloads, deadline, owner):
         started = time.monotonic()
         mode, fallback = 'sequential', 'single_chunk'
         admitted = False
         try:
             with self.condition:
-                _remaining(deadline)
-                if lease._closed:
-                    raise ValueError('Decoder lease is closed.')
-                if isinstance(owner, _DecodeOwner):
-                    if owner.lease is not lease:
-                        raise ValueError('Decode owner belongs to another lease.')
-                    if owner.cancelled:
-                        raise ResultDecodeError('Result decoding was cancelled.')
+                self._check_decode(lease, owner, deadline)
                 if len(payloads) > 1:
                     if self.state != 'ready':
                         fallback = 'unavailable'
@@ -299,29 +354,52 @@ class _Runtime:
                         fallback = 'decimal_context'
                     else:
                         self._active = (lease, owner)
+                        self._active_cancelled = False
                         self._sequence += 1
                         token = self._sequence
                         admitted = True
                         mode, fallback = 'parallel', 'none'
             if not admitted:
                 chunks = decode_result_batches(columns, payloads)
-                _remaining(deadline)
-                return chunks
-            try:
-                return self._parallel(columns, payloads, deadline, token)
-            except BaseException as error:
-                self.quarantine(error, deadline)
-                raise
+            else:
+                original_flags = dict(decimal.getcontext().flags)
+                try:
+                    chunks = self._parallel(columns, payloads, deadline, token, lease, owner)
+                except _WorkerTransportError as error:
+                    # Retire both processes and I/O threads before decoding the
+                    # complete already-downloaded envelope in the caller.
+                    self.quarantine(error, deadline)
+                    _logger.warning('result_decode recovery=started %s', error)
+                    error.__traceback__ = None
+                    while not self.stopped.is_set():
+                        with self.condition:
+                            self._check_decode(lease, owner, deadline)
+                        self.stopped.wait(min(.02, _remaining(deadline)))
+                    with self.condition:
+                        self._check_decode(lease, owner, deadline)
+                    decimal.getcontext().flags = original_flags
+                    mode, fallback = 'sequential', 'worker_transport'
+                    chunks = decode_result_batches(columns, payloads)
+                    with self.condition:
+                        self._check_decode(lease, owner, deadline)
+                    _logger.debug('result_decode recovery=complete chunks=%d', len(payloads))
+                except BaseException as error:
+                    self.quarantine(error, deadline)
+                    raise
+            with self.condition:
+                self._check_decode(lease, owner, deadline)
+            return chunks
         finally:
             if admitted:
                 with self.condition:
                     self._active = None
+                    self._active_cancelled = False
                     self.condition.notify_all()
             _logger.debug('result_decode mode=%s wall_ms=%.3f chunks=%d workers=%d fallback=%s cleanup=%s',
                           mode, (time.monotonic() - started) * 1000, len(payloads),
                           2 if admitted else 0, fallback, self.state)
 
-    def _parallel(self, columns, payloads, deadline, token):
+    def _parallel(self, columns, payloads, deadline, token, lease, owner):
         # The existing vector decoder uses only the number of columns. Plain
         # positions preserve that contract without serializing FieldInfo objects.
         metadata = tuple(range(len(columns)))
@@ -330,39 +408,51 @@ class _Runtime:
         output = [None] * len(payloads)
         pending = {}
         next_index = 0
-        with self.condition:
-            while pending or next_index < len(payloads):
-                _remaining(deadline)
-                if self.error is not None:
-                    raise self.error
-                if self._worker_failed():
-                    raise ResultDecodeError('Decode worker exited before returning a complete result.')
-                for slot in self.slots:
-                    if slot.index in pending and slot.result is not None:
-                        result, slot.result = slot.result, None
-                        index = pending.pop(slot.index)
-                        if (not isinstance(result, tuple) or len(result) != 5 or
-                                result[1] != token or result[2] != index):
-                            raise ResultDecodeError('Decode worker returned an invalid job result.')
-                        flags = result[4]
-                        if not isinstance(flags, tuple) or any(name not in decimal_signals for name in flags):
-                            raise ResultDecodeError('Decode worker returned invalid decimal flags.')
-                        for name in flags:
-                            context.flags[decimal_signals[name]] = True
-                        if result[0] == 'error':
-                            raise ResultDecodeError('Result chunk decoding failed in worker (%s).' % result[3])
-                        if result[0] != 'result':
-                            raise ResultDecodeError('Decode worker returned an invalid result kind.')
-                        output[index] = result[3]
-                    if slot.index not in pending and next_index < len(payloads):
-                        index = next_index
-                        next_index += 1
-                        pending[slot.index] = index
-                        slot.jobs.put_nowait((token, index, metadata, payloads[index]))
-                if pending:
-                    self.condition.wait(min(.02, _remaining(deadline)))
-            _remaining(deadline)
-        return [rows for rows in output if rows]
+        result = None
+        try:
+            with self.condition:
+                while pending or next_index < len(payloads):
+                    self._check_decode(lease, owner, deadline)
+                    if self.error is not None:
+                        raise _detached_error(self.error)
+                    # Validate available replies before considering recovery, so
+                    # a worker/protocol error is never hidden by a second exit.
+                    for slot in self.slots:
+                        if slot.index in pending and slot.result is not None:
+                            result, slot.result = slot.result, None
+                            index = pending.pop(slot.index)
+                            if (not isinstance(result, tuple) or len(result) != 5 or
+                                    result[1] != token or result[2] != index):
+                                raise ResultDecodeError('Decode worker returned an invalid job result.')
+                            flags = result[4]
+                            if not isinstance(flags, tuple) or any(name not in decimal_signals for name in flags):
+                                raise ResultDecodeError('Decode worker returned invalid decimal flags.')
+                            for name in flags:
+                                context.flags[decimal_signals[name]] = True
+                            if result[0] == 'error':
+                                raise ResultDecodeError('Result chunk decoding failed in worker (%s).' % result[3])
+                            if result[0] != 'result':
+                                raise ResultDecodeError('Decode worker returned an invalid result kind.')
+                            output[index] = result[3]
+                    failure = self._worker_failure()
+                    if failure is not None:
+                        raise failure
+                    for slot in self.slots:
+                        if slot.index not in pending and next_index < len(payloads):
+                            index = next_index
+                            next_index += 1
+                            pending[slot.index] = index
+                            slot.jobs.put_nowait((token, index, metadata, payloads[index]))
+                    if pending:
+                        self.condition.wait(min(.02, _remaining(deadline)))
+                self._check_decode(lease, owner, deadline)
+                return [rows for rows in output if rows]
+        finally:
+            # Fatal errors may keep their traceback for the caller. Do not let
+            # that traceback also retain partial decoded output or pending jobs.
+            output.clear()
+            pending.clear()
+            result = None
 
 
 class DecoderLease:

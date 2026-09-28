@@ -196,9 +196,10 @@ class ClusterManager:
         self._timeout = time.time() + timeout
         self._secure_channel = secure_channel
         self.cluster_uuid = cluster_uuid
-        self._grpc_options = grpc_options
-        if grpc_options is None:
-            self._grpc_options = dict()
+        options = dict(grpc_options or ())
+        options.setdefault('grpc.max_receive_message_length', -1)
+        options.setdefault('grpc.max_send_message_length', -1)
+        self._grpc_options = list(options.items())
         self._debug = debug
         self._ssl_cert = ssl_cert
         self._metadata_provider = metadata_provider

@@ -126,7 +126,9 @@ def test_dispatched_fetch_failure_is_terminal(name):
                 assert cursor.query_id == cursor._failure.query_id
                 with pytest.raises(IncompleteResultError) as again:
                     await cursor.fetchone()
-                assert again.value is cursor._failure
+                assert again.value is not cursor._failure
+                assert again.value.reason == cursor._failure.reason
+                assert again.value.query_id == cursor._failure.query_id
     asyncio.run(run())
 
 

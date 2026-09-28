@@ -14,6 +14,9 @@ from .oauth_common import validate_positive_timeout, validate_token_endpoint
 from .server import e6x_engine_pb2 as pb, e6x_engine_pb2_grpc as bindings
 
 
+_UNSET_RECEIVE_MESSAGE_BYTES = object()
+
+
 @dataclass(frozen=True)
 class QueryRoute:
     target: str
@@ -50,7 +53,7 @@ class AsyncConnection:
                  token_url=None, oauth_scope=None, access_token=None,
                  client_auth_method='basic', *, operation_timeout=600.0,
                  oauth_timeout=10.0, cleanup_timeout=10.0, auto_resume_timeout=300.0,
-                 max_receive_message_bytes=64 * 1024 * 1024,
+                 max_receive_message_bytes=_UNSET_RECEIVE_MESSAGE_BYTES,
                  enable_result_batch_v2=False):
         from .result_decode_worker import is_decode_worker
         if is_decode_worker():
@@ -98,14 +101,31 @@ class AsyncConnection:
         for name, value in [('operation_timeout', operation_timeout), ('oauth_timeout', oauth_timeout),
                             ('cleanup_timeout', cleanup_timeout), ('auto_resume_timeout', auto_resume_timeout)]:
             settings[name] = validate_positive_timeout(value, name)
-        if isinstance(max_receive_message_bytes, bool) or not isinstance(max_receive_message_bytes, int) or max_receive_message_bytes <= 0:
-            raise ValueError('max_receive_message_bytes must be a positive integer.')
         options = dict(grpc_options or {})
-        for name in ('max_receive_message_length', 'grpc.max_receive_message_length'):
-            if name in options:
-                if options[name] != max_receive_message_bytes:
-                    raise ValueError('Set the finite receive limit using max_receive_message_bytes.')
-                del options[name]
+        receive_names = ('max_receive_message_length', 'grpc.max_receive_message_length')
+        receive_values = [options.pop(name) for name in receive_names if name in options]
+        for value in receive_values:
+            if (isinstance(value, bool) or not isinstance(value, int)
+                    or (value != -1 and value <= 0)):
+                raise ValueError('max_receive_message_length must be -1 (unlimited) or a positive integer.')
+        if len(receive_values) == 2 and receive_values[0] != receive_values[1]:
+            raise ValueError('Conflicting max_receive_message_length options.')
+        if max_receive_message_bytes is _UNSET_RECEIVE_MESSAGE_BYTES:
+            max_receive_message_bytes = receive_values[0] if receive_values else -1
+        if (isinstance(max_receive_message_bytes, bool) or not isinstance(max_receive_message_bytes, int)
+                or (max_receive_message_bytes != -1 and max_receive_message_bytes <= 0)):
+            raise ValueError('max_receive_message_bytes must be -1 (unlimited) or a positive integer.')
+        if receive_values and receive_values[0] != max_receive_message_bytes:
+            raise ValueError('Set the receive limit using max_receive_message_bytes; supplied options must agree.')
+        send_names = ('max_send_message_length', 'grpc.max_send_message_length')
+        send_values = [options.pop(name) for name in send_names if name in options]
+        for value in send_values:
+            if (isinstance(value, bool) or not isinstance(value, int)
+                    or (value != -1 and value <= 0)):
+                raise ValueError('max_send_message_length must be -1 (unlimited) or a positive integer.')
+        if len(send_values) == 2 and send_values[0] != send_values[1]:
+            raise ValueError('Conflicting max_send_message_length options.')
+        options['grpc.max_send_message_length'] = send_values[0] if send_values else -1
         # Authority overrides can disable meaningful server identity validation.
         if any(name.removeprefix('grpc.') in ('ssl_target_name_override', 'default_authority') for name in options):
             raise ValueError('TLS authority overrides are unsupported.')
@@ -385,6 +405,8 @@ class AsyncConnection:
 
             self._cluster_manager = AsyncClusterManager(
                 self.host, self.port, user=self.username or '', password=self.password or '',
+                grpc_options={**self.grpc_options,
+                              'grpc.max_receive_message_length': self.max_receive_message_bytes},
                 secure_channel=self.secure, cluster_uuid=self.cluster_name,
                 ssl_cert=self.ssl_cert, metadata_provider=metadata_provider if self._oauth_enabled else None,
                 initial_strategy=self.strategy, auto_resume_timeout=self.auto_resume_timeout,

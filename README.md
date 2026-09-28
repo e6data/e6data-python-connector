@@ -443,11 +443,15 @@ workers use the explicit `spawn` method; the application's global multiprocessin
 start method is unchanged. An unguarded main script can run its other import
 side effects, so keep all application startup inside the guard.
 
-Both APIs default to a 64 MiB receive limit when V2 is enabled. A positive finite
-custom limit is allowed; unlimited receive sizes are rejected for V2. The sync
-flag-off path keeps its existing options. For async, set
-`max_receive_message_bytes`; any receive limit in `grpc_options` must agree.
-Choose limits from measured envelope sizes and the client's memory budget.
+Both APIs default to unlimited gRPC send and receive message sizes (`-1`).
+Explicit positive byte limits are still honored. For sync, set
+`max_receive_message_length` and `max_send_message_length` in `grpc_options`.
+For async, set the receive limit with `max_receive_message_bytes` or
+`max_receive_message_length` in `grpc_options`; if both are supplied, they must
+agree. Set `max_send_message_length` in `grpc_options` for the send limit.
+The receive limit applies to each message after transport decompression, not the
+total query result. Unlimited receiving does not limit client memory use;
+continuous downloading can retain serialized batches while decoding catches up.
 
 These examples use your existing `connection_options`, `sql`, and `consume`:
 
@@ -520,6 +524,15 @@ before any are exposed. The serialized queue can hold the entire result when
 downloading is faster than decoding or application reads. Workers add Python
 objects and process copies; the receive limit is not a limit on total memory.
 `fetchall()` still retains the full result.
+
+If a decoder worker exits or its local pipe breaks, the connector stops the
+failed workers and decodes that complete serialized envelope once in the parent
+process. It uses the same deadline and makes no extra result RPC. Continuous
+downloading stays active and uncapped during this recovery. Later envelopes use
+sequential decoding until the decoder runtime is replaced through its normal
+lifecycle. Cancellation, expired deadlines, invalid worker replies, and errors
+reported while decoding data are still failures. Their original cause is kept
+on the first error delivered to the caller.
 
 Only a V2 `UNIMPLEMENTED` response switches that query to V1 and disables its
 optimizations. Other RPC failures reach the caller as the original

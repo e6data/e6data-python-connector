@@ -697,6 +697,85 @@ def test_continuous_download_finishes_eight_envelopes_while_first_decode_is_bloc
     asyncio.run(run())
 
 
+def test_continuous_download_drains_while_failed_decode_workers_recover_locally(local_server):
+    from e6data_python_connector.result_batch import decode_result_batches
+
+    service = local_server[1]
+    service.envelopes = 8
+    service.second_release.clear()
+    recovery_started = threading.Event()
+    finish_recovery = threading.Event()
+    original_trace = threading.gettrace()
+
+    def observe_recovery(frame, event, arg):
+        if (event == 'call' and frame.f_code is decode_result_batches.__code__
+                and frame.f_back.f_locals.get('fallback') == 'worker_transport'):
+            recovery_started.set()
+            assert finish_recovery.wait(5), 'Local recovery was not released by the test.'
+        return observe_recovery
+
+    async def run():
+        connection, cursor = await active(local_server[0])
+        task = None
+        pids = ()
+        try:
+            await connection._ensure_decoder(connection._deadline())
+            lease = connection._decoder_lease
+            pids = lease.worker_pids
+            assert len(pids) == 2
+            for pid in pids:
+                os.kill(pid, signal.SIGSTOP)
+            threading.settrace(observe_recovery)
+            task = asyncio.create_task(cursor.fetch_batch())
+            async with asyncio.timeout(5):
+                while lease._runtime._active is None:
+                    await asyncio.sleep(0.005)
+            assert await asyncio.to_thread(service.second.wait, 2)
+            assert len(service.calls) == 2
+            assert not task.done()
+            os.kill(pids[0], signal.SIGKILL)
+            assert await asyncio.to_thread(recovery_started.wait, 2), \
+                'Worker failure must reach local sequential recovery.'
+            service.second_release.set()
+            assert await asyncio.to_thread(service.terminal_sent.wait, 2), \
+                'Downloading must continue while local sequential recovery is paused.'
+            stream = cursor._pending_result[0]
+            async with asyncio.timeout(2):
+                await asyncio.shield(stream.handle)
+            assert not task.done()
+            assert len(service.calls) == 8
+            assert [request.sessionId for request in service.calls] == [
+                'local-session-' + str(index) for index in range(8)]
+            assert stream.queued_count == 7
+
+            finish_recovery.set()
+            async with asyncio.timeout(5):
+                assert await task == [[10]]
+            expected = [[value] for index in range(1, 9)
+                        for value in (index * 10, index * 10 + 1)]
+            assert await cursor.fetchall() == expected[1:]
+            assert cursor._failure is None
+            assert len(service.calls) == 8
+            assert not service.v1_calls
+            await cursor.clear()
+            assert service.clear_session == 'local-session-8'
+        finally:
+            threading.settrace(original_trace)
+            service.second_release.set()
+            finish_recovery.set()
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await connection.close()
+
+    asyncio.run(run())
+
+
 def test_continuous_download_queues_rpc_failure_after_all_prior_successes(local_server):
     local_server[1].envelopes = 8
     local_server[1].fail_at = 6

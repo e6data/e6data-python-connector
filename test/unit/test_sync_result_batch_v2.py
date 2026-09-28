@@ -5,9 +5,11 @@ successful query engine, and serialized responses are codec inputs only.
 """
 
 import logging
+import gc
 import math
 import sys
 import time
+import weakref
 
 import grpc
 import pytest
@@ -71,6 +73,17 @@ def test_default_and_opted_in_flags_do_not_enter_grpc_channel_options():
     finally:
         legacy.close()
         opted.close()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_message_sizes_default_to_unlimited(enabled):
+    conn = connection(enable_result_batch_v2=enabled)
+    try:
+        options = dict(conn._get_grpc_options)
+        assert options["grpc.max_receive_message_length"] == -1
+        assert options["grpc.max_send_message_length"] == -1
+    finally:
+        conn.close()
 
 
 @pytest.mark.parametrize("value", [None, 0, -1, True, False, "3", math.inf, -math.inf, math.nan])
@@ -204,10 +217,60 @@ def test_legacy_opt_in_failure_blocks_every_fetch_and_preserves_handle(local_cur
                    local_cursor.fetchall, lambda: next(local_cursor.fetchall_buffer())):
         with pytest.raises(IncompleteResultError) as caught:
             action()
-        assert caught.value is failure
+        assert caught.value is not failure
+        assert caught.value.reason == failure.reason
+        assert caught.value.query_id == failure.query_id
     assert local_cursor._data is None
     assert local_cursor._result_batches.pop() is None
     assert local_cursor.query_id == "unissued-local-query"
+
+
+def test_decode_failure_cache_does_not_retain_response_frame(local_cursor):
+    class FrameMarker:
+        pass
+
+    def decode_corrupt_response():
+        marker = FrameMarker()
+        reference = weakref.ref(marker)
+        value = pb.GetNextResultBatchV2Response(resultBatches=[b"corrupt"], endOfStream=True)
+        try:
+            local_cursor._accept_result_batch(value, time.monotonic() + 2)
+        except IncompleteResultError as error:
+            assert error.reason == "decode_failed"
+            assert error.query_id == "unissued-local-query"
+            assert isinstance(error.__cause__, Exception)
+            assert error.__cause__.__traceback__ is not None
+        else:
+            pytest.fail("Corrupt Thrift input must fail decoding")
+        return reference
+
+    reference = decode_corrupt_response()
+    gc.collect()
+    assert reference() is None
+    assert local_cursor._result_failure.__traceback__ is None
+    assert local_cursor._result_failure.__cause__ is None
+    assert local_cursor._result_failure.__context__ is None
+
+
+def test_repeated_failed_fetches_do_not_attach_tracebacks_to_cache(local_cursor):
+    local_cursor._fail_result("decode_failed")
+    previous = None
+    depths = []
+    for _ in range(3):
+        with pytest.raises(IncompleteResultError) as caught:
+            local_cursor.fetch_batch()
+        assert caught.value is not previous
+        previous = caught.value
+        assert caught.value.reason == "decode_failed"
+        assert caught.value.query_id == "unissued-local-query"
+        traceback = caught.value.__traceback__
+        depth = 0
+        while traceback is not None:
+            depth += 1
+            traceback = traceback.tb_next
+        depths.append(depth)
+        assert local_cursor._result_failure.__traceback__ is None
+    assert len(set(depths)) == 1
 
 
 def test_failed_cleanup_prevents_query_replacement_and_retains_buffers(local_cursor):
@@ -252,7 +315,9 @@ def test_real_unimplemented_v2_falls_back_once_then_failure_is_terminal(generate
             assert cursor._result_protocol == "v1"
             with pytest.raises(IncompleteResultError) as repeated:
                 cursor.fetch_batch()
-        assert repeated.value is cursor._result_failure
+            assert repeated.value is not cursor._result_failure
+            assert repeated.value.reason == cursor._result_failure.reason
+            assert repeated.value.query_id == cursor._result_failure.query_id
         assert caught.value.code() == grpc.StatusCode.UNIMPLEMENTED
         attempts = [record for record in caplog.records if hasattr(record, "result_batch_status")]
         assert [record.result_batch_protocol for record in attempts] == ["v2", "v1"]

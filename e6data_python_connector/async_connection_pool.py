@@ -189,6 +189,8 @@ class AsyncConnectionPool:
             from .async_cluster_manager import AsyncClusterManager
             self._cluster_manager = AsyncClusterManager(
                 config.host, config.port, user=config.username or '', password=config.password or '',
+                grpc_options={**config.grpc_options,
+                              'grpc.max_receive_message_length': config.max_receive_message_bytes},
                 secure_channel=config.secure, ssl_cert=config.ssl_cert,
                 cluster_uuid=config.cluster_name, initial_strategy='blue',
                 metadata_provider=self._resume_metadata if config._oauth_enabled else None,

@@ -3,9 +3,11 @@
 Query handles assigned here are unissued and test local ownership only.
 """
 import asyncio
+import gc
 import inspect
 import logging
 import socket
+import weakref
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -61,7 +63,7 @@ def test_option_defaults_keyword_only_and_read_only():
     assert inspect.signature(AsyncConnection).parameters['enable_result_batch_v2'].kind == inspect.Parameter.KEYWORD_ONLY
     with pytest.raises(AttributeError):
         connection().enable_result_batch_v2 = True
-    assert connection(enable_result_batch_v2=True).max_receive_message_bytes == 64 * 1024 * 1024
+    assert connection(enable_result_batch_v2=True).max_receive_message_bytes == -1
     assert connection(enable_result_batch_v2=True, max_receive_message_bytes=1024).max_receive_message_bytes == 1024
 
 
@@ -134,6 +136,66 @@ def test_corrupt_later_chunk_publishes_nothing_and_retains_failure():
             assert cursor._rows == deque()
             with pytest.raises(IncompleteResultError):
                 await cursor.fetchone()
+    asyncio.run(run())
+
+
+def test_decode_failure_cache_does_not_retain_decode_frames_or_grow_fetch_tracebacks():
+    class DecodeFrameMarker:
+        pass
+
+    async def fail_decode(cursor):
+        marker = DecodeFrameMarker()
+        reference = weakref.ref(marker)
+        response = pb.GetNextResultBatchV2Response(
+            resultBatches=[chunk([1]), b'\xff'], endOfStream=True)
+        reservation = await reserve_work(deadline=cursor._connection._deadline())
+        try:
+            try:
+                await cursor._decode_v2_response(response, reservation, cursor._revision)
+            except IncompleteResultError as error:
+                assert error.reason == 'decode_failed'
+                assert error.__cause__ is not None
+                assert error.__cause__.__traceback__ is not None
+            else:
+                pytest.fail('Corrupt Thrift input must fail decoding.')
+        finally:
+            reservation.release()
+        return reference
+
+    async def run():
+        async with connection(enable_result_batch_v2=True) as conn:
+            cursor = active_cursor(conn)
+            marker = await fail_decode(cursor)
+            # Let the worker's completed publish callback leave the event loop.
+            await asyncio.sleep(0)
+            gc.collect()
+            assert marker() is None
+            assert cursor._failure.__traceback__ is None
+            assert cursor._failure.__cause__ is None
+            assert cursor._failure.__context__ is None
+            failures = []
+            depths = []
+            for _ in range(3):
+                with pytest.raises(IncompleteResultError) as caught:
+                    await cursor.fetchone()
+                failure = caught.value
+                failures.append(failure)
+                assert failure is not cursor._failure
+                assert failure.reason == 'decode_failed'
+                assert failure.query_id == cursor.query_id
+                assert failure.__cause__ is None
+                traceback = failure.__traceback__
+                depth = 0
+                while traceback is not None:
+                    depth += 1
+                    traceback = traceback.tb_next
+                depths.append(depth)
+            assert len({id(error) for error in failures}) == 3
+            assert len(set(depths)) == 1
+            assert cursor._failure.__traceback__ is None
+            assert cursor._result_batches.needs_fetch
+            assert not cursor._rows
+
     asyncio.run(run())
 
 
@@ -277,7 +339,9 @@ def test_actual_dispatched_connection_failure_does_not_switch_to_v1(name, caplog
             assert cursor.query_id == cursor._failure.query_id
             with pytest.raises(IncompleteResultError) as again:
                 await cursor.fetchone()
-            assert again.value is cursor._failure
+            assert again.value is not cursor._failure
+            assert again.value.reason == cursor._failure.reason
+            assert again.value.query_id == cursor._failure.query_id
             assert cursor.query_id in conn._routes
     with socket.socket() as reserved_port:
         reserved_port.bind(('127.0.0.1', 0))

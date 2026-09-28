@@ -220,12 +220,12 @@ def test_lost_result_hits_deadline_and_reaps_workers(lease):
     until(lambda: not any(alive(pid) for pid in lease.worker_pids))
 
 
-def test_crash_is_detected_without_waiting_for_operation_deadline(lease):
+def test_crash_recovers_without_waiting_for_operation_deadline(lease):
     owner, errors, thread = stalled_decode(lease)
     os.kill(lease.worker_pids[0], signal.SIGKILL)
     thread.join(2)
     assert not thread.is_alive()
-    assert len(errors) == 1 and isinstance(errors[0], ValueError)
+    assert not errors
     until(lambda: not any(alive(pid) for pid in lease.worker_pids))
 
 

@@ -22,7 +22,9 @@ def test_incomplete_result_blocks_every_fetch_entry_point(cursor):
                       cursor.fetchall, lambda: next(cursor.fetchall_buffer())):
         with pytest.raises(exceptions.IncompleteResultError) as caught:
             operation()
-        assert caught.value is error
+        assert caught.value is not error
+        assert caught.value.reason == error.reason
+        assert caught.value.query_id == error.query_id
 
 
 def test_fetchall_preserves_rows_buffered_before_eof(cursor):

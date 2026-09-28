@@ -129,7 +129,7 @@ class AsyncCursor:
         if self._state == 'CLOSED':
             raise ProgrammingError('Cursor is closed.')
         if fetch and self._failure is not None:
-            raise self._failure
+            raise IncompleteResultError(self._failure.reason, query_id=self._failure.query_id)
         if fetch and self._state in ('EMPTY', 'SUBMISSION_UNKNOWN'):
             raise ProgrammingError('No complete query is available for fetching.')
 
@@ -172,12 +172,13 @@ class AsyncCursor:
         self._retire_prefetch()
         self._cancel_decode()
         if self._failure is None:
+            # Never raise this template: its traceback would retain decoded inputs.
             self._failure = IncompleteResultError(reason, query_id=self.query_id)
         if self._state != 'CLOSED':
             self._state = 'RESULT_FAILED'
         self._rows.clear()
         self._result_batches.clear()
-        return self._failure
+        return IncompleteResultError(self._failure.reason, query_id=self._failure.query_id)
 
     def _accept_rows(self, rows):
         self._rows.extend(rows)

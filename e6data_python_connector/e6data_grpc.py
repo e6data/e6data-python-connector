@@ -527,9 +527,9 @@ class Connection(object):
                 if key in normalized and normalized[key] != value:
                     raise ValueError('Conflicting gRPC options after prefix normalization.')
                 normalized[key] = value
-            limit = normalized.get('max_receive_message_length', 64 * 1024 * 1024)
-            if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
-                raise ValueError('V2 receive limit must be a finite positive integer.')
+            limit = normalized.get('max_receive_message_length', -1)
+            if isinstance(limit, bool) or not isinstance(limit, int) or (limit != -1 and limit <= 0):
+                raise ValueError('V2 receive limit must be a positive integer or -1 for unlimited.')
             normalized['max_receive_message_length'] = limit
             grpc_options = normalized
         if enable_result_batch_v2 and grpc_options is not None and 'grpc_prepare_timeout' in grpc_options:
@@ -696,7 +696,7 @@ class Connection(object):
             default_options = {
                 "keepalive_timeout_ms": 900000,  # Time in milliseconds to keep the connection alive.
                 "max_receive_message_length": -1,  # Maximum size of received messages.
-                "max_send_message_length": 300 * 1024 * 1024,  # Maximum size of sent messages (300 MB).
+                "max_send_message_length": -1,  # Unlimited sent message size.
                 "grpc_prepare_timeout": self.grpc_prepare_timeout,  # Timeout for prepare statement API call.
                 "keepalive_time_ms": 30000,  # Time in milliseconds between keep-alive pings.
                 "keepalive_permit_without_calls": 1,  # Allow keep-alives with no active RPCs.
@@ -1032,6 +1032,7 @@ class Connection(object):
                     cluster_uuid=self.cluster_name,
                     timeout=self.grpc_auto_resume_timeout_seconds,
                     debug=self._debug,
+                    grpc_options=self._get_grpc_options,
                     ssl_cert=self._ssl_cert
                 ).resume()
                 return status  # Return boolean status directly
@@ -1709,7 +1710,9 @@ class Cursor(DBAPICursor):
                 self._result_failure = IncompleteResultError(reason, query_id=self._query_id)
             self._data = None
             self._result_batches.clear()
-            return self._result_failure
+            # Keep the cached template free of tracebacks and response frames.
+            return IncompleteResultError(
+                self._result_failure.reason, query_id=self._result_failure.query_id)
 
     def _check_result(self):
         if self._result_batch_v2_enabled and (self._result_pid != os.getpid() or
@@ -1720,7 +1723,8 @@ class Cursor(DBAPICursor):
         if self._closed:
             raise ProgrammingError('Cursor is closed.')
         if self._result_failure is not None:
-            raise self._result_failure
+            raise IncompleteResultError(
+                self._result_failure.reason, query_id=self._result_failure.query_id)
 
     @property
     def query_id(self):

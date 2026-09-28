@@ -36,6 +36,21 @@ def test_defaults_local_validation():
             pool(**options)
 
 
+@pytest.mark.parametrize('receive_limit,send_limit', [(1024, 2048), (-1, -1)])
+def test_shared_recovery_manager_inherits_explicit_message_size_limits(receive_limit, send_limit):
+    async def run():
+        async with pool(max_receive_message_bytes=receive_limit,
+                        grpc_options={'max_send_message_length': send_limit}) as p:
+            options = dict(p._cluster_manager._grpc_options)
+            assert options['grpc.max_receive_message_length'] == receive_limit
+            assert options['grpc.max_send_message_length'] == send_limit
+            async with p.get_connection_context() as lease:
+                assert lease._connection._cluster_manager is p._cluster_manager
+                assert lease.max_receive_message_bytes == receive_limit
+
+    asyncio.run(run())
+
+
 def test_new_revision_stale_wrapper_cursor_and_double_return():
     async def run():
         async with pool() as p:

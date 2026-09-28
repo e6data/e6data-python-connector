@@ -68,7 +68,10 @@ def test_terminal_failure_prevents_all_fetches_even_with_buffered_rows():
                               cursor.fetchall, lambda: anext(cursor.fetchall_buffer())):
                 with pytest.raises(IncompleteResultError) as caught:
                     await operation()
-                assert caught.value is error
+                assert caught.value is not error
+                assert caught.value.reason == error.reason
+                assert caught.value.query_id == error.query_id
+                assert cursor._failure.__traceback__ is None
             await cursor.close()
     asyncio.run(run())
 

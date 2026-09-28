@@ -3,6 +3,7 @@
 The service supplies serialized test rows only. It is not a production query engine.
 """
 import os
+import signal
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -379,6 +380,52 @@ def test_downloads_all_serialized_responses_before_first_decode(local_results, m
         'session-%s' % i for i in range(7)]
 
 
+def test_continuous_download_drains_while_failed_decode_workers_recover_locally(local_results):
+    responses = [envelope([[index * 10], [index * 10 + 1]], terminal=index == 7,
+                          session='session-%s' % index) for index in range(8)]
+    service, conn, cursor = local_results(responses)
+    conn.grpc_prepare_timeout = 10
+    conn._start_result_decoder(time.monotonic() + 5)
+    lease = conn._decoder_lease
+    pids = lease.worker_pids
+    assert len(pids) == 2
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            for pid in pids:
+                os.kill(pid, signal.SIGSTOP)
+            fetch = executor.submit(cursor.fetch_batch)
+            deadline = time.monotonic() + 5
+            while lease._runtime._active is None:
+                assert time.monotonic() < deadline
+                threading.Event().wait(0.005)
+            assert service.entered[-1].wait(2), \
+                'Downloading must drain every envelope while decoder workers are stopped.'
+            stream = cursor._pending_fetch
+            stream.handle.result(timeout=2)
+            assert not fetch.done()
+            assert stream.queued_count == 7
+            assert len(service.requests) == 8
+            assert [request.sessionId for request in service.requests[1:]] == [
+                'session-%s' % index for index in range(7)]
+
+            os.kill(pids[0], signal.SIGKILL)
+            assert fetch.result(timeout=5) == [[0]]
+            expected = [[value] for index in range(8)
+                        for value in (index * 10, index * 10 + 1)]
+            assert cursor.fetchall() == expected[1:]
+            assert cursor._result_failure is None
+            assert len(service.requests) == 8
+            assert not service.v1_requests
+            cursor.clear()
+            assert service.cleanups[-1].sessionId == 'session-7'
+        finally:
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
+
+
 def test_slow_application_does_not_pause_serialized_download(local_results):
     responses = [envelope([[i]], terminal=i == 6, session='session-%s' % i)
                  for i in range(7)]
@@ -467,8 +514,8 @@ def test_connection_close_retires_pending_and_invalidates_cursor(local_results):
 
 
 @pytest.mark.parametrize('key', ['max_receive_message_length', 'grpc.max_receive_message_length'])
-@pytest.mark.parametrize('value', [-1, 0, True, None, float('inf'), '4096'])
-def test_v2_requires_finite_positive_receive_limit(key, value):
+@pytest.mark.parametrize('value', [-2, 0, True, False, None, float('inf'), '4096'])
+def test_v2_requires_positive_or_unlimited_receive_limit(key, value):
     with pytest.raises(ValueError, match='receive'):
         Connection(host='127.0.0.1', port=1, username='synthetic-user', password='synthetic-input',
                    require_fastbinary=False, auto_resume=False, enable_result_batch_v2=True,
@@ -478,7 +525,13 @@ def test_v2_requires_finite_positive_receive_limit(key, value):
 def test_v2_receive_limit_defaults_and_normalizes_prefix():
     base = dict(host='127.0.0.1', port=1, username='synthetic-user', password='synthetic-input',
                 require_fastbinary=False, auto_resume=False)
-    for options, expected in [({}, 64 * 1024 * 1024), ({'grpc.max_receive_message_length': 4096}, 4096)]:
+    for options, expected in [
+        ({}, -1),
+        ({'max_receive_message_length': -1}, -1),
+        ({'grpc.max_receive_message_length': -1}, -1),
+        ({'max_receive_message_length': 4096}, 4096),
+        ({'grpc.max_receive_message_length': 4096}, 4096),
+    ]:
         conn = Connection(**base, enable_result_batch_v2=True, grpc_options=options)
         try:
             configured = dict(conn._get_grpc_options)
