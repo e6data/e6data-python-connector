@@ -220,14 +220,6 @@ def test_same_dict_options_share_success(harness):
     assert len(service.calls) == 1
 
 
-def test_inherited_other_process_success_is_not_reused(harness, monkeypatch):
-    service = harness.remote(["active", "active"])
-    monkeypatch.setattr("os.getpid", lambda: 10 if threading.current_thread().name == "leader" else 20)
-    finish_pair(harness, service)
-    assert not harness.errors
-    assert len(service.calls) == 2
-
-
 def test_equal_completion_timestamp_is_not_reused(harness, monkeypatch):
     service = harness.remote(["active", "active"])
     monkeypatch.setattr(cm.time, "monotonic", lambda: 10.0)

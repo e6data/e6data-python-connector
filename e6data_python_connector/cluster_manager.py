@@ -74,7 +74,27 @@ class _StatusLock:
         self._status_thread_lock = threading.Lock()
         self._status_multiprocessing_lock = multiprocessing.Semaphore()
         self._is_active = False
-        self._resume_completion = None
+        # Both values are protected by the same semaphore as resume(). Forked
+        # workers inherit this storage, just as they inherit that semaphore.
+        self._resume_identity = multiprocessing.RawArray('B', 32)
+        self._resume_completed_at = multiprocessing.RawValue('d', 0.0)
+
+    @property
+    def _resume_completion(self):
+        """Read only while holding both status locks."""
+        completed_at = self._resume_completed_at.value
+        if completed_at == 0:
+            return None
+        return bytes(self._resume_identity), completed_at
+
+    @_resume_completion.setter
+    def _resume_completion(self, completion):
+        """Publish or invalidate only while holding both status locks."""
+        self._resume_completed_at.value = 0.0
+        if completion is not None:
+            identity, completed_at = completion
+            self._resume_identity[:] = identity
+            self._resume_completed_at.value = completed_at
 
     @property
     def is_active(self) -> bool:
@@ -154,6 +174,16 @@ class _StatusLock:
 
 
 status_lock = _StatusLock()
+
+
+def _reset_status_thread_lock_after_fork():
+    # A parent's locked threading.Lock has no owning thread in the child. Keep
+    # the inherited process semaphore and completion storage shared, however.
+    status_lock._status_thread_lock = threading.Lock()
+
+
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_reset_status_thread_lock_after_fork)
 
 
 class ClusterManager:
@@ -535,11 +565,9 @@ class ClusterManager:
 
         with status_lock as lock:
             identity = self._legacy_resume_identity()
-            process_id = os.getpid()
             completion = lock._resume_completion
             if (identity is not None and completion is not None
-                    and completion[0] == process_id and completion[1] == identity
-                    and completion[2] > call_started):
+                    and completion[0] == identity and completion[1] > call_started):
                 return True
             # A fresh attempt can observe a new failure before older waiters run.
             # Invalidate first, including when the attempt later raises an error.
@@ -573,7 +601,7 @@ class ClusterManager:
                 if self._debug:
                     logger.info("Cluster is already active, no action needed")
                 if identity is not None:
-                    lock._resume_completion = (process_id, identity, time.monotonic())
+                    lock._resume_completion = (identity, time.monotonic())
                 return True
             elif current_status.status != 'resuming':
                 """
@@ -593,7 +621,7 @@ class ClusterManager:
                     if self._debug:
                         logger.info(f"Cluster became active after {check_count} status checks")
                     if identity is not None:
-                        lock._resume_completion = (process_id, identity, time.monotonic())
+                        lock._resume_completion = (identity, time.monotonic())
                     return True
                 elif status == 'failed':
                     if self._debug:
