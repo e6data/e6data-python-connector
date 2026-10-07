@@ -12,7 +12,7 @@
 
 import setuptools
 
-VERSION = (3, 0, '1rc4',)
+VERSION = (3, 0, 1,)
 
 
 def get_long_desc():
