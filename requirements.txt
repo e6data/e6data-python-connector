@@ -21,6 +21,6 @@ rfc3986==2.0.0
 rich==13.5.2
 SQLAlchemy==1.4.36
 six==1.16.0
-thrift==0.16.0
+thrift==0.24.0
 twine==4.0.2
 webencodings==0.5.1

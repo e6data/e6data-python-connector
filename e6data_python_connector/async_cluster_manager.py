@@ -123,10 +123,15 @@ class AsyncClusterManager:
         options = dict(grpc_options or {})
         if any(key.removeprefix('grpc.') in ('ssl_target_name_override', 'default_authority') for key in options):
             raise ValueError('TLS authority overrides are unsupported.')
-        limit = options.get('grpc.max_receive_message_length', 64 * 1024 * 1024)
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
-            raise ValueError('A finite positive receive limit is required.')
-        options['grpc.max_receive_message_length'] = limit
+        for name in ('max_receive_message_length', 'max_send_message_length'):
+            limits = [options.pop(key) for key in (name, 'grpc.' + name) if key in options]
+            for limit in limits:
+                if (isinstance(limit, bool) or not isinstance(limit, int)
+                        or (limit != -1 and limit <= 0)):
+                    raise ValueError(name + ' must be -1 (unlimited) or a positive integer.')
+            if len(limits) == 2 and limits[0] != limits[1]:
+                raise ValueError('Conflicting ' + name + ' options.')
+            options['grpc.' + name] = limits[0] if limits else -1
         self._host, self._port = host, port
         self._user, self._password = user, password
         self._secure_channel, self._ssl_cert = secure_channel, ssl_cert

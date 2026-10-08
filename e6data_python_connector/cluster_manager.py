@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import os
 import threading
 import time
 import e6data_python_connector.cluster_server.cluster_pb2 as cluster_pb2
@@ -7,6 +9,7 @@ import grpc
 from grpc._channel import _InactiveRpcError
 import multiprocessing
 from contextlib import contextmanager
+from e6data_python_connector.result_decode_worker import is_decode_worker
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +73,10 @@ class _StatusLock:
         thread and multiprocessing locks and sets the active flag to False.
         """
         self._status_thread_lock = threading.Lock()
-        self._status_multiprocessing_lock = multiprocessing.Semaphore()
+        self._status_multiprocessing_lock = (threading.Semaphore() if is_decode_worker()
+                                             else multiprocessing.Semaphore())
         self._is_active = False
+        self._resume_completion = None
 
     @property
     def is_active(self) -> bool:
@@ -107,8 +112,14 @@ class _StatusLock:
            _StatusLock: The current instance of the lock, used for context management.
         """
 
-        self._status_thread_lock.acquire(timeout=self._LOCK_TIMEOUT)
-        self._status_multiprocessing_lock.acquire(timeout=self._LOCK_TIMEOUT)
+        if not self._status_thread_lock.acquire(timeout=self._LOCK_TIMEOUT):
+            raise TimeoutError('Cluster recovery timed out waiting for status lock.')
+        try:
+            if not self._status_multiprocessing_lock.acquire(timeout=self._LOCK_TIMEOUT):
+                raise TimeoutError('Cluster recovery timed out waiting for process lock.')
+        except BaseException:
+            self._status_thread_lock.release()
+            raise
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -125,8 +136,8 @@ class _StatusLock:
             exc_tb (Traceback): The traceback object of the exception (if any).
         """
 
-        self._status_thread_lock.release()
         self._status_multiprocessing_lock.release()
+        self._status_thread_lock.release()
 
     @contextmanager
     def hold_until(self, deadline):
@@ -194,9 +205,10 @@ class ClusterManager:
         self._timeout = time.time() + timeout
         self._secure_channel = secure_channel
         self.cluster_uuid = cluster_uuid
-        self._grpc_options = grpc_options
-        if grpc_options is None:
-            self._grpc_options = dict()
+        options = dict(grpc_options or ())
+        options.setdefault('grpc.max_receive_message_length', -1)
+        options.setdefault('grpc.max_send_message_length', -1)
+        self._grpc_options = list(options.items())
         self._debug = debug
         self._ssl_cert = ssl_cert
         self._metadata_provider = metadata_provider
@@ -463,6 +475,34 @@ class ClusterManager:
                     logger.warning(f"Status check failed with error: {e}")
                 yield None
 
+    def _legacy_resume_identity(self):
+        """Fingerprint exact connection inputs without retaining credentials.
+
+        Copy standard option containers. Unknown or mutable option values disable
+        sharing so their existing RPC behavior is preserved without guessing.
+        """
+        values = (self._host, self._port, self.cluster_uuid, self._secure_channel,
+                  self._ssl_cert, self._user, self._password)
+        scalar_types = (type(None), str, bytes, bool, int)
+        if any(type(value) not in scalar_types for value in values):
+            return None
+        options = self._grpc_options
+        if type(options) is dict:
+            pairs = tuple(options.items())
+        elif type(options) in (list, tuple):
+            pairs = tuple(options)
+        else:
+            return None
+        frozen_options = []
+        for pair in pairs:
+            if (type(pair) not in (tuple, list) or len(pair) != 2
+                    or any(type(value) not in scalar_types for value in pair)):
+                return None
+            frozen_options.append(tuple((type(value).__name__, value) for value in pair))
+        identity = (tuple((type(value).__name__, value) for value in values),
+                    type(options).__name__, tuple(frozen_options))
+        return hashlib.sha256(repr(identity).encode('utf-8')).digest()
+
     def resume(self) -> bool:
         """
         Resumes the cluster if it is currently suspended or not in the 'active' state.
@@ -492,14 +532,21 @@ class ClusterManager:
         """
         if self._metadata_provider is not None:
             return self._resume_oauth()
+        call_started = time.monotonic()
         if self._debug:
             logger.info(f"Starting auto-resume for cluster {self.cluster_uuid} at {self._host}:{self._port}")
 
         with status_lock as lock:
-            if lock.is_active:
-                if self._debug:
-                    logger.info("Lock is already active, cluster appears to be running")
+            identity = self._legacy_resume_identity()
+            process_id = os.getpid()
+            completion = lock._resume_completion
+            if (identity is not None and completion is not None
+                    and completion[0] == process_id and completion[1] == identity
+                    and completion[2] > call_started):
                 return True
+            # A fresh attempt can observe a new failure before older waiters run.
+            # Invalidate first, including when the attempt later raises an error.
+            lock._resume_completion = None
 
             # Retrieve the current cluster status with strategy header
             if self._debug:
@@ -528,6 +575,8 @@ class ClusterManager:
             elif current_status.status == 'active':
                 if self._debug:
                     logger.info("Cluster is already active, no action needed")
+                if identity is not None:
+                    lock._resume_completion = (process_id, identity, time.monotonic())
                 return True
             elif current_status.status != 'resuming':
                 """
@@ -546,6 +595,8 @@ class ClusterManager:
                 if status == 'active':
                     if self._debug:
                         logger.info(f"Cluster became active after {check_count} status checks")
+                    if identity is not None:
+                        lock._resume_completion = (process_id, identity, time.monotonic())
                     return True
                 elif status == 'failed':
                     if self._debug:

@@ -14,6 +14,9 @@ from .oauth_common import validate_positive_timeout, validate_token_endpoint
 from .server import e6x_engine_pb2 as pb, e6x_engine_pb2_grpc as bindings
 
 
+_UNSET_RECEIVE_MESSAGE_BYTES = object()
+
+
 @dataclass(frozen=True)
 class QueryRoute:
     target: str
@@ -50,7 +53,11 @@ class AsyncConnection:
                  token_url=None, oauth_scope=None, access_token=None,
                  client_auth_method='basic', *, operation_timeout=600.0,
                  oauth_timeout=10.0, cleanup_timeout=10.0, auto_resume_timeout=300.0,
-                 max_receive_message_bytes=64 * 1024 * 1024):
+                 max_receive_message_bytes=_UNSET_RECEIVE_MESSAGE_BYTES,
+                 enable_result_batch_v2=False):
+        from .result_decode_worker import is_decode_worker
+        if is_decode_worker():
+            raise RuntimeError('A result decode worker cannot create a connection.')
         if sys.version_info < (3, 11):
             raise RuntimeError('The async API requires Python 3.11 or newer.')
         try:
@@ -78,24 +85,47 @@ class AsyncConnection:
             raise ValueError('Async OAuth requires verified TLS (secure=True).')
         if ssl_cert is not None and not isinstance(ssl_cert, (str, bytes)):
             raise ValueError('ssl_cert must be a certificate path or PEM bytes.')
+        if not isinstance(enable_result_batch_v2, bool):
+            raise ValueError('enable_result_batch_v2 must be a boolean.')
+        if enable_result_batch_v2:
+            from .result_decode import validate_decode_runtime
+            validate_decode_runtime()
         settings = dict(host=host, port=port, username=username, password=password,
                         catalog=catalog, database=database, cluster_name=cluster_name,
                         secure=bool(secure), ssl_cert=ssl_cert, auto_resume=auto_resume,
                         scheme=scheme, debug=debug, require_fastbinary=require_fastbinary,
                         client_id=client_id, client_secret=client_secret, token_url=token_url,
                         oauth_scope=oauth_scope, access_token=access_token,
-                        client_auth_method=client_auth_method)
+                        client_auth_method=client_auth_method,
+                        enable_result_batch_v2=enable_result_batch_v2)
         for name, value in [('operation_timeout', operation_timeout), ('oauth_timeout', oauth_timeout),
                             ('cleanup_timeout', cleanup_timeout), ('auto_resume_timeout', auto_resume_timeout)]:
             settings[name] = validate_positive_timeout(value, name)
-        if isinstance(max_receive_message_bytes, bool) or not isinstance(max_receive_message_bytes, int) or max_receive_message_bytes <= 0:
-            raise ValueError('max_receive_message_bytes must be a positive integer.')
         options = dict(grpc_options or {})
-        for name in ('max_receive_message_length', 'grpc.max_receive_message_length'):
-            if name in options:
-                if options[name] != max_receive_message_bytes:
-                    raise ValueError('Set the finite receive limit using max_receive_message_bytes.')
-                del options[name]
+        receive_names = ('max_receive_message_length', 'grpc.max_receive_message_length')
+        receive_values = [options.pop(name) for name in receive_names if name in options]
+        for value in receive_values:
+            if (isinstance(value, bool) or not isinstance(value, int)
+                    or (value != -1 and value <= 0)):
+                raise ValueError('max_receive_message_length must be -1 (unlimited) or a positive integer.')
+        if len(receive_values) == 2 and receive_values[0] != receive_values[1]:
+            raise ValueError('Conflicting max_receive_message_length options.')
+        if max_receive_message_bytes is _UNSET_RECEIVE_MESSAGE_BYTES:
+            max_receive_message_bytes = receive_values[0] if receive_values else -1
+        if (isinstance(max_receive_message_bytes, bool) or not isinstance(max_receive_message_bytes, int)
+                or (max_receive_message_bytes != -1 and max_receive_message_bytes <= 0)):
+            raise ValueError('max_receive_message_bytes must be -1 (unlimited) or a positive integer.')
+        if receive_values and receive_values[0] != max_receive_message_bytes:
+            raise ValueError('Set the receive limit using max_receive_message_bytes; supplied options must agree.')
+        send_names = ('max_send_message_length', 'grpc.max_send_message_length')
+        send_values = [options.pop(name) for name in send_names if name in options]
+        for value in send_values:
+            if (isinstance(value, bool) or not isinstance(value, int)
+                    or (value != -1 and value <= 0)):
+                raise ValueError('max_send_message_length must be -1 (unlimited) or a positive integer.')
+        if len(send_values) == 2 and send_values[0] != send_values[1]:
+            raise ValueError('Conflicting max_send_message_length options.')
+        options['grpc.max_send_message_length'] = send_values[0] if send_values else -1
         # Authority overrides can disable meaningful server identity validation.
         if any(name.removeprefix('grpc.') in ('ssl_target_name_override', 'default_authority') for name in options):
             raise ValueError('TLS authority overrides are unsupported.')
@@ -103,6 +133,9 @@ class AsyncConnection:
         settings['grpc_options'] = MappingProxyType(options)
         settings['max_receive_message_bytes'] = max_receive_message_bytes
         self._config = MappingProxyType(settings)
+        if debug:
+            from .e6data_grpc import _configure_debug_logging
+            _configure_debug_logging()
         self._oauth_enabled = not modes[0]
         self._channel = self._client = self._token_provider = None
         self._owns_token_provider = True
@@ -125,6 +158,11 @@ class AsyncConnection:
         self._cleanup_error = None
         self._cluster_manager = None
         self._owns_cluster_manager = True
+        self._decoder_started = False
+        self._decoder_lease = None
+        if enable_result_batch_v2:
+            from .result_decode import DecoderLease
+            self._decoder_lease = DecoderLease()
 
     def __getattr__(self, name):
         config = self.__dict__.get('_config', {})
@@ -300,6 +338,24 @@ class AsyncConnection:
         self._check_owner(_cleanup=_cleanup, _internal=True)
         return metadata
 
+    async def _ensure_decoder(self, deadline):
+        self._check_owner()
+        if self._decoder_lease is not None and not self._decoder_started:
+            from .async_work import run_blocking
+            await run_blocking(self._decoder_lease.start, deadline, deadline=deadline)
+            self._check_owner()
+            self._decoder_started = True
+
+    async def _raw_result_rpc(self, method_name, request, metadata, deadline):
+        """Transport only: the owning task already froze identity and metadata."""
+        call = getattr(self._client, method_name)(
+            request, metadata=metadata, timeout=self._remaining(deadline))
+        self._calls.add(call)
+        try:
+            return await call
+        finally:
+            self._calls.discard(call)
+
     async def _rpc(self, method_name, request, *, deadline, route=None, safe_retry=False, _cleanup=False, _on_dispatch=None, _response_metadata=None):
         self._check_owner(_cleanup=_cleanup, _internal=True)
         refreshed = switched = False
@@ -349,6 +405,8 @@ class AsyncConnection:
 
             self._cluster_manager = AsyncClusterManager(
                 self.host, self.port, user=self.username or '', password=self.password or '',
+                grpc_options={**self.grpc_options,
+                              'grpc.max_receive_message_length': self.max_receive_message_bytes},
                 secure_channel=self.secure, cluster_uuid=self.cluster_name,
                 ssl_cert=self.ssl_cert, metadata_provider=metadata_provider if self._oauth_enabled else None,
                 initial_strategy=self.strategy, auto_resume_timeout=self.auto_resume_timeout,
@@ -500,6 +558,15 @@ class AsyncConnection:
             # Native channel close with no grace cancels transports without waiting.
             if self._channel is not None:
                 await self._channel.close()
+            if self._decoder_lease is not None:
+                # Retirement must survive loop shutdown and saturated work slots.
+                self._decoder_lease.retire(deadline)
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        while self._decoder_lease.cleanup_pending:
+                            await asyncio.sleep(min(0.005, self._remaining(deadline)))
+                except (Exception, asyncio.CancelledError):
+                    self._cleanup_error = OperationalError('Result decoder cleanup remains pending.')
             for resource, owned in ((self._cluster_manager, self._owns_cluster_manager),
                                     (self._token_provider, self._owns_token_provider)):
                 if owned and resource is not None:
@@ -538,6 +605,12 @@ class AsyncConnection:
         if self._owner is not None and self._owner != (os.getpid(), threading.get_ident(), asyncio.get_running_loop()):
             raise ProgrammingError('Connection belongs to another owner.')
         await self.close()
+        if self._decoder_lease is not None and self._decoder_lease.cleanup_pending:
+            raise ProgrammingError('Cannot reopen while result decoder cleanup remains pending.')
+        if self.enable_result_batch_v2:
+            from .result_decode import DecoderLease
+            self._decoder_lease = DecoderLease()
+            self._decoder_started = False
         self._state = 'new'
         self._session_id = self._session_task = self._close_task = self._open_task = None
         if self._owns_token_provider:

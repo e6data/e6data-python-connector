@@ -8,6 +8,22 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_legacy_installation_uses_a_supported_thrift_version():
+    from packaging.requirements import Requirement
+
+    tree = ast.parse((ROOT / 'setup.py').read_text())
+    setup = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute) and node.func.attr == 'setup')
+    requirements = ast.literal_eval(next(arg.value for arg in setup.keywords
+                                         if arg.arg == 'install_requires'))
+    supported = next(Requirement(value) for value in requirements
+                     if Requirement(value).name == 'thrift')
+    pinned = next(Requirement(line) for line in (ROOT / 'requirements.txt').read_text().splitlines()
+                  if line.startswith('thrift=='))
+    version = next(iter(pinned.specifier)).version
+    assert version in supported.specifier
+
+
 def test_optional_async_dependencies_do_not_raise_base_python_floor():
     tree = ast.parse((ROOT / 'setup.py').read_text())
     setup = next(node for node in ast.walk(tree)

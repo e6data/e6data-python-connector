@@ -9,6 +9,8 @@ MANIFEST = json.loads((ROOT / 'test' / 'collection_manifest.json').read_text())[
 
 
 def pytest_addoption(parser):
+    parser.addoption('--result-batch-benchmark-config',
+                     help='Explicit large-result benchmark config; run benchmark file explicitly')
     parser.addoption('--integration-config', help='Path to an explicit real-service test configuration')
     parser.addoption('--legacy-integration', action='store_true', default=False,
                      help='Also collect historical integration scripts after supplying their documented environment')
@@ -38,6 +40,10 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         name = item.path.relative_to(ROOT).as_posix()
         entry = MANIFEST.get(name, {})
+        if name == 'test/integration/benchmark_result_batch_v2.py':
+            item.add_marker(pytest.mark.integration)
+            # An explicitly selected benchmark requires its own config, without a silent skip.
+            continue
         if entry.get('kind') == 'synthetic':
             item.add_marker(pytest.mark.synthetic)
         if name.startswith('test/integration/') or entry.get('kind') == 'integration':

@@ -47,15 +47,17 @@ class PooledConnection:
             return False
     
     def close_cursor(self):
-        """Close the current cursor if it exists."""
+        """Close the current cursor without dropping unfinished cleanup ownership."""
         if self._cursor:
             try:
                 self._cursor.close()
-            except:
-                pass
-            finally:
-                self._cursor = None
-    
+            except Exception:
+                return False
+            if self._cursor._cleanup_error is not None or self._cursor._retired_fetches:
+                return False
+            self._cursor = None
+        return self.connection._result_cleanup_safe
+
     def __enter__(self):
         return self
     
@@ -373,10 +375,10 @@ class ConnectionPool:
             self._active_connections = max(0, self._active_connections - 1)
         
         # Close cursor if exists
-        conn.close_cursor()
+        safely_retired = conn.close_cursor()
         
-        # Check if connection is still healthy
-        if self._check_connection_health(conn):
+        # A failed retirement must never move to another pool checkout.
+        if safely_retired and self._check_connection_health(conn):
             # Return to pool if there's space
             try:
                 self._pool.put_nowait(conn)

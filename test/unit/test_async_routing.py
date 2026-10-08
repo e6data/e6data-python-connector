@@ -6,6 +6,62 @@ from e6data_python_connector.async_cluster_manager import AsyncClusterManager, _
 
 
 class ResumeStateTests(unittest.TestCase):
+    def test_message_size_defaults_are_unlimited(self):
+        manager = AsyncClusterManager('localhost', 443, user='unit', password='unit')
+        options = dict(manager._grpc_options)
+        self.assertEqual(options['grpc.max_receive_message_length'], -1)
+        self.assertEqual(options['grpc.max_send_message_length'], -1)
+
+    def test_explicit_message_size_limits_are_preserved(self):
+        for option in ('max_receive_message_length', 'max_send_message_length'):
+            for prefix in ('', 'grpc.'):
+                for value in (-1, 1024):
+                    with self.subTest(option=option, prefix=prefix, value=value):
+                        manager = AsyncClusterManager(
+                            'localhost', 443, user='unit', password='unit',
+                            grpc_options={prefix + option: value})
+                        options = dict(manager._grpc_options)
+                        self.assertEqual(options['grpc.' + option], value)
+                        self.assertNotIn(option, options)
+
+    def test_invalid_message_size_limits_are_rejected(self):
+        for option in ('max_receive_message_length', 'max_send_message_length'):
+            for prefix in ('', 'grpc.'):
+                for value in (0, -2, True, False, 1.5, '1024', None):
+                    with self.subTest(option=option, prefix=prefix, value=value):
+                        with self.assertRaises(ValueError):
+                            AsyncClusterManager(
+                                'localhost', 443, user='unit', password='unit',
+                                grpc_options={prefix + option: value})
+
+    def test_matching_message_size_aliases_use_one_canonical_option(self):
+        for option in ('max_receive_message_length', 'max_send_message_length'):
+            for value in (-1, 1024):
+                with self.subTest(option=option, value=value):
+                    manager = AsyncClusterManager(
+                        'localhost', 443, user='unit', password='unit',
+                        grpc_options={option: value, 'grpc.' + option: value})
+                    options = dict(manager._grpc_options)
+                    self.assertEqual(options['grpc.' + option], value)
+                    self.assertNotIn(option, options)
+
+    def test_conflicting_message_size_aliases_are_rejected(self):
+        for option in ('max_receive_message_length', 'max_send_message_length'):
+            with self.subTest(option=option):
+                with self.assertRaisesRegex(ValueError, 'Conflicting.*' + option):
+                    AsyncClusterManager(
+                        'localhost', 443, user='unit', password='unit',
+                        grpc_options={option: -1, 'grpc.' + option: 1024})
+
+    def test_invalid_message_size_alias_cannot_hide_behind_matching_integer(self):
+        for option in ('max_receive_message_length', 'max_send_message_length'):
+            for value in (True, 1.0):
+                with self.subTest(option=option, value=value):
+                    with self.assertRaises(ValueError):
+                        AsyncClusterManager(
+                            'localhost', 443, user='unit', password='unit',
+                            grpc_options={option: value, 'grpc.' + option: 1})
+
     def test_oauth_requires_tls_before_channel_creation(self):
         with self.assertRaises(ValueError):
             AsyncClusterManager('localhost', 443, metadata_provider=lambda: None)
@@ -156,7 +212,7 @@ class FlightTests(unittest.IsolatedAsyncioTestCase):
                    dict(user=''), dict(initial_strategy='red'), dict(ssl_cert=1),
                    dict(timeout=-1), dict(cleanup_timeout=0),
                    dict(grpc_options={'grpc.ssl_target_name_override': 'localhost'}),
-                   dict(grpc_options={'grpc.max_receive_message_length': -1}),
+                       dict(grpc_options={'grpc.max_receive_message_length': 0}),
                    dict(secure_channel=True, metadata_provider=lambda: None)]
         for extra in invalid:
             with self.assertRaises(ValueError):

@@ -118,10 +118,11 @@ def test_truncated_thrift_struct_is_rejected(protocol):
     with pytest.raises((EOFError, TypeError, SystemError)) as rejected:
         decode(wire.Int64Data, payload[:-2], protocol)
     if isinstance(rejected.value, SystemError):
-        # THRIFT-5892: some native 0.20 builds reject truncated Compact data
+        # THRIFT-5892: some native 0.20 builds reject truncated Binary/Compact data
         # with this error. Do not accept unrelated errors or newer regressions.
         # https://issues.apache.org/jira/browse/THRIFT-5892
-        assert protocol is TCompactProtocol.TCompactProtocolAccelerated
+        assert protocol in (TBinaryProtocol.TBinaryProtocolAccelerated,
+                            TCompactProtocol.TCompactProtocolAccelerated)
         assert protocol(TMemoryBuffer())._fast_decode is not None
         assert version('thrift') == '0.20.0'
         assert str(rejected.value) == "PY_SSIZE_T_CLEAN macro must be defined for '#' formats"

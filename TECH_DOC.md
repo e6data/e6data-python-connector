@@ -125,7 +125,7 @@ The parameter accepts a dictionary that allows users to control behavior and con
 | **`keepalive_time_ms`** | `30000ms` (30 seconds) | Interval in milliseconds between keep-alive pings when the connection is idle. |
 | **`keepalive_permit_without_calls`** | `1` | Allows keepalive pings even when there are no active RPC calls. |
 | **`max_receive_message_length`** | `-1` (unlimited) | Maximum size (in bytes) for incoming message payloads. |
-| **`max_send_message_length`** | `300 * 1024 * 1024` | Maximum size (in bytes) for outgoing message payloads (default: 300 MB). |
+| **`max_send_message_length`** | `-1` (unlimited) | Maximum size (in bytes) for outgoing message payloads (`-1` means unlimited). |
 | **`http2.max_pings_without_data`** | `0` | Number of pings that can be sent without data. `0` means unlimited pings. |
 | **`http2.min_time_between_pings_ms`** | `15000ms` (15 seconds) | Minimum interval between consecutive pings to verify connection status. |
 | **`http2.min_ping_interval_without_data_ms`** | `15000ms` (15 seconds) | Interval between pings sent without any data being exchanged. |
