@@ -37,7 +37,7 @@ def echo_port():
             assert server.stop(0).wait(timeout=5)
 
 
-def round_trip(api, port, payload, limits):
+def round_trip(api, port, payload, limits, enabled=True):
     if api == 'cluster':
         manager = ClusterManager('127.0.0.1', port, 'local-user', 'local-input',
                                  grpc_options=[('grpc.' + key, value) for key, value in limits.items()])
@@ -48,7 +48,7 @@ def round_trip(api, port, payload, limits):
             manager._channel.close()
     options = dict(
         host='127.0.0.1', port=port, username='local-user', password='local-input',
-        auto_resume=False, enable_result_batch_v2=True,
+        auto_resume=False, enable_result_batch_v2=enabled,
     )
     if api == 'sync':
         with Connection(**options, require_fastbinary=False, grpc_options=limits) as conn:
@@ -78,3 +78,30 @@ def test_explicit_message_limit_is_enforced_by_transport(api, option, echo_port)
     with pytest.raises(grpc.RpcError) as error:
         round_trip(api, echo_port, b'x' * 2048, {option: 1024})
     assert error.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+
+
+@pytest.mark.parametrize('api', ['sync', 'async'])
+@pytest.mark.parametrize('enabled', [False, True])
+@pytest.mark.parametrize('option', ['max_receive_message_length', 'max_send_message_length'])
+@pytest.mark.parametrize('equal_alias', [False, True])
+def test_prefixed_message_limit_is_enforced_with_either_feature_flag(api, enabled, option, equal_alias, echo_port):
+    limits = {'grpc.' + option: 1024}
+    if equal_alias:
+        limits[option] = 1024
+    original = dict(limits)
+    with pytest.raises(grpc.RpcError) as error:
+        round_trip(api, echo_port, b'x' * 2048, limits, enabled)
+    assert error.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+    assert limits == original
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+@pytest.mark.parametrize('option', ['max_receive_message_length', 'max_send_message_length'])
+def test_sync_rejects_conflicting_limit_aliases_with_either_feature_flag(enabled, option):
+    with pytest.raises(ValueError, match='Conflicting gRPC options'):
+        Connection(
+            '127.0.0.1', 1, username='local-user', password='local-input',
+            auto_resume=False, require_fastbinary=False,
+            enable_result_batch_v2=enabled,
+            grpc_options={option: 1024, 'grpc.' + option: 2048},
+        )

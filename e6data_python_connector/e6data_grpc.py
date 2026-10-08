@@ -521,17 +521,18 @@ class Connection(object):
         if enable_result_batch_v2:
             from .result_decode import validate_decode_runtime
             validate_decode_runtime()
-            normalized = {}
-            for key, value in (grpc_options or {}).items():
-                key = key[5:] if key.startswith('grpc.') else key
-                if key in normalized and normalized[key] != value:
-                    raise ValueError('Conflicting gRPC options after prefix normalization.')
-                normalized[key] = value
+        normalized = {}
+        for key, value in (grpc_options or {}).items():
+            key = key[5:] if key.startswith('grpc.') else key
+            if key in normalized and normalized[key] != value:
+                raise ValueError('Conflicting gRPC options after prefix normalization.')
+            normalized[key] = value
+        grpc_options = normalized
+        if enable_result_batch_v2:
             limit = normalized.get('max_receive_message_length', -1)
             if isinstance(limit, bool) or not isinstance(limit, int) or (limit != -1 and limit <= 0):
                 raise ValueError('V2 receive limit must be a positive integer or -1 for unlimited.')
             normalized['max_receive_message_length'] = limit
-            grpc_options = normalized
         if enable_result_batch_v2 and grpc_options is not None and 'grpc_prepare_timeout' in grpc_options:
             timeout = grpc_options['grpc_prepare_timeout']
             if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
