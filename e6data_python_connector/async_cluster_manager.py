@@ -3,12 +3,14 @@ import asyncio
 import math
 import os
 import threading
+from contextlib import asynccontextmanager
 
 import grpc
 
 from .cluster_server import cluster_pb2 as pb, cluster_pb2_grpc as bindings
 from .exceptions import OperationalError, ProgrammingError
 from .oauth_common import validate_positive_timeout
+from .cluster_manager import _OAuthRecoveryState, _oauth_recovery_state
 
 
 def is_strategy_mismatch(error):
@@ -34,12 +36,34 @@ def _read_certificate(path):
 
 class _ResumeState:
     """Mutation state deliberately outlives any individual recovery flight."""
-    def __init__(self):
-        self.pending = None
+    def __init__(self, shared=None):
+        self._shared = shared if shared is not None else _OAuthRecoveryState()
+
+    @property
+    def pending(self):
+        return self._shared.pending or None
+
+    @pending.setter
+    def pending(self, value):
+        self._shared.pending = value
+
+    @asynccontextmanager
+    async def hold(self, deadline):
+        if self._shared.pid != os.getpid():
+            raise ProgrammingError('Cluster recovery cannot cross processes.')
+        # This is the same lock used by synchronous recovery. Acquire without
+        # blocking the event loop and retain it through every observation.
+        while not self._shared.lock.acquire(blocking=False):
+            await asyncio.sleep(min(.01, _remaining(deadline)))
+        try:
+            _remaining(deadline)
+            yield
+        finally:
+            self._shared.lock.release()
 
     def observe(self, status):
         if status not in ('active', 'suspended', 'resuming'):
-            raise RuntimeError('Cluster returned failed or unsupported status: {!r}'.format(status))
+            raise RuntimeError('Cluster returned a failed or unsupported status.')
         if status == 'active':
             self.pending = None
         return status == 'suspended' and self.pending is None
@@ -142,7 +166,9 @@ class AsyncClusterManager:
         self._timeout = validate_positive_timeout(timeout if auto_resume_timeout is None else auto_resume_timeout)
         self._cleanup_timeout = validate_positive_timeout(cleanup_timeout)
         self._flight = _ResumeFlight(self._timeout)
-        self._mutation = _ResumeState()
+        self._mutation = _ResumeState(
+            _oauth_recovery_state(host, port, cluster_uuid, metadata_provider)
+            if metadata_provider is not None else None)
         self._owner = None
         self._closed = False
 
@@ -167,6 +193,8 @@ class AsyncClusterManager:
                 _remaining(deadline)
             return await self._flight.wait(self._recover, deadline)
         except (TimeoutError, grpc.RpcError) as error:
+            if self._metadata_provider is not None:
+                raise OperationalError('Cluster recovery failed; a dispatched resume may still complete.') from None
             raise OperationalError('Cluster recovery failed; a dispatched resume may still complete.') from error
 
     async def _metadata(self, strategy, deadline, rejected_token=None):
@@ -199,7 +227,7 @@ class AsyncClusterManager:
                     self.last_successful_strategy = strategy
                     return response
                 except grpc.RpcError as error:
-                    if (error.code() == grpc.StatusCode.UNAUTHENTICATED and not refreshed
+                    if (operation == 'status' and error.code() == grpc.StatusCode.UNAUTHENTICATED and not refreshed
                             and self._metadata_provider is not None):
                         refreshed = True
                         rejected = dict(metadata).get('authorization', '')[len('Bearer '):]
@@ -207,11 +235,15 @@ class AsyncClusterManager:
                         if replacement is not None:
                             metadata = replacement
                             continue
-                    if strategy == first and is_strategy_mismatch(error):
+                    if operation == 'status' and strategy == first and is_strategy_mismatch(error):
                         break
                     raise
 
     async def _recover(self, deadline):
+        async with self._mutation.hold(deadline):
+            return await self._recover_locked(deadline)
+
+    async def _recover_locked(self, deadline):
         channel = None
         try:
             async with asyncio.timeout_at(deadline):

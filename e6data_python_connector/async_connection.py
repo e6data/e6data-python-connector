@@ -9,7 +9,7 @@ from types import MappingProxyType
 
 import grpc
 
-from .exceptions import NotSupportedError, OperationalError, ProgrammingError
+from .exceptions import NotSupportedError, OperationalError, ProgrammingError, OAuthRPCError
 from .oauth_common import validate_positive_timeout, validate_token_endpoint
 from .server import e6x_engine_pb2 as pb, e6x_engine_pb2_grpc as bindings
 
@@ -157,6 +157,7 @@ class AsyncConnection:
         self._close_task = None
         self._cleanup_error = None
         self._cluster_manager = None
+        self._oauth_recovery = None
         self._owns_cluster_manager = True
         self._decoder_started = False
         self._decoder_lease = None
@@ -169,6 +170,10 @@ class AsyncConnection:
         if name in config:
             return config[name]
         raise AttributeError(name)
+
+    @property
+    def _static_access_token(self):
+        return self._config['access_token']
 
     def __setattr__(self, name, value):
         if name in self.__dict__.get('_config', {}):
@@ -271,6 +276,10 @@ class AsyncConnection:
                     token_url=self.token_url, scope=self.oauth_scope,
                     client_auth_method=self.client_auth_method, timeout=self.oauth_timeout)
             # No await between validation, construction and atomic publication.
+            if self._oauth_enabled:
+                from .cluster_manager import _oauth_recovery_state
+                self._oauth_recovery = _oauth_recovery_state(
+                    self.host, self.port, self.cluster_name, self._resume_metadata)
             self._channel, self._client = channel, client
             self._state = 'open'
         except BaseException:
@@ -353,6 +362,12 @@ class AsyncConnection:
         self._calls.add(call)
         try:
             return await call
+        except grpc.RpcError as error:
+            if not self._oauth_enabled:
+                raise
+            if self._token_provider is not None and error.code() == grpc.StatusCode.UNAUTHENTICATED:
+                self._token_provider.reject_token(dict(metadata).get('authorization', '')[7:])
+            raise OAuthRPCError(error.code()) from None
         finally:
             self._calls.discard(call)
 
@@ -378,6 +393,10 @@ class AsyncConnection:
                         self._apply_pending_strategy()
                 return response
             except grpc.RpcError as error:
+                if self._oauth_enabled:
+                    if self._token_provider is not None and error.code() == grpc.StatusCode.UNAUTHENTICATED:
+                        self._token_provider.reject_token(dict(metadata).get('authorization', '')[7:])
+                    raise OAuthRPCError(error.code()) from None
                 if safe_retry and self._token_provider is not None and not refreshed and error.code() == grpc.StatusCode.UNAUTHENTICATED:
                     token = dict(metadata).get('authorization', '')[7:]
                     await self._token_provider.get_token(force_refresh=True, deadline=deadline, rejected_token=token)
@@ -391,24 +410,25 @@ class AsyncConnection:
             finally:
                 self._calls.discard(call)
 
+    async def _resume_metadata(self, strategy, deadline, rejected_token=None):
+        if rejected_token is not None and self._token_provider is None:
+            return None
+        if rejected_token is not None and self._token_provider is not None:
+            await self._token_provider.get_token(force_refresh=True, deadline=deadline,
+                                                 rejected_token=rejected_token)
+        metadata = await self._metadata(deadline)
+        return [(key, strategy if key == 'strategy' else value) for key, value in metadata]
+
     async def _resume_cluster(self, deadline):
         self._check_owner()
         if self._cluster_manager is None:
             from .async_cluster_manager import AsyncClusterManager
-
-            async def metadata_provider(strategy, deadline, rejected_token=None):
-                if rejected_token is not None and self._token_provider is not None:
-                    await self._token_provider.get_token(force_refresh=True, deadline=deadline,
-                                                         rejected_token=rejected_token)
-                metadata = await self._metadata(deadline)
-                return [(key, strategy if key == 'strategy' else value) for key, value in metadata]
-
             self._cluster_manager = AsyncClusterManager(
                 self.host, self.port, user=self.username or '', password=self.password or '',
                 grpc_options={**self.grpc_options,
                               'grpc.max_receive_message_length': self.max_receive_message_bytes},
                 secure_channel=self.secure, cluster_uuid=self.cluster_name,
-                ssl_cert=self.ssl_cert, metadata_provider=metadata_provider if self._oauth_enabled else None,
+                ssl_cert=self.ssl_cert, metadata_provider=self._resume_metadata if self._oauth_enabled else None,
                 initial_strategy=self.strategy, auto_resume_timeout=self.auto_resume_timeout,
                 cleanup_timeout=self.cleanup_timeout)
         result = await self._cluster_manager.resume(deadline=deadline)

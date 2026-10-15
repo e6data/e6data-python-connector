@@ -13,7 +13,7 @@ from e6data_python_connector import e6data_grpc as engine
 
 @pytest.mark.parametrize('surface', ['cursor', 'connection'])
 def test_cleanup_routing_lock_wait_respects_total_budget(surface):
-    connection = Connection(host='localhost', port=1, access_token='unit-input', require_fastbinary=False)
+    connection = Connection(host='localhost', port=1, access_token='unit-input', secure=True, require_fastbinary=False)
     cursor = connection.cursor()
     connection.close()  # Any accidental dispatch fails locally on the real closed channel.
     cursor._query_id, cursor._engine_ip = 'unit-query', 'unit-planner'

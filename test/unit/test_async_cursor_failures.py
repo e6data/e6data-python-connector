@@ -17,14 +17,14 @@ from e6data_python_connector.exceptions import (
 )
 
 
-def connection():
+def connection(auto_resume=False):
     # Reserve a TCP port without listening for the whole test. No service can
     # unexpectedly bind it, and connection attempts fail through native gRPC.
     reservation = socket.socket()
     reservation.bind(('127.0.0.1', 0))
     conn = AsyncConnection(host='127.0.0.1', port=reservation.getsockname()[1],
                            access_token='local-nonusable-input', secure=True,
-                           operation_timeout=.2, cleanup_timeout=.05)
+                           operation_timeout=.2, cleanup_timeout=.05, auto_resume=auto_resume)
     return reservation, conn
 
 
@@ -44,7 +44,8 @@ def test_failed_prepare_is_not_replayed_and_blocks_reuse():
                 cursor = AsyncCursor(conn)
                 with pytest.raises(AmbiguousSubmissionError) as caught:
                     await cursor.execute('SELECT 1')
-                assert isinstance(caught.value.__cause__, grpc.RpcError)
+                assert caught.value.__cause__ is None
+                assert caught.value.reason == 'ambiguous_submission'
                 assert cursor._state == 'SUBMISSION_UNKNOWN'
                 assert cursor in conn._ambiguous_submissions
                 with pytest.raises(ProgrammingError):
@@ -119,7 +120,7 @@ def test_dispatched_fetch_failure_is_terminal(name):
             async with conn:
                 cursor = route_cursor(conn)
                 cursor._columns = []
-                with pytest.raises(grpc.aio.AioRpcError) as caught:
+                with pytest.raises(grpc.RpcError) as caught:
                     await getattr(cursor, name)()
                 assert cursor._state == 'RESULT_FAILED'
                 assert caught.value.code() == grpc.StatusCode.UNAVAILABLE
@@ -275,4 +276,18 @@ def test_fetch_admission_timeout_does_not_claim_batch_consumption():
         finally:
             for slot in slots:
                 slot.release()
+    asyncio.run(run())
+
+
+def test_failed_readiness_never_enters_query_submission():
+    async def run():
+        reservation, conn = connection(auto_resume=True)
+        with reservation:
+            async with conn:
+                cursor = AsyncCursor(conn)
+                with pytest.raises(OperationalError):
+                    await cursor.execute('SELECT 1')
+                assert cursor._state == 'EMPTY'
+                assert cursor not in conn._ambiguous_submissions
+                assert not conn._calls
     asyncio.run(run())

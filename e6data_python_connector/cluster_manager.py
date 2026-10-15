@@ -1,7 +1,9 @@
 import hashlib
+import hmac
 import logging
 import os
 import threading
+import weakref
 import time
 import e6data_python_connector.cluster_server.cluster_pb2 as cluster_pb2
 import e6data_python_connector.cluster_server.cluster_pb2_grpc as cluster_pb2_grpc
@@ -10,6 +12,7 @@ from grpc._channel import _InactiveRpcError
 import multiprocessing
 from contextlib import contextmanager
 from e6data_python_connector.result_decode_worker import is_decode_worker
+from e6data_python_connector.exceptions import OAuthRPCError, ProgrammingError
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +161,60 @@ class _StatusLock:
 status_lock = _StatusLock()
 
 
+class _OAuthRecoveryState:
+    def __init__(self):
+        self.pid = os.getpid()
+        self.lock = threading.Lock()
+        self.pending = False
+
+
+_oauth_recovery_states = weakref.WeakValueDictionary()
+_oauth_recovery_registry_lock = threading.Lock()
+_oauth_recovery_digest_key = os.urandom(32)
+
+
+def _reset_oauth_recovery_after_fork():
+    global _oauth_recovery_states, _oauth_recovery_registry_lock, _oauth_recovery_digest_key
+    _oauth_recovery_states = weakref.WeakValueDictionary()
+    _oauth_recovery_registry_lock = threading.Lock()
+    _oauth_recovery_digest_key = os.urandom(32)
+
+
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_reset_oauth_recovery_after_fork)
+
+
+def _oauth_recovery_state(host, port, cluster_uuid, metadata_provider):
+    """Share mutation ownership only across the same credential and target."""
+    owner = getattr(metadata_provider, '__self__', metadata_provider)
+    provider = getattr(owner, '_token_provider', None)
+    static_token = getattr(owner, '_static_access_token', None)
+    if provider is not None:
+        identity = ('managed', id(provider._state))
+    elif static_token is not None:
+        identity = ('static', hmac.new(_oauth_recovery_digest_key, static_token.encode('ascii'),
+                                      hashlib.sha256).digest())
+    else:
+        identity = ('owner', id(owner))
+    key = (os.getpid(), host, port, cluster_uuid, identity)
+    with _oauth_recovery_registry_lock:
+        state = _oauth_recovery_states.get(key)
+        if state is None:
+            state = _OAuthRecoveryState()
+            _oauth_recovery_states[key] = state
+        return state
+
+
+@contextmanager
+def _hold_oauth_recovery(lock, deadline):
+    if not lock.acquire(timeout=_remaining(deadline)):
+        raise TimeoutError('OAuth recovery timed out waiting for its target lock.')
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 class ClusterManager:
     """
     A manager for handling operations and connections with a remote cluster infrastructure.
@@ -214,12 +271,29 @@ class ClusterManager:
         self._metadata_provider = metadata_provider
         self._deadline = deadline if deadline is not None else time.monotonic() + timeout
         self.last_successful_strategy = initial_strategy
+        self._oauth_recovery = (_oauth_recovery_state(host, port, cluster_uuid, metadata_provider)
+                                if metadata_provider is not None else None)
+
+    @property
+    def _resume_pending(self):
+        return self._oauth_recovery.pending
+
+    @_resume_pending.setter
+    def _resume_pending(self, value):
+        self._oauth_recovery.pending = value
 
     def _oauth_cluster_request(self, client, request_type):
         """OAuth errors propagate; each real attempt obtains current metadata."""
         request = (cluster_pb2.ClusterStatusRequest() if request_type == 'status'
                    else cluster_pb2.ResumeRequest())
         first = self.last_successful_strategy or 'blue'
+        if request_type == 'resume':
+            metadata = self._metadata_provider(first, self._deadline)
+            remaining = _remaining(self._deadline)
+            self._resume_pending = True
+            response = client.resume(request, metadata=metadata, timeout=remaining)
+            self.last_successful_strategy = first
+            return response
         refresh_state = [False]
         for selected in (first, 'green' if first == 'blue' else 'blue'):
             try:
@@ -237,16 +311,24 @@ class ClusterManager:
     def _oauth_status(response):
         status = getattr(response, 'status', None)
         if status not in ('active', 'suspended', 'resuming'):
-            raise RuntimeError('Cluster returned failed or unsupported status: {!r}'.format(status))
+            raise RuntimeError('Cluster returned a failed or unsupported status.')
         return status
 
-    def _resume_oauth(self):
+    def _resume_oauth(self, deadline=None):
         """Resume at most once and require an observed active status before prepare."""
-        with status_lock.hold_until(self._deadline):
+        if self._oauth_recovery.pid != os.getpid():
+            raise ProgrammingError('Cluster manager belongs to another process.')
+        with _hold_oauth_recovery(self._oauth_recovery.lock, self._deadline if deadline is None else deadline):
+            if deadline is not None:
+                self._deadline = deadline
             client = self._get_connection
             try:
                 status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
+                if status == 'active':
+                    self._resume_pending = False
                 if status == 'suspended':
+                    if self._resume_pending:
+                        raise RuntimeError('Resume outcome is ambiguous; refusing a second mutation.')
                     try:
                         self._oauth_status(self._oauth_cluster_request(client, 'resume'))
                     except grpc.RpcError as error:
@@ -257,7 +339,7 @@ class ClusterManager:
                         # Mutation may have succeeded. Establish progress with a read.
                         status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
                         if status == 'suspended':
-                            raise RuntimeError('Resume outcome is ambiguous; cluster is still suspended.') from error
+                            raise RuntimeError('Resume outcome is ambiguous; cluster is still suspended.') from None
                     else:
                         status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
                 while status != 'active':
@@ -265,7 +347,10 @@ class ClusterManager:
                         raise RuntimeError('Cluster returned suspended status after resume; refusing a second mutation.')
                     time.sleep(min(5, _remaining(self._deadline)))
                     status = self._oauth_status(self._oauth_cluster_request(client, 'status'))
+                self._resume_pending = False
                 return True
+            except grpc.RpcError as error:
+                raise OAuthRPCError(error.code()) from None
             finally:
                 if hasattr(self, '_channel'):
                     self._channel.close()
@@ -503,7 +588,7 @@ class ClusterManager:
                     type(options).__name__, tuple(frozen_options))
         return hashlib.sha256(repr(identity).encode('utf-8')).digest()
 
-    def resume(self) -> bool:
+    def resume(self, deadline=None) -> bool:
         """
         Resumes the cluster if it is currently suspended or not in the 'active' state.
 
@@ -531,7 +616,7 @@ class ClusterManager:
               if the timeout expires, the method returns False.
         """
         if self._metadata_provider is not None:
-            return self._resume_oauth()
+            return self._resume_oauth(deadline)
         call_started = time.monotonic()
         if self._debug:
             logger.info(f"Starting auto-resume for cluster {self.cluster_uuid} at {self._host}:{self._port}")

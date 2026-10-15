@@ -331,7 +331,7 @@ def test_actual_dispatched_connection_failure_does_not_switch_to_v1(name, caplog
             await conn._ensure_decoder(asyncio.get_running_loop().time() + 5)
             cursor = active_cursor(conn)
             cursor._route = conn._register_route(QueryRoute(conn.target, 'unissued', '', conn.strategy))
-            with pytest.raises(grpc.aio.AioRpcError) as caught:
+            with pytest.raises(grpc.RpcError) as caught:
                 await getattr(cursor, name)()
             assert cursor._result_protocol == 'v2'
             assert cursor._state == 'RESULT_FAILED'

@@ -144,6 +144,7 @@ class AsyncConnectionPool:
         # Validation only: no channel, HTTP client or event-loop object is created.
         config = AsyncConnection(**self._params)
         self.cleanup_timeout = config.cleanup_timeout
+        self._static_access_token = config._static_access_token
         self._owner = None
         self._status = 'new'
         self._condition = None
@@ -160,6 +161,8 @@ class AsyncConnectionPool:
             raise ProgrammingError('Pool belongs to another process, thread or event loop.')
 
     async def _resume_metadata(self, strategy, deadline, rejected_token=None):
+        if rejected_token is not None and self._token_provider is None:
+            return None
         token = self._params.get('access_token')
         if self._token_provider is not None:
             token = await self._token_provider.get_token(deadline=deadline,

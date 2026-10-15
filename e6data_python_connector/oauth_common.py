@@ -1,10 +1,31 @@
 """Pure OAuth validation shared by synchronous and asynchronous transports."""
 import math
+import json
 import urllib.parse
 
 from e6data_python_connector.exceptions import OAuthError
 
 MAX_TOKEN_RESPONSE_BYTES = 65536
+
+
+def parse_token_response(body):
+    """Reject duplicate fields and non-JSON constants before token validation."""
+    def reject_constant(_):
+        raise ValueError
+
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(body.decode('utf-8'), parse_constant=reject_constant,
+                          object_pairs_hook=unique_object)
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        raise OAuthError('OAuth token endpoint did not return valid JSON.') from None
 
 
 def validate_token_endpoint(url):
@@ -36,7 +57,7 @@ def validate_positive_timeout(value, name='timeout'):
 
 
 def validate_token_response(payload, *, started_at, now, leeway):
-    """Return the token and its conservative monotonic cache deadline.
+    """Return the token, monotonic reuse deadline, and actual expiry.
 
     A token still valid but already inside its renewal interval is usable for
     this exchange only. Expiry starts before HTTP dispatch, never at receipt.
@@ -63,4 +84,4 @@ def validate_token_response(payload, *, started_at, now, leeway):
         raise OAuthError('Invalid OAuth expiry arithmetic.')
     if now >= expiry:
         raise OAuthError('OAuth token expired during exchange.')
-    return token, reusable_until
+    return token, reusable_until, expiry

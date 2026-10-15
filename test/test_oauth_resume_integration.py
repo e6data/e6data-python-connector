@@ -15,6 +15,7 @@ import grpc
 import pytest
 
 from e6data_python_connector.e6data_grpc import Connection
+from e6data_python_connector.exceptions import AmbiguousSubmissionError, ProgrammingError
 from e6data_python_connector.server import e6x_engine_pb2 as engine_pb
 from e6data_python_connector.server import e6x_engine_pb2_grpc as engine_rpc
 from e6data_python_connector.cluster_server import cluster_pb2 as cluster_pb
@@ -73,6 +74,10 @@ class FixtureService(engine_rpc.QueryEngineServiceServicer, cluster_rpc.ClusterS
     def getResultMetadata(self, request, context):
         self.record('metadata', request, context)
         return engine_pb.GetResultMetadataResponse(resultMetaData=struct.pack('>qi', 1, 0))
+
+    def clearOrCancelQuery(self, request, context):
+        self.record('clear', request, context)
+        return engine_pb.ClearOrCancelQueryResponse()
 
     def status(self, request, context):
         self.record('status', request, context)
@@ -133,7 +138,9 @@ def local_services(service):
     server = grpc.server(ThreadPoolExecutor(max_workers=4))
     engine_rpc.add_QueryEngineServiceServicer_to_server(service, server)
     cluster_rpc.add_ClusterServiceServicer_to_server(service, server)
-    port = server.add_insecure_port('127.0.0.1:0')
+    with open(key, 'rb') as key_file, open(certificate, 'rb') as cert_file:
+        credentials = grpc.ssl_server_credentials(((key_file.read(), cert_file.read()),))
+    port = server.add_secure_port('127.0.0.1:0', credentials)
     server.start()
     try:
         yield port, 'https://127.0.0.1:{}/token'.format(token_server.server_port)
@@ -156,26 +163,33 @@ def local_services(service):
 def test_real_grpc_resume_authenticates_each_call_and_never_replays(catalog, post_prepare_error):
     service = FixtureService(post_prepare_error)
     with local_services(service) as (port, token_url):
-        connection = Connection('127.0.0.1', port, client_id='fixture-id', client_secret='fixture-secret',
-                                token_url=token_url, cluster_name='fixture-cluster', catalog=catalog,
-                                require_fastbinary=False)
+        connection = Connection('127.0.0.1', port, secure=True, ssl_cert=os.environ['SSL_CERT_FILE'],
+            client_id='fixture-id', client_secret='fixture-secret', token_url=token_url,
+            cluster_name='fixture-cluster', catalog=catalog, require_fastbinary=False)
         try:
+            cursor = connection.cursor()
             if post_prepare_error:
-                with pytest.raises(grpc.RpcError) as raised:
-                    connection.cursor().execute('SELECT 1')
-                assert raised.value.code() == post_prepare_error[0]
+                with pytest.raises(AmbiguousSubmissionError) as raised:
+                    cursor.execute('SELECT 1')
+                assert raised.value.query_id == 'fixture-query'
+                assert raised.value.__cause__ is None
+                assert post_prepare_error[1] not in str(raised.value)
+                with pytest.raises(ProgrammingError, match='Submission outcome is unknown'):
+                    cursor.execute('SELECT 1')
             else:
-                assert connection.cursor().execute('SELECT 1') == 'fixture-query'
+                assert cursor.execute('SELECT 1') == 'fixture-query'
         finally:
             connection.close()
     names = [name for name, _, _, _ in service.calls]
-    expected = ['prepare', 'status', 'resume', 'status', 'prepare', 'execute']
+    expected = ['status', 'resume', 'status', 'prepare', 'execute']
     if not post_prepare_error:
         expected.append('metadata')
+    expected.append('clear')
     assert names == expected
-    bearers = [headers['authorization'] for _, _, headers, _ in service.calls]
-    assert len(set(bearers)) == len(service.calls)
-    assert all(0 < timeout <= 301 for name, _, _, timeout in service.calls[1:5])
+    assert [headers['authorization'] for _, _, headers, _ in service.calls] == [
+        'Bearer synthetic-token-{}'.format(index) for index in range(1, len(service.calls) + 1)]
+    assert service.tokens == len(service.calls)
+    assert all(0 < timeout < 301 for _, _, _, timeout in service.calls[:4])
 
 
 @pytest.mark.parametrize('stage', ['token', 'status', 'final_prepare'])
@@ -188,41 +202,54 @@ def test_recovery_deadline_stops_follow_up_work_on_real_transports(stage):
     else:
         service.final_prepare_delay = 0.2
     with local_services(service) as (port, token_url):
-        connection = Connection('127.0.0.1', port, client_id='fixture-id', client_secret='fixture-secret',
-            token_url=token_url, cluster_name='fixture-cluster', require_fastbinary=False,
+        connection = Connection('127.0.0.1', port, secure=True, ssl_cert=os.environ['SSL_CERT_FILE'],
+            client_id='fixture-id', client_secret='fixture-secret', token_url=token_url,
+            cluster_name='fixture-cluster', require_fastbinary=False,
             grpc_options={'grpc_auto_resume_timeout_seconds': 0.05})
         start = time.monotonic()
         try:
-            with pytest.raises((TimeoutError, grpc.RpcError)):
+            expected_errors = (AmbiguousSubmissionError,) if stage == 'final_prepare' else (TimeoutError, grpc.RpcError)
+            with pytest.raises(expected_errors):
                 connection.cursor().execute('SELECT 1')
             elapsed = time.monotonic() - start
-            recovery_elapsed = time.monotonic() - service.suspended_at
-            print('Recovery deadline fixture: stage={}, budget=0.05s, recovery={:.4f}s, '
-                  'total_with_initial_prepare={:.4f}s'.format(stage, recovery_elapsed, elapsed))
             assert elapsed < 0.18
-            assert recovery_elapsed < 0.12
             time.sleep(0.25)  # Observe late remote completion without local follow-up.
         finally:
             connection.close()
     names = [name for name, _, _, _ in service.calls]
-    assert names == {'token': ['prepare'], 'status': ['prepare', 'status'],
-        'final_prepare': ['prepare', 'status', 'resume', 'status', 'prepare']}[stage]
+    assert names == {'token': ['status'], 'status': ['status'],
+                     'final_prepare': ['status', 'resume', 'status', 'prepare']}[stage]
+    assert not any(name in ('execute', 'metadata') for name in names)
 
 
 @pytest.mark.parametrize('name', ['prepare', 'status', 'resume'])
-def test_explicit_auth_rejection_renews_the_real_provider_once(name):
+def test_only_read_only_status_auth_rejection_renews_the_real_provider_once(name):
     service = FixtureService()
     service.token_lifetime = 3600
     service.reject_name, service.rejections_left = name, 1
     with local_services(service) as (port, token_url):
-        connection = Connection('127.0.0.1', port, client_id='fixture-id', client_secret='fixture-secret',
-            token_url=token_url, cluster_name='fixture-cluster', require_fastbinary=False)
+        connection = Connection('127.0.0.1', port, secure=True, ssl_cert=os.environ['SSL_CERT_FILE'],
+            client_id='fixture-id', client_secret='fixture-secret', token_url=token_url,
+            cluster_name='fixture-cluster', require_fastbinary=False)
         try:
-            assert connection.cursor().execute('SELECT 1') == 'fixture-query'
+            if name == 'status':
+                assert connection.cursor().execute('SELECT 1') == 'fixture-query'
+            elif name == 'prepare':
+                with pytest.raises(AmbiguousSubmissionError) as raised:
+                    connection.cursor().execute('SELECT 1')
+                assert raised.value.__cause__ is None
+            else:
+                with pytest.raises(grpc.RpcError) as raised:
+                    connection.cursor().execute('SELECT 1')
+                assert raised.value.code() == grpc.StatusCode.UNAUTHENTICATED
         finally:
             connection.close()
-    assert service.tokens == 2
-    assert sum(call[0] == 'execute' for call in service.calls) == 1
+    assert service.tokens == (2 if name == 'status' else 1)
+    assert sum(call[0] == 'execute' for call in service.calls) == (1 if name == 'status' else 0)
+    assert sum(call[0] == 'prepare' for call in service.calls) == (0 if name == 'resume' else 1)
+    assert sum(call[0] == 'resume' for call in service.calls) == 1
+    if name == 'status':
+        assert sum(call[0] == 'status' for call in service.calls) == 3
 
 
 @pytest.mark.parametrize('code,rejections,expected_tokens', [
@@ -232,7 +259,7 @@ def test_cluster_auth_failure_stops_without_mutation(code, rejections, expected_
     service.token_lifetime = 3600
     service.reject_name, service.reject_code, service.rejections_left = 'status', code, rejections
     with local_services(service) as (port, token_url):
-        connection = Connection('127.0.0.1', port, client_id='fixture-id', client_secret='fixture-secret',
+        connection = Connection('127.0.0.1', port, secure=True, ssl_cert=os.environ['SSL_CERT_FILE'], client_id='fixture-id', client_secret='fixture-secret',
             token_url=token_url, cluster_name='fixture-cluster', require_fastbinary=False)
         try:
             with pytest.raises(grpc.RpcError) as raised:

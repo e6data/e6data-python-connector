@@ -252,6 +252,6 @@ class FlightTests(unittest.IsolatedAsyncioTestCase):
             try:
                 with self.assertRaises(OperationalError) as raised:
                     await manager.resume(timeout=.3)
-                self.assertIsInstance(raised.exception.__cause__, (grpc.RpcError, TimeoutError))
+                self.assertIsNone(raised.exception.__cause__)
             finally:
                 await manager.close()

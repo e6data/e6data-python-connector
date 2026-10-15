@@ -1,7 +1,6 @@
 """Owned native HTTP token acquisition with bounded single-flight renewal."""
 import asyncio
 import base64
-import json
 import math
 import os
 import ssl
@@ -14,7 +13,7 @@ from e6data_python_connector.async_work import run_blocking
 from e6data_python_connector.exceptions import OAuthError
 from e6data_python_connector.oauth_common import (
     MAX_TOKEN_RESPONSE_BYTES, validate_token_endpoint, validate_positive_timeout,
-    validate_token_response,
+    validate_token_response, parse_token_response,
 )
 
 _LOOP_SLOTS = weakref.WeakKeyDictionary()
@@ -102,21 +101,28 @@ class AsyncClientCredentialsTokenProvider:
                     self._registrations.add(selected.waiter)
                 try:
                     if selected.owner:
-                        exchange = self._refresh(flight)
-                        try:
-                            self._task = loop.create_task(exchange)
-                        except BaseException:
-                            exchange.close()
-                            self._state.finish(flight, error=OAuthError('OAuth exchange could not start.'))
-                            raise
-                        task = self._task
-                        task.add_done_callback(lambda done, owned=flight: self._exchange_done(owned, done))
-                        def cancel_owned():
+                        slots = _LOOP_SLOTS.setdefault(loop, asyncio.Semaphore(4))
+                        if slots.locked():
+                            self._state.finish(flight, error=TimeoutError('OAuth exchange capacity exhausted.'))
+                        else:
+                            # With a free slot acquire does not suspend on this loop.
+                            await slots.acquire()
+                            exchange = self._refresh(flight)
                             try:
-                                loop.call_soon_threadsafe(task.cancel)
-                            except RuntimeError:
-                                self._state.finish(flight, error=OAuthError('OAuth owner loop closed.'))
-                        self._state.install_cancel(flight, cancel_owned)
+                                self._task = loop.create_task(exchange)
+                            except BaseException:
+                                exchange.close()
+                                slots.release()
+                                self._state.finish(flight, error=OAuthError('OAuth exchange could not start.'))
+                                raise
+                            task = self._task
+                            task.add_done_callback(lambda done, owned=flight: self._exchange_done(owned, done, slots))
+                            def cancel_owned():
+                                try:
+                                    loop.call_soon_threadsafe(task.cancel)
+                                except RuntimeError:
+                                    self._state.finish(flight, error=OAuthError('OAuth owner loop closed.'))
+                            self._state.install_cancel(flight, cancel_owned)
                     await self._wait_for_flight(flight, deadline, retiring=selected.retiring)
                     if selected.retiring:
                         continue
@@ -151,8 +157,9 @@ class AsyncClientCredentialsTokenProvider:
         finally:
             unsubscribe()
 
-    def _exchange_done(self, flight, task):
+    def _exchange_done(self, flight, task, slots):
         # A task cancelled before its coroutine starts never executes finally.
+        slots.release()
         error = OAuthError('OAuth exchange owner was cancelled.') if task.cancelled() else task.exception()
         if error is not None:
             self._state.finish(flight, error=error)
@@ -165,6 +172,9 @@ class AsyncClientCredentialsTokenProvider:
     async def invalidate(self):
         self._bind()
         self._state.invalidate()
+
+    def reject_token(self, token):
+        self._state.reject_token(token)
 
     async def close(self, *, deadline=None):
         loop = self._bind()
@@ -200,16 +210,14 @@ class AsyncClientCredentialsTokenProvider:
 
     async def _refresh(self, flight):
         deadline = flight.deadline
-        loop = asyncio.get_running_loop()
-        slots = _LOOP_SLOTS.setdefault(loop, asyncio.Semaphore(4))
         try:
             async with asyncio.timeout(max(0, deadline - time.monotonic())):
-                async with slots:
-                    started = time.monotonic()
-                    payload = await self._fetch_token(deadline)
-                    token, reusable_until = validate_token_response(
-                        payload, started_at=started, now=time.monotonic(), leeway=self._refresh_leeway_seconds)
-                    self._state.finish(flight, token=token, reusable_until=reusable_until)
+                started = time.monotonic()
+                payload = await self._fetch_token(deadline)
+                token, reusable_until, expires_at = validate_token_response(
+                    payload, started_at=started, now=time.monotonic(), leeway=self._refresh_leeway_seconds)
+                self._state.finish(flight, token=token, reusable_until=reusable_until,
+                                   expires_at=expires_at)
         except BaseException as error:
             failure = OAuthError('OAuth exchange owner was cancelled.') if isinstance(error, asyncio.CancelledError) else error
             self._state.finish(flight, error=failure)
@@ -241,7 +249,7 @@ class AsyncClientCredentialsTokenProvider:
                     if len(body) + len(chunk) > MAX_TOKEN_RESPONSE_BYTES:
                         raise OAuthError('OAuth token response exceeds size limit.')
                     body.extend(chunk)
-                return json.loads(body.decode('utf-8'))
+                return parse_token_response(body)
         except httpx.HTTPError:
             raise OAuthError('Could not reach the OAuth token endpoint.') from None
         except (ValueError, TypeError, UnicodeError):

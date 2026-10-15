@@ -9,7 +9,7 @@ from e6data_python_connector import exceptions
 @pytest.fixture
 def cursor():
     # Lazy gRPC channel, closed before any operation: these tests must stay local.
-    connection = Connection(host='localhost', port=1, access_token='unit-input', require_fastbinary=False)
+    connection = Connection(host='localhost', port=1, access_token='unit-input', secure=True, require_fastbinary=False)
     cursor = connection.cursor()
     connection.close()
     yield cursor

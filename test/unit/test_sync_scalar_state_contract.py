@@ -130,7 +130,7 @@ def test_strategy_cleanup_waits_for_last_query_before_adopting_pending(module):
 
 
 def test_oauth_buffered_cursor_consumes_once_without_dispatch():
-    connection = Connection(host="localhost", port=1, access_token="unit-input", require_fastbinary=False)
+    connection = Connection(host="localhost", port=1, access_token="unit-input", secure=True, require_fastbinary=False)
     cursor = connection.cursor()
     connection.close()  # A subsequent accidental dispatch would fail this test.
     cursor.arraysize = "3"

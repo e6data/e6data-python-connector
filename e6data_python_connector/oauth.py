@@ -1,6 +1,5 @@
 """Bounded synchronous client-credentials exchange and monotonic token cache."""
 import base64
-import json
 import math
 import os
 import threading
@@ -13,7 +12,7 @@ from e6data_python_connector.exceptions import OAuthError
 from e6data_python_connector.oauth_cache import get_state
 from e6data_python_connector.oauth_common import (
     MAX_TOKEN_RESPONSE_BYTES, validate_positive_timeout,
-    validate_token_endpoint, validate_token_response,
+    validate_token_endpoint, validate_token_response, parse_token_response,
 )
 
 DEFAULT_REFRESH_LEEWAY_SECONDS = 60
@@ -121,9 +120,9 @@ class ClientCredentialsTokenProvider:
             try:
                 started = time.monotonic()
                 payload = self._fetch_token(flight.deadline)
-                token, until = validate_token_response(payload, started_at=started,
+                token, until, expires_at = validate_token_response(payload, started_at=started,
                     now=time.monotonic(), leeway=self._refresh_leeway_seconds)
-                self._state.finish(flight, token, until)
+                self._state.finish(flight, token, until, expires_at=expires_at)
             except BaseException as error:
                 self._state.finish(flight, error=error)
             finally:
@@ -141,6 +140,9 @@ class ClientCredentialsTokenProvider:
         if remaining <= 0:
             raise TimeoutError('OAuth token deadline exceeded.')
         return remaining
+
+    def reject_token(self, token):
+        self._state.reject_token(token)
 
     def invalidate(self):
         """Invalidate the matching shared credential generation."""
@@ -165,7 +167,7 @@ class ClientCredentialsTokenProvider:
                 body = response.read(MAX_TOKEN_RESPONSE_BYTES + 1)
                 if len(body) > MAX_TOKEN_RESPONSE_BYTES:
                     raise OAuthError('OAuth token response exceeds size limit.')
-                return json.loads(body.decode('utf-8'))
+                return parse_token_response(body)
         except urllib.error.HTTPError as error:
             message = self._describe_http_error(error)
             error.close()

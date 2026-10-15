@@ -28,6 +28,8 @@ def connection(**changes):
     options = dict(host="127.0.0.1", port=1, username="local-user", password="local-input",
                    require_fastbinary=False, auto_resume=False, enable_result_batch_v2=True)
     options.update(changes)
+    if options.get('access_token') is not None:
+        options['secure'] = True
     return Connection(**options)
 
 
@@ -332,9 +334,18 @@ def test_real_unimplemented_v2_falls_back_once_then_failure_is_terminal(generate
 
 @pytest.mark.parametrize("oauth", [False, True])
 def test_default_v1_real_rpc_failure_has_metrics_without_fallback(generated_server, caplog, oauth):
+    from contextlib import ExitStack
+    from test.test_oauth_resume_integration import FixtureService, local_services
+    import os
+    stack = ExitStack()
     target, _ = generated_server
+    if oauth:
+        port, _ = stack.enter_context(local_services(FixtureService()))
+        target = '127.0.0.1:{}'.format(port)
     host, port = target.rsplit(":", 1)
     auth = dict(username=None, password=None, access_token="local-nonusable-input") if oauth else {}
+    if oauth:
+        auth['ssl_cert'] = os.environ['SSL_CERT_FILE']
     conn = connection(host=host, port=int(port), enable_result_batch_v2=False, **auth)
     conn._session_id = "unissued-local-session"
     cursor = conn.cursor()
@@ -354,6 +365,7 @@ def test_default_v1_real_rpc_failure_has_metrics_without_fallback(generated_serv
         assert not any(getattr(record, "result_batch_fallback", False) for record in caplog.records)
     finally:
         conn.close()
+        stack.close()
 
 
 def test_real_metadata_failure_happens_before_result_consumption(generated_server, caplog):

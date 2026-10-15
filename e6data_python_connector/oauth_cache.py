@@ -73,6 +73,7 @@ class Flight:
         self._cancel = None
         self._callbacks = {}
         self._token = None
+        self._expires_at = 0.0
         self._error = None
 
     def result(self):
@@ -80,10 +81,12 @@ class Flight:
         with self._state._lock:
             if not self.done.is_set():
                 raise RuntimeError('OAuth refresh is not complete.')
-            error, token = self._error, self._token
+            error, token, expires_at = self._error, self._token, self._expires_at
         if error:
             category, message = error
             raise category(message) from None
+        if time.monotonic() >= expires_at:
+            raise OAuthError('OAuth token expired before delivery.') from None
         return token
 
     def subscribe(self, callback):
@@ -197,7 +200,7 @@ class TokenState:
         if immediate:
             callback()
 
-    def finish(self, flight, token=None, reusable_until=0, error=None):
+    def finish(self, flight, token=None, reusable_until=0, error=None, *, expires_at=0):
         self._check_pid()
         with self._lock:
             if self._flight is not flight or flight.done.is_set():
@@ -213,8 +216,11 @@ class TokenState:
                 flight._error = (OAuthError, 'OAuth exchange invalidated before completion.')
             elif time.monotonic() >= flight.deadline:
                 flight._error = (TimeoutError, 'OAuth refresh deadline exceeded.')
+            elif time.monotonic() >= expires_at:
+                flight._error = (OAuthError, 'OAuth token expired before publication.')
             else:
                 flight._token = token
+                flight._expires_at = expires_at
                 if reusable_until > time.monotonic():
                     self._token, self._expires_at = token, reusable_until
             self._flight = None
@@ -229,6 +235,14 @@ class TokenState:
             except Exception:
                 # A disposed subscriber must not strand other loops or threads.
                 pass
+
+    def reject_token(self, token):
+        """Retire only the credential rejected by a completed RPC."""
+        self._check_pid()
+        with self._lock:
+            if self._token == token:
+                self._generation += 1
+                self._token, self._expires_at = None, 0.0
 
     def invalidate(self):
         self._check_pid()

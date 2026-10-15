@@ -745,25 +745,27 @@ def test_connection_close_retires_captured_v2_state_after_option_changes(local_r
 
 
 @pytest.mark.parametrize('v2,budget,delay,expected_prepares', [
-    (True, .05, .15, 1),
-    (True, .3, .05, 2),
-    (False, None, .15, 2),
+    (True, .05, .15, 0),
+    (True, .3, .05, 1),
+    (False, None, .15, 1),
 ])
 def test_oauth_resume_keeps_original_prepare_budget_and_rpc_errors(v2, budget, delay, expected_prepares):
-    from e6data_python_connector.cluster_server import cluster_pb2, cluster_pb2_grpc
+    import os
+    from e6data_python_connector.cluster_server import cluster_pb2
+    from e6data_python_connector.exceptions import AmbiguousSubmissionError
+    from test.test_oauth_resume_integration import FixtureService, local_services
     from test.unit.test_result_batch_diagnostics import ObserveSyncErrors
 
-    class SyntheticSuspendedService(bindings.QueryEngineServiceServicer,
-                                    cluster_pb2_grpc.ClusterServiceServicer):
+    class SyntheticSuspendedService(FixtureService):
+        """Local TLS service double for one readiness and query deadline."""
         def __init__(self):
+            super().__init__()
             self.prepare_budgets = []
             self.status_budgets = []
 
         def prepareStatement(self, request, context):
             self.prepare_budgets.append(context.time_remaining())
-            if len(self.prepare_budgets) == 1:
-                context.abort(grpc.StatusCode.UNAVAILABLE, 'status: 503, cluster is suspended')
-            context.abort(grpc.StatusCode.PERMISSION_DENIED, 'Synthetic resumed prepare rejection.')
+            context.abort(grpc.StatusCode.PERMISSION_DENIED, 'Synthetic prepare rejection.')
 
         def status(self, request, context):
             self.status_budgets.append(context.time_remaining())
@@ -771,13 +773,9 @@ def test_oauth_resume_keeps_original_prepare_budget_and_rpc_errors(v2, budget, d
             return cluster_pb2.ClusterStatusResponse(status='active')
 
     service = SyntheticSuspendedService()
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        server = grpc.server(executor)
-        bindings.add_QueryEngineServiceServicer_to_server(service, server)
-        cluster_pb2_grpc.add_ClusterServiceServicer_to_server(service, server)
-        port = server.add_insecure_port('127.0.0.1:0')
-        server.start()
+    with local_services(service) as (port, _):
         conn = Connection(host='127.0.0.1', port=port, access_token='synthetic-local-input',
+                          secure=True, ssl_cert=os.environ['SSL_CERT_FILE'],
                           auto_resume=True, require_fastbinary=False, enable_result_batch_v2=v2,
                           grpc_options={'grpc_prepare_timeout': 2})
         conn.grpc_auto_resume_timeout_seconds = .5
@@ -786,22 +784,24 @@ def test_oauth_resume_keeps_original_prepare_budget_and_rpc_errors(v2, budget, d
         cursor = conn.cursor()
         deadline = time.monotonic() + budget if budget is not None else None
         try:
-            with pytest.raises(grpc.RpcError) as caught:
+            expected = AmbiguousSubmissionError if expected_prepares else grpc.RpcError
+            with pytest.raises(expected) as caught:
                 cursor._prepare_with_auto_resume('prepareStatement', pb.PrepareStatementRequest(), deadline)
             assert len(service.prepare_budgets) == expected_prepares, caught.value
+            assert len(service.status_budgets) == 1
             if budget is not None:
-                assert service.status_budgets and service.status_budgets[0] <= budget + .02, caught.value
-            if expected_prepares == 2:
-                assert caught.value is observer.errors[-1]
-                assert caught.value.code() == grpc.StatusCode.PERMISSION_DENIED
-                assert caught.value.details() == 'Synthetic resumed prepare rejection.'
+                assert service.status_budgets[0] <= budget + .02, caught.value
+            if expected_prepares:
+                assert observer.errors[-1].code() == grpc.StatusCode.PERMISSION_DENIED
+                assert cursor._submission_unknown
+                assert caught.value.__cause__ is None
                 if budget is not None:
-                    assert service.prepare_budgets[1] <= budget + .02
+                    assert service.prepare_budgets[0] <= budget + .02
             else:
                 assert caught.value.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+                assert not getattr(cursor, '_submission_unknown', False)
         finally:
             conn.close()
-            server.stop(0).wait(timeout=2)
 
 
 def test_prefetch_dispatch_rpc_error_is_original_and_never_replayed(local_results, monkeypatch):

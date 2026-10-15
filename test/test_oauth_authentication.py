@@ -337,7 +337,7 @@ class ConnectionCredentialSelectionTest(unittest.TestCase):
 
     def _connect(self, **kwargs):
         from e6data_python_connector.e6data_grpc import Connection
-        defaults = dict(host='localhost', port=80)
+        defaults = dict(host='localhost', port=80, secure=True)
         defaults.update(kwargs)
         with patch.object(Connection, '_create_client', Mock(return_value=None)):
             return Connection(**defaults)
@@ -446,7 +446,7 @@ class StatelessRailTest(unittest.TestCase):
 
     def _connect(self, **kwargs):
         from e6data_python_connector.e6data_grpc import Connection
-        defaults = dict(host='localhost', port=80)
+        defaults = dict(host='localhost', port=80, secure=True)
         defaults.update(kwargs)
         with patch.object(Connection, '_create_client', Mock(return_value=None)):
             return Connection(**defaults)
@@ -499,7 +499,7 @@ class AuthenticationFailureMessageTest(unittest.TestCase):
 
     def _connect(self, **kwargs):
         from e6data_python_connector.e6data_grpc import Connection
-        defaults = dict(host='localhost', port=80)
+        defaults = dict(host='localhost', port=80, secure=True)
         defaults.update(kwargs)
         with patch.object(Connection, '_create_client', Mock(return_value=None)):
             return Connection(**defaults)
@@ -532,7 +532,7 @@ class CatalogListingTest(unittest.TestCase):
 
     def _connect(self, **kwargs):
         from e6data_python_connector.e6data_grpc import Connection
-        defaults = dict(host='localhost', port=80)
+        defaults = dict(host='localhost', port=80, secure=True)
         defaults.update(kwargs)
         with patch.object(Connection, '_create_client', Mock(return_value=None)):
             return Connection(**defaults)

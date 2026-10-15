@@ -67,14 +67,14 @@ def test_single_flight_waiter_departure_and_stale_publication(provider):
     assert called == ['cancel']
     retiring = state.select(time.monotonic() + 1)
     assert retiring.retiring and retiring.waiter is None
-    state.finish(a.flight, 'discarded', time.monotonic() + 60)
+    state.finish(a.flight, 'discarded', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
     assert state.token is None
     with pytest.raises(OAuthError):
         a.flight.result()
     new = state.select(time.monotonic() + 1)
     assert new.owner
-    state.finish(a.flight, 'stale', time.monotonic() + 60)
-    state.finish(new.flight, 'fresh', time.monotonic() + 60)
+    state.finish(a.flight, 'stale', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
+    state.finish(new.flight, 'fresh', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
     assert new.flight.result() == 'fresh'
 
 
@@ -135,7 +135,7 @@ def test_threads_on_distinct_providers_share_one_flight_result(provider):
         while len(state._waiters) < 7 and time.monotonic() < until:
             time.sleep(.001)
         assert len(state._waiters) == 7
-        state.finish(leader.flight, 'shared-state-input', time.monotonic() + 60)
+        state.finish(leader.flight, 'shared-state-input', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
         assert [future.result(timeout=1) for future in futures] == ['shared-state-input'] * 6
     assert state._flight is None
     assert state._waiters == {}
@@ -144,7 +144,7 @@ def test_threads_on_distinct_providers_share_one_flight_result(provider):
 def test_rejection_of_old_token_preserves_new_publication(provider):
     p = provider()
     a = p._state.select(time.monotonic() + 1)
-    p._state.finish(a.flight, 'replacement-input', time.monotonic() + 60)
+    p._state.finish(a.flight, 'replacement-input', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
     assert p.get_token(force_refresh=True, rejected_token='old-input') == 'replacement-input'
 
 
@@ -153,12 +153,12 @@ def test_invalidation_rejects_active_result_and_phase_deadline_expires(provider)
     a = p._state.select(time.monotonic() + 1)
     p.invalidate()
     assert p._state.generation == 1
-    p._state.finish(a.flight, 'stale', time.monotonic() + 60)
+    p._state.finish(a.flight, 'stale', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
     with pytest.raises(OAuthError, match='invalidated'):
         a.flight.result()
     b = p._state.select(time.monotonic() + 1)
     time.sleep(.025)
-    p._state.finish(b.flight, 'late', time.monotonic() + 60)
+    p._state.finish(b.flight, 'late', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
     with pytest.raises(TimeoutError):
         b.flight.result()
     assert p._access_token is None
@@ -182,7 +182,7 @@ def test_subscribe_after_completion_and_late_cancel_registration(provider):
 
 def test_two_sync_pools_share_only_credentials_and_close_preserves_peer():
     from e6data_python_connector import ConnectionPool
-    options = dict(min_size=1, max_size=1, pre_ping=False, host='localhost', port=1,
+    options = dict(min_size=1, max_size=1, pre_ping=False, host='localhost', port=1, secure=True,
                    client_id='pool-state-contract', client_secret='unit-input',
                    token_url='https://example.com/token')
     first, second = ConnectionPool(**options), ConnectionPool(**options)
@@ -224,7 +224,7 @@ def test_saturated_capacity_preserves_cache_and_matching_flight_without_workers(
             while len(joined._state._waiters) < 2 and time.monotonic() < until:
                 time.sleep(.001)
             assert len(joined._state._waiters) == 2
-            joined._state.finish(selection.flight, 'joined-input', time.monotonic() + 60)
+            joined._state.finish(selection.flight, 'joined-input', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
             assert future.result(timeout=1) == 'joined-input'
     finally:
         for _ in range(4):
@@ -233,5 +233,5 @@ def test_saturated_capacity_preserves_cache_and_matching_flight_without_workers(
     # Terminal overload leaves the identity available to a later explicit call.
     retry = other._state.select(time.monotonic() + 1)
     assert retry.owner
-    other._state.finish(retry.flight, 'recovery-input', time.monotonic() + 60)
+    other._state.finish(retry.flight, 'recovery-input', time.monotonic() + 60, expires_at=time.monotonic() + 3600)
     assert other.get_token() == 'recovery-input'

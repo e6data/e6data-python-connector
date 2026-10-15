@@ -20,7 +20,7 @@ def test_dry_run_preserves_catalog_on_native_wire(native, catalog):
                 method = frame.f_locals.get('method')
                 owner = frame.f_locals.get('self')
                 method = getattr(owner, '_method', method)
-                if method:
+                if isinstance(method, (str, bytes)):
                     observed.append((method, type(request), request.SerializeToString()))
 
     async def run():

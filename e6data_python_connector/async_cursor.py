@@ -236,13 +236,16 @@ class AsyncCursor:
             nonlocal dispatched
             dispatched = True
         try:
+            if self._connection._oauth_enabled and self._connection.auto_resume:
+                await self._connection._resume_cluster(deadline)
             try:
                 response = await self._call('prepareStatementV2' if v2 else 'prepareStatement',
-                                            request, deadline, safe=True, on_dispatch=mark_dispatch)
+                                            request, deadline, safe=not self._connection._oauth_enabled,
+                                            on_dispatch=mark_dispatch)
             except grpc.RpcError as error:
-                if (self._connection.auto_resume and error.code() == grpc.StatusCode.UNAVAILABLE
+                if (not self._connection._oauth_enabled and self._connection.auto_resume
+                        and error.code() == grpc.StatusCode.UNAVAILABLE
                         and error.details() == 'status: 503, cluster is suspended'):
-                    # This exact response explicitly denies preparation admission.
                     dispatched = False
                     await self._connection._resume_cluster(deadline)
                     response = await self._call('prepareStatementV2' if v2 else 'prepareStatement',
@@ -280,11 +283,11 @@ class AsyncCursor:
                                  grpc.StatusCode.INVALID_ARGUMENT)
                 or (error.code() == grpc.StatusCode.UNKNOWN and error.details() == 'status: 456')
                 or (error.code() == grpc.StatusCode.UNAVAILABLE and error.details() == 'status: 503, cluster is suspended'))
-            if dispatched and not denied:
+            if dispatched and (self._connection._oauth_enabled or not denied):
                 if self._state != 'CLOSED':
                     self._state = 'SUBMISSION_UNKNOWN'
                 self._connection._ambiguous_submissions.add(self)
-                raise AmbiguousSubmissionError(query_id=self.query_id) from error
+                raise AmbiguousSubmissionError(query_id=self.query_id) from None
             if isinstance(error, (ProgrammingError, OperationalError, OAuthError)):
                 raise
             raise _operational(error) from error
@@ -565,7 +568,8 @@ class AsyncCursor:
                         response, rpc_seconds = await self._take_pending_result(deadline)
                         transport_status = 'ok'
                     except grpc.RpcError as error:
-                        if protocol == 'v2' and error.code() == grpc.StatusCode.UNIMPLEMENTED:
+                        if (protocol == 'v2' and error.code() == grpc.StatusCode.UNIMPLEMENTED
+                                and not self._connection._oauth_enabled):
                             consumed = previously_consumed
                             self._retire_prefetch()
                             # Settle V2 before V1 can advance the same query session.

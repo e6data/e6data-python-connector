@@ -1,3 +1,22 @@
+import grpc
+
+
+class OAuthRPCError(grpc.RpcError):
+    """Retain the transport status without retaining untrusted response details."""
+    def __init__(self, code):
+        self._code = code
+        super().__init__('OAuth RPC failed ({}).'.format(code.name))
+
+    def code(self):
+        return self._code
+
+    def details(self):
+        return str(self)
+
+    def trailing_metadata(self):
+        return ()
+
+
 class NotSupportedError(Exception):
     """Raised when op not supported by e6xdb"""
     pass

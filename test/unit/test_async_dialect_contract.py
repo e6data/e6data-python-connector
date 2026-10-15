@@ -188,7 +188,8 @@ def test_async_engine_discards_native_after_ambiguous_submission(streaming):
                         else:
                             await conn.exec_driver_sql('SELECT 1')
                     assert isinstance(failure.value.orig, AmbiguousSubmissionError)
-                    assert failure.value.orig.__cause__ is not None
+                    assert failure.value.orig.__cause__ is None
+                    assert failure.value.orig.reason == 'ambiguous_submission'
                     assert native._ambiguous_submissions
                 async with engine.connect() as conn:
                     replacement = (await conn.get_raw_connection()).driver_connection

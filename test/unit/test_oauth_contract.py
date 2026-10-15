@@ -27,13 +27,14 @@ def test_invalid_response_shape_is_rejected(payload):
 
 
 def test_exchange_start_determines_reusable_deadline():
-    assert validate({'access_token': 'unit-input', 'token_type': 'bearer', 'expires_in': 3600}, now=150) == ('unit-input', 3640)
+    assert validate({'access_token': 'unit-input', 'token_type': 'bearer', 'expires_in': 3600}, now=150) == ('unit-input', 3640, 3700)
 
 
 def test_short_lifetime_is_returned_uncached():
-    token, until = validate({'access_token': 'unit-input', 'token_type': 'Bearer', 'expires_in': 30})
+    token, until, expiry = validate({'access_token': 'unit-input', 'token_type': 'Bearer', 'expires_in': 30})
     assert token == 'unit-input'
     assert until <= 101
+    assert expiry == 130
 
 
 def test_response_expired_in_transit_is_rejected():
@@ -71,7 +72,7 @@ def test_invalidation_is_shared_even_during_refresh():
     provider = ClientCredentialsTokenProvider('https://example.com/token', 'unit-client', 'unit-secret')
     flight = provider._state.select(time.monotonic() + 1).flight
     provider.invalidate()
-    provider._state.finish(flight, 'invalidated-input', time.monotonic() + 3600)
+    provider._state.finish(flight, 'invalidated-input', time.monotonic() + 3600, expires_at=time.monotonic() + 3600)
     assert provider._access_token is None
     assert provider._expires_at == 0
 

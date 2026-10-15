@@ -55,7 +55,7 @@ def test_terminal_rpc_error_is_preserved(code):
     manager, stub = manager_for(client)
     with stub, pytest.raises(grpc.RpcError) as raised:
         manager.resume()
-    assert raised.value is error
+    assert raised.value.code() == error.code()
     assert len(client.status.calls) == 1
 
 
@@ -102,9 +102,9 @@ def test_metadata_work_consumes_rpc_budget():
 
 
 def test_lock_wait_expires_without_releasing_another_owner():
-    lock = cluster_manager.status_lock._status_thread_lock
     client = SimpleNamespace(status=ScriptedRPC(pb.ClusterStatusResponse(status='active')))
     manager, stub = manager_for(client, deadline=time.monotonic() + 0.03)
+    lock = manager._oauth_recovery.lock
     assert lock.acquire(timeout=1)
     try:
         with stub, pytest.raises(TimeoutError):
@@ -121,8 +121,9 @@ def test_process_lock_wait_releases_only_the_acquired_thread_lock():
     manager, stub = manager_for(client, deadline=time.monotonic() + 0.03)
     assert lock._status_multiprocessing_lock.acquire(timeout=1)
     try:
-        with stub, pytest.raises(TimeoutError):
-            manager.resume()
+        with pytest.raises(TimeoutError):
+            with lock.hold_until(time.monotonic() + .03):
+                pytest.fail("A held process lock cannot be acquired.")
         assert not lock._status_thread_lock.locked()
         assert not lock._status_multiprocessing_lock.acquire(block=False)
         assert not client.status.calls
@@ -154,8 +155,13 @@ def test_explicit_unauthenticated_refreshes_once_per_logical_request(request_typ
                           rpc_error(grpc.StatusCode.UNAUTHENTICATED, 'expired'))
     manager, stub = manager_for(client, metadata_provider=metadata)
     with stub:
-        assert manager.resume()
-    assert calls.count('expired') == 1
+        if request_type == 'status':
+            assert manager.resume()
+        else:
+            with pytest.raises(grpc.RpcError):
+                manager.resume()
+    assert calls.count('expired') == (1 if request_type == 'status' else 0)
+    assert len(target.calls) == (2 if request_type == 'status' else 1)
 
 
 def test_refresh_budget_is_shared_across_strategy_fallback():
@@ -165,7 +171,7 @@ def test_refresh_budget_is_shared_across_strategy_fallback():
     manager, stub = manager_for(client)
     with stub, pytest.raises(grpc.RpcError) as raised:
         manager.resume()
-    assert raised.value is failure
+    assert raised.value.code() == failure.code()
     assert len(client.status.calls) == 3
 
 
@@ -188,6 +194,6 @@ def test_terminal_resume_failure_never_polls_or_repeats_mutation(code):
     manager, stub = manager_for(client)
     with stub, pytest.raises(grpc.RpcError) as raised:
         manager.resume()
-    assert raised.value is failure
+    assert raised.value.code() == failure.code()
     assert len(client.status.calls) == 1
-    assert len(client.resume.calls) == (2 if code == grpc.StatusCode.UNAUTHENTICATED else 1)
+    assert len(client.resume.calls) == 1
