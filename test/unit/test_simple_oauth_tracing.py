@@ -7,7 +7,10 @@ and OpenTelemetry code is real; these tests add no transport or SDK test double.
 import asyncio
 import io
 import json
+from pathlib import Path
 import socket
+import subprocess
+import sys
 import time
 
 import pytest
@@ -21,6 +24,7 @@ from e6data_python_connector.exceptions import OAuthError
 from e6data_python_connector.oauth import ClientCredentialsTokenProvider
 from test.test_oauth_auto_resume import clean_strategies
 from test.test_oauth_resume_integration import FixtureService, local_services
+from test.unit.test_sync_result_prefetch import envelope, local_results
 
 
 _output = io.StringIO()
@@ -189,3 +193,124 @@ def test_opt_out_does_not_export_or_propagate_connector_context(clean_strategies
         assert all("traceparent" not in headers for _, _, headers, _ in service.calls)
         assert all("traceparent" not in {key.lower() for key in headers}
                    for headers in service.token_headers)
+
+
+def test_cancelling_waiter_preserves_shared_exchange_and_other_caller_context():
+    service = FixtureService()
+    service.token_lifetime = 3600
+    service.token_delay_at = 1
+    with local_services(service) as (_, token_url):
+        async def run():
+            provider = AsyncClientCredentialsTokenProvider(
+                token_url, "fixture-id", "private-client-secret", tracing=True)
+            async def caller(name):
+                with _tracer.start_as_current_span(name) as caller_span:
+                    token = await provider.get_token()
+                    assert trace.get_current_span() is caller_span
+                    return token
+            try:
+                with _tracer.start_as_current_span("shared-renewal") as parent:
+                    first = asyncio.create_task(caller("first-waiter"))
+                    async with asyncio.timeout(2):
+                        while service.tokens != 1:
+                            await asyncio.sleep(.001)
+                    second = asyncio.create_task(caller("second-waiter"))
+                    async with asyncio.timeout(2):
+                        while provider._waiters != 2:
+                            await asyncio.sleep(.001)
+                    first.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await first
+                    assert await second == "synthetic-token-1"
+                    assert trace.get_current_span() is parent
+                requests = _requests(parent)
+                assert service.tokens == len(requests) == 1
+                assert requests[0]["attributes"]["oauth.outcome"] == "success"
+                _assert_safe(requests)
+            finally:
+                await provider.close()
+        asyncio.run(run())
+
+
+def test_cancelling_only_async_caller_finishes_owned_exchange_span():
+    service = FixtureService()
+    service.token_delay_at = 1
+    with local_services(service) as (_, token_url):
+        async def run():
+            provider = AsyncClientCredentialsTokenProvider(
+                token_url, "fixture-id", "private-client-secret", tracing=True)
+            with _tracer.start_as_current_span("cancelled-caller") as parent:
+                task = asyncio.create_task(provider.get_token())
+                async with asyncio.timeout(2):
+                    while service.tokens != 1:
+                        await asyncio.sleep(.001)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                await provider.close()
+                assert trace.get_current_span() is parent
+            requests = _requests(parent)
+            assert len(requests) == 1
+            assert requests[0]["attributes"]["oauth.outcome"] == "cancelled"
+            assert requests[0]["status"]["status_code"] == "ERROR"
+            assert requests[0]["end_time"] is not None
+            _assert_safe(requests)
+        asyncio.run(run())
+
+
+def test_background_result_fetch_preserves_current_query_context(local_results):
+    with _tracer.start_as_current_span("fetch-caller") as parent:
+        service, connection, cursor = local_results(
+            [envelope([[1], [2]]), envelope([[3]], terminal=True)], tracing=True)
+        try:
+            assert cursor.fetchall() == [[1], [2], [3]]
+        finally:
+            cursor.clear(timeout=2)
+            connection.close()
+    assert len(service.request_metadata) == 2
+    assert all(headers["traceparent"].split("-")[1] ==
+               "{:032x}".format(parent.get_span_context().trace_id)
+               for headers in service.request_metadata)
+
+
+def test_tracing_without_optional_dependency_is_a_noop_in_clean_interpreter():
+    helper = Path(__file__).resolve().parents[2] / "e6data_python_connector" / "tracing.py"
+    # -S removes site packages. Exercise the real standalone optional helper.
+    code = """
+import runpy, sys
+assert 'opentelemetry' not in sys.modules
+helper = runpy.run_path(sys.argv[1])
+with helper['token_acquisition'](True):
+    assert helper['trace_headers'](True) == {}
+assert 'opentelemetry' not in sys.modules
+"""
+    result = subprocess.run([sys.executable, "-S", "-c", code, str(helper)],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+
+
+def test_real_exporter_io_failure_does_not_change_token_acquisition():
+    service = FixtureService()
+    service.token_lifetime = 3600
+    with local_services(service) as (_, token_url):
+        code = """
+import io, sys
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from e6data_python_connector.oauth import ClientCredentialsTokenProvider
+output = io.StringIO()
+output.close()
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter(out=output)))
+trace.set_tracer_provider(provider)
+token_provider = ClientCredentialsTokenProvider(
+    sys.argv[1], 'fixture-id', 'private-client-secret', tracing=True)
+assert token_provider.get_token() == 'synthetic-token-1'
+assert token_provider.get_token() == 'synthetic-token-1'
+"""
+        result = subprocess.run([sys.executable, "-c", code, token_url],
+                                capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stderr
+        assert "Exception while exporting Span" in result.stderr
+        assert service.tokens == 1

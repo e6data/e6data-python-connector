@@ -23,6 +23,7 @@ class SyntheticResults(bindings.QueryEngineServiceServicer):
     def __init__(self, responses):
         self.responses = responses
         self.requests = []
+        self.request_metadata = []
         self.v1_requests = []
         self.v1_responses = []
         self.cleanups = []
@@ -37,6 +38,7 @@ class SyntheticResults(bindings.QueryEngineServiceServicer):
         with self.lock:
             index = len(self.requests)
             self.requests.append(request)
+            self.request_metadata.append(dict(context.invocation_metadata()))
         if index >= len(self.responses):
             context.abort(grpc.StatusCode.OUT_OF_RANGE, 'Unexpected synthetic fetch.')
         self.entered[index].set()
