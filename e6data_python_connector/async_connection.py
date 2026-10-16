@@ -97,7 +97,7 @@ class AsyncConnection:
                         client_id=client_id, client_secret=client_secret, token_url=token_url,
                         oauth_scope=oauth_scope, access_token=access_token,
                         client_auth_method=client_auth_method,
-                        enable_result_batch_v2=enable_result_batch_v2)
+                        enable_result_batch_v2=enable_result_batch_v2, tracing=tracing)
         for name, value in [('operation_timeout', operation_timeout), ('oauth_timeout', oauth_timeout),
                             ('cleanup_timeout', cleanup_timeout), ('auto_resume_timeout', auto_resume_timeout)]:
             settings[name] = validate_positive_timeout(value, name)
