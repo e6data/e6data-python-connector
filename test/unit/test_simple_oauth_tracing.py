@@ -5,13 +5,17 @@ and OpenTelemetry code is real; these tests add no transport or SDK test double.
 """
 
 import asyncio
+from contextvars import ContextVar
+import gc
 import io
 import json
 from pathlib import Path
 import socket
 import subprocess
 import sys
+import threading
 import time
+import weakref
 
 import pytest
 from opentelemetry import trace
@@ -345,3 +349,32 @@ def test_async_connection_and_pool_keep_each_callers_current_context(enabled):
                         assert metadata['traceparent'].split('-')[1] == '{:032x}'.format(
                             parent.get_span_context().trace_id)
     asyncio.run(run())
+
+
+def test_finished_result_worker_releases_objects_from_copied_context(local_results):
+    class ContextObject:
+        pass
+
+    service, connection, cursor = local_results(
+        [envelope([[1]], terminal=True)], tracing=True)
+    service.response_delay = .2
+    current = ContextVar('oauth-tracing-worker-lifetime')
+    value = ContextObject()
+    reference = weakref.ref(value)
+    token = current.set(value)
+    existing = set(threading.enumerate())
+    try:
+        cursor._start_prefetch(time.monotonic() + 2)
+    finally:
+        current.reset(token)
+    del value, token
+    assert service.entered[0].wait(2)
+    worker = next(thread for thread in threading.enumerate()
+                  if thread not in existing and thread.name == 'e6-result-download')
+    worker.join(2)
+    assert not worker.is_alive()
+    gc.collect()
+    assert reference() is None
+    assert cursor.fetchall() == [[1]]
+    cursor.clear(timeout=2)
+    connection.close()
