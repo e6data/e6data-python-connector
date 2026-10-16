@@ -1503,7 +1503,7 @@ class Cursor(DBAPICursor):
             stream.set_handle(completion)
             self._pending_fetch = stream
             producer = threading.Thread(
-                target=self._download_result_stream,
+                target=capture_context(self._download_result_stream, self.connection._tracing),
                 args=(stream, completion, identity, empty),
                 name='e6-result-download', daemon=True)
             try:
