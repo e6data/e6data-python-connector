@@ -19,6 +19,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 
 from e6data_python_connector.async_oauth import AsyncClientCredentialsTokenProvider
+from e6data_python_connector.async_connection import AsyncConnection
+from e6data_python_connector.async_connection_pool import AsyncConnectionPool
 from e6data_python_connector.e6data_grpc import Connection
 from e6data_python_connector.exceptions import OAuthError
 from e6data_python_connector.oauth import ClientCredentialsTokenProvider
@@ -314,3 +316,32 @@ assert token_provider.get_token() == 'synthetic-token-1'
         assert result.returncode == 0, result.stderr
         assert "Exception while exporting Span" in result.stderr
         assert service.tokens == 1
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_async_connection_and_pool_keep_each_callers_current_context(enabled):
+    async def run():
+        connection = AsyncConnection(
+            '127.0.0.1', 1, access_token='synthetic-static-token', secure=True,
+            tracing=enabled)
+        assert connection.tracing is enabled
+        async with connection:
+            for name in ('first-async-query', 'second-async-query'):
+                with _tracer.start_as_current_span(name) as parent:
+                    metadata = dict(await connection._metadata(time.monotonic() + 2))
+                    assert ('traceparent' in metadata) is enabled
+                    if enabled:
+                        assert metadata['traceparent'].split('-')[1] == '{:032x}'.format(
+                            parent.get_span_context().trace_id)
+        async with AsyncConnectionPool(
+                min_size=0, max_size=1, host='127.0.0.1', port=1,
+                access_token='synthetic-static-token', secure=True,
+                tracing=enabled) as pool:
+            for name in ('first-pool-caller', 'second-pool-caller'):
+                with _tracer.start_as_current_span(name) as parent:
+                    metadata = dict(await pool._resume_metadata('blue', time.monotonic() + 2))
+                    assert ('traceparent' in metadata) is enabled
+                    if enabled:
+                        assert metadata['traceparent'].split('-')[1] == '{:032x}'.format(
+                            parent.get_span_context().trace_id)
+    asyncio.run(run())
