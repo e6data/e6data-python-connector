@@ -49,6 +49,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install connector and pinned test dependencies
         run: python -m pip install -c test/constraints/${{ matrix.constraints }}.txt -e '.[async-sqlalchemy]' -r requirements-test.txt build
+      - name: Diagnose OAuth tracing contracts with bounded runtime
+        run: timeout 120s python -m pytest test/unit/test_simple_oauth_tracing.py -vv -o faulthandler_timeout=30
       - name: Complete offline collection and full package coverage gate
         run: python -m pytest --cov=e6data_python_connector --cov-branch --cov-report=xml --cov-report=term-missing --cov-fail-under=80.01
       - name: Preserve full denominator report
