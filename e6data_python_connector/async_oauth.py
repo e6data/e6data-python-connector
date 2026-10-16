@@ -12,6 +12,7 @@ import weakref
 
 from e6data_python_connector.async_work import run_blocking
 from e6data_python_connector.exceptions import OAuthError
+from e6data_python_connector.tracing import token_acquisition, trace_headers
 from e6data_python_connector.oauth_common import (
     MAX_TOKEN_RESPONSE_BYTES, validate_token_endpoint, validate_positive_timeout,
     validate_token_response,
@@ -22,7 +23,7 @@ _LOOP_SLOTS = weakref.WeakKeyDictionary()
 
 class AsyncClientCredentialsTokenProvider:
     def __init__(self, token_url, client_id, client_secret, scope=None,
-                 client_auth_method='basic', timeout=10, refresh_leeway_seconds=60):
+                 client_auth_method='basic', timeout=10, refresh_leeway_seconds=60, tracing=False):
         validate_token_endpoint(token_url)
         if not client_id or not client_secret:
             raise ValueError('client_id and client_secret cannot be empty.')
@@ -33,6 +34,7 @@ class AsyncClientCredentialsTokenProvider:
                 or not isinstance(refresh_leeway_seconds, (int, float))
                 or not math.isfinite(refresh_leeway_seconds) or refresh_leeway_seconds < 0):
             raise ValueError('refresh_leeway_seconds must be finite and nonnegative.')
+        self._tracing = tracing
         self._token_url, self._client_id, self._client_secret = token_url, client_id, client_secret
         self._scope, self._client_auth_method = scope, client_auth_method
         self._refresh_leeway_seconds = refresh_leeway_seconds
@@ -205,10 +207,11 @@ class AsyncClientCredentialsTokenProvider:
         try:
             async with asyncio.timeout(max(0, deadline - time.monotonic())):
                 async with slots:
-                    started = time.monotonic()
-                    payload = await self._fetch_token(deadline)
-                    token, reusable_until = validate_token_response(
-                        payload, started_at=started, now=time.monotonic(), leeway=self._refresh_leeway_seconds)
+                    with token_acquisition(self._tracing):
+                        started = time.monotonic()
+                        payload = await self._fetch_token(deadline)
+                        token, reusable_until = validate_token_response(
+                            payload, started_at=started, now=time.monotonic(), leeway=self._refresh_leeway_seconds)
                     self._state.finish(flight, token=token, reusable_until=reusable_until)
         except BaseException as error:
             failure = OAuthError('OAuth exchange owner was cancelled.') if isinstance(error, asyncio.CancelledError) else error
@@ -225,6 +228,7 @@ class AsyncClientCredentialsTokenProvider:
         if self._scope:
             form['scope'] = self._scope
         headers = {'Accept': 'application/json'}
+        headers.update(trace_headers(self._tracing))
         if self._client_auth_method == 'basic':
             credentials = '{}:{}'.format(urllib.parse.quote_plus(self._client_id),
                                         urllib.parse.quote_plus(self._client_secret)).encode('utf-8')

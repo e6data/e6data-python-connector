@@ -11,6 +11,7 @@ import urllib.request
 
 from e6data_python_connector.exceptions import OAuthError
 from e6data_python_connector.oauth_cache import get_state
+from e6data_python_connector.tracing import capture_context, token_acquisition, trace_headers
 from e6data_python_connector.oauth_common import (
     MAX_TOKEN_RESPONSE_BYTES, validate_positive_timeout,
     validate_token_endpoint, validate_token_response,
@@ -45,7 +46,7 @@ class ClientCredentialsTokenProvider:
 
     def __init__(self, token_url, client_id, client_secret, scope=None,
                  client_auth_method=CLIENT_AUTH_BASIC, timeout=DEFAULT_TIMEOUT_SECONDS,
-                 refresh_leeway_seconds=DEFAULT_REFRESH_LEEWAY_SECONDS):
+                 refresh_leeway_seconds=DEFAULT_REFRESH_LEEWAY_SECONDS, tracing=False):
         validate_token_endpoint(token_url)
         if not client_id or not client_secret:
             raise ValueError('client_id and client_secret cannot be empty.')
@@ -56,6 +57,7 @@ class ClientCredentialsTokenProvider:
                 or not isinstance(refresh_leeway_seconds, (int, float))
                 or not math.isfinite(refresh_leeway_seconds) or refresh_leeway_seconds < 0):
             raise ValueError('refresh_leeway_seconds must be finite and nonnegative.')
+        self._tracing = tracing
         self._token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
@@ -119,10 +121,11 @@ class ClientCredentialsTokenProvider:
 
         def refresh():
             try:
-                started = time.monotonic()
-                payload = self._fetch_token(flight.deadline)
-                token, until = validate_token_response(payload, started_at=started,
-                    now=time.monotonic(), leeway=self._refresh_leeway_seconds)
+                with token_acquisition(self._tracing):
+                    started = time.monotonic()
+                    payload = self._fetch_token(flight.deadline)
+                    token, until = validate_token_response(payload, started_at=started,
+                        now=time.monotonic(), leeway=self._refresh_leeway_seconds)
                 self._state.finish(flight, token, until)
             except BaseException as error:
                 self._state.finish(flight, error=error)
@@ -130,7 +133,7 @@ class ClientCredentialsTokenProvider:
                 exchange_slots.release()
 
         try:
-            threading.Thread(target=refresh, daemon=True).start()
+            threading.Thread(target=capture_context(refresh, self._tracing), daemon=True).start()
         except BaseException as error:
             exchange_slots.release()
             self._state.finish(flight, error=error)
@@ -158,6 +161,7 @@ class ClientCredentialsTokenProvider:
         else:
             form['client_id'] = self._client_id
             form['client_secret'] = self._client_secret
+        headers.update(trace_headers(self._tracing))
         request = urllib.request.Request(self._token_url, data=urllib.parse.urlencode(form).encode('utf-8'),
                                          headers=headers, method='POST')
         try:

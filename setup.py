@@ -53,6 +53,7 @@ setuptools.setup(
         'grpcio-tools>=1.65.1',
     ],
     extras_require={
+        'tracing': ['opentelemetry-api>=1.45.1,<2'],
         'async': ['httpx>=0.28.1,<1'],
         'async-sqlalchemy': ['httpx>=0.28.1,<1', 'SQLAlchemy[asyncio]>=2.0,<2.1'],
     },

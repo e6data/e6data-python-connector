@@ -40,7 +40,7 @@ def _spans(parent):
 
 def _requests(parent):
     return [span for span in _spans(parent)
-            if span["name"] == "e6data.oauth.token_request"]
+            if span["name"] == "oauth.token.acquire"]
 
 
 def _assert_safe(spans):
@@ -69,6 +69,11 @@ def test_sync_network_exchange_inherits_owner_context_cache_has_no_attempt():
         assert headers["traceparent"].split("-")[1:3] == [
             request["context"]["trace_id"][2:], request["context"]["span_id"][2:]]
         assert "baggage" not in headers
+        assert request["attributes"] == {
+            "oauth.operation": "token.acquire", "oauth.grant_type": "client_credentials",
+            "oauth.transport": "http", "oauth.reported_source": "python",
+            "oauth.outcome": "success",
+        }
         assert request["end_time"] is not None
         _assert_safe(_spans(parent))
 

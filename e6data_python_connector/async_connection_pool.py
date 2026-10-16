@@ -167,6 +167,8 @@ class AsyncConnectionPool:
         metadata = [('authorization', 'Bearer ' + token), ('strategy', strategy)]
         if self._params.get('cluster_name'):
             metadata.append(('cluster-name', self._params['cluster_name']))
+        from .tracing import trace_headers
+        metadata.extend(trace_headers(self._params.get('tracing', False)).items())
         return metadata
 
     async def open(self):
@@ -185,7 +187,8 @@ class AsyncConnectionPool:
                 self._token_provider = AsyncClientCredentialsTokenProvider(
                     client_id=config.client_id, client_secret=config.client_secret,
                     token_url=config.token_url, scope=config.oauth_scope,
-                    client_auth_method=config.client_auth_method, timeout=config.oauth_timeout)
+                    client_auth_method=config.client_auth_method, timeout=config.oauth_timeout,
+                    tracing=config.tracing)
             from .async_cluster_manager import AsyncClusterManager
             self._cluster_manager = AsyncClusterManager(
                 config.host, config.port, user=config.username or '', password=config.password or '',

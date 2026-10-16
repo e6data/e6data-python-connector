@@ -54,7 +54,7 @@ class AsyncConnection:
                  client_auth_method='basic', *, operation_timeout=600.0,
                  oauth_timeout=10.0, cleanup_timeout=10.0, auto_resume_timeout=300.0,
                  max_receive_message_bytes=_UNSET_RECEIVE_MESSAGE_BYTES,
-                 enable_result_batch_v2=False):
+                 enable_result_batch_v2=False, tracing=False):
         from .result_decode_worker import is_decode_worker
         if is_decode_worker():
             raise RuntimeError('A result decode worker cannot create a connection.')
@@ -269,7 +269,8 @@ class AsyncConnection:
                 self._token_provider = AsyncClientCredentialsTokenProvider(
                     client_id=self.client_id, client_secret=self.client_secret,
                     token_url=self.token_url, scope=self.oauth_scope,
-                    client_auth_method=self.client_auth_method, timeout=self.oauth_timeout)
+                    client_auth_method=self.client_auth_method, timeout=self.oauth_timeout,
+                    tracing=self.tracing)
             # No await between validation, construction and atomic publication.
             self._channel, self._client = channel, client
             self._state = 'open'
@@ -336,6 +337,8 @@ class AsyncConnection:
                 token = await self._token_provider.get_token(deadline=deadline)
             metadata.append(('authorization', 'Bearer ' + token))
         self._check_owner(_cleanup=_cleanup, _internal=True)
+        from .tracing import trace_headers
+        metadata.extend(trace_headers(self.tracing).items())
         return metadata
 
     async def _ensure_decoder(self, deadline):

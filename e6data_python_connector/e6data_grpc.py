@@ -33,6 +33,7 @@ from e6data_python_connector.datainputstream import get_query_columns_info, read
     is_fastbinary_available
 from e6data_python_connector.server import e6x_engine_pb2_grpc, e6x_engine_pb2
 from e6data_python_connector.oauth import ClientCredentialsTokenProvider
+from e6data_python_connector.tracing import capture_context, trace_headers
 from e6data_python_connector.result_batch import ResultBatchBuffer, decode_result_batches
 from e6data_python_connector.result_prefetch import ContinuousResultStream, PendingFetch
 from e6data_python_connector.exceptions import (
@@ -444,6 +445,7 @@ class Connection(object):
             access_token: str = None,
             client_auth_method: str = 'basic',
             enable_result_batch_v2: bool = False,
+        tracing: bool = False,
     ):
         """
         Parameters
@@ -558,6 +560,7 @@ class Connection(object):
                 "credentials, or a pre-obtained access_token."
             )
 
+        self._tracing = tracing
         self._token_provider = None
         self._static_access_token = None
         self._oauth_resume_strategy = None
@@ -580,6 +583,7 @@ class Connection(object):
                 client_secret=client_secret,
                 scope=oauth_scope,
                 client_auth_method=client_auth_method,
+                tracing=tracing,
             )
         else:
             self._static_access_token = access_token
@@ -806,6 +810,7 @@ class Connection(object):
         if self._uses_oauth:
             metadata.append(('authorization', 'Bearer {}'.format(self._bearer_token(
                 force_refresh=rejected_token is not None, deadline=deadline, rejected_token=rejected_token))))
+        metadata.extend(trace_headers(self._tracing).items())
         return metadata
 
     def _oauth_metadata(self, strategy, deadline, rejected_token=None):
