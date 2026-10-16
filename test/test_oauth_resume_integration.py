@@ -27,6 +27,7 @@ class FixtureService(engine_rpc.QueryEngineServiceServicer, cluster_rpc.ClusterS
         self.calls = []
         self.state = 'suspended'
         self.tokens = 0
+        self.token_headers = []
         self.post_prepare_error = post_prepare_error
         self.token_delay_at = None
         self.status_delay = 0
@@ -98,6 +99,7 @@ def local_services(service):
             body = self.rfile.read(int(self.headers['Content-Length']))
             assert body == b'grant_type=client_credentials'
             service.tokens += 1
+            service.token_headers.append(dict(self.headers))
             if service.tokens == service.token_delay_at:
                 time.sleep(0.2)
             payload = json.dumps({'access_token': 'synthetic-token-{}'.format(service.tokens),
