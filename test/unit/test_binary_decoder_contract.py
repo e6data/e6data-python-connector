@@ -1,7 +1,7 @@
 """Binary decoding contracts using real bytes, Thrift structs and protocols."""
 import io
 import struct
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 
 import pytest
@@ -85,6 +85,28 @@ def test_int96_row_encoding_uses_julian_day_and_nanoseconds():
     # Existing row-wise protocol interprets the Julian-day base in local time.
     expected=datetime.fromtimestamp(0).replace(microsecond=123000)
     assert decoder.read_values_from_array([field],decoder.DataInputStream(io.BytesIO(payload)))==[expected]
+
+
+def test_interval_day_second_row_and_vector_decoding():
+    assert getattr(wire.VectorType, 'INTERVAL_DAY_SECOND', None) == 17
+
+    field=decoder.FieldInfo('elapsed','INTERVAL_DAY_SECOND','','')
+    payload=b'\x01'+struct.pack('>q',86_400_000_001)
+    assert decoder.read_values_from_array([field],decoder.DataInputStream(io.BytesIO(payload)))==[
+        timedelta(days=1,microseconds=1)]
+
+    vector=wire.Vector(3,wire.VectorType.INTERVAL_DAY_SECOND,[False,False,True],
+                       wire.Data(int64Data=wire.Int64Data([86_400_000_001,-1,0])),False)
+    assert decoder.get_column_from_chunk(vector)==[
+        timedelta(days=1,microseconds=1),timedelta(microseconds=-1),None]
+
+    constant=wire.Vector(2,wire.VectorType.INTERVAL_DAY_SECOND,[False],
+                         wire.Data(numericConstantData=wire.NumericConstantData(-10_000)),True)
+    assert decoder.get_column_from_chunk(constant)==[timedelta(microseconds=-10_000)]*2
+
+    zero=wire.Vector(1,wire.VectorType.INTERVAL_DAY_SECOND,[False],
+                     wire.Data(numericConstantData=wire.NumericConstantData(0)),True)
+    assert decoder.get_column_from_chunk(zero)==[timedelta(0)]
 
 
 VECTOR_CASES=[

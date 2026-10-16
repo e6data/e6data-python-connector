@@ -18,7 +18,8 @@ enum VectorType
     ARRAY,
     NULL,
     TIMESTAMP_TZ,
-    DECIMAL128
+    DECIMAL128,
+    INTERVAL_DAY_SECOND
 }
 
 struct Vector

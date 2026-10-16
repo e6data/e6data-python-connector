@@ -129,6 +129,6 @@ def test_truncated_thrift_struct_is_rejected(protocol):
 
 
 def test_vector_enum_name_mapping_is_bijective():
-    assert len(wire.VectorType._VALUES_TO_NAMES) == 17
+    assert len(wire.VectorType._VALUES_TO_NAMES) == 18
     for value, name in wire.VectorType._VALUES_TO_NAMES.items():
         assert wire.VectorType._NAMES_TO_VALUES[name] == value
