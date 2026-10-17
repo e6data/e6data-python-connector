@@ -35,6 +35,7 @@ class VectorType(object):
     NULL = 14
     TIMESTAMP_TZ = 15
     DECIMAL128 = 16
+    INTERVAL_DAY_SECOND = 17
 
     _VALUES_TO_NAMES = {
         0: "BINARY",
@@ -54,6 +55,7 @@ class VectorType(object):
         14: "NULL",
         15: "TIMESTAMP_TZ",
         16: "DECIMAL128",
+        17: "INTERVAL_DAY_SECOND",
     }
 
     _NAMES_TO_VALUES = {
@@ -74,6 +76,7 @@ class VectorType(object):
         "NULL": 14,
         "TIMESTAMP_TZ": 15,
         "DECIMAL128": 16,
+        "INTERVAL_DAY_SECOND": 17,
     }
 
 

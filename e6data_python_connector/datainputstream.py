@@ -478,6 +478,8 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
         try:
             if dtype == "LONG":
                 value_array.append(dis.read_long())
+            elif dtype == "INTERVAL_DAY_SECOND":
+                value_array.append(timedelta(microseconds=dis.read_long()))
             elif dtype == "DATE":
                 value_array.append(format_iso_date_from_epoch_micros(dis.read_long()))
             elif dtype == "DATETIME":
@@ -582,6 +584,15 @@ def get_column_from_chunk(vector: Vector, strict=False) -> list:
                     continue
                 value_array.append(vector.data.int64Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericConstantData.data)
+        elif d_type == VectorType.INTERVAL_DAY_SECOND:
+            for row in range(vector.size):
+                if get_null(vector, row):
+                    value_array.append(None)
+                    continue
+                microseconds = (vector.data.int64Data.data[row]
+                                if not vector.isConstantVector
+                                else vector.data.numericConstantData.data)
+                value_array.append(timedelta(microseconds=microseconds))
         elif d_type == VectorType.DATE:
             # Use the JDBC-parity formatter so years > 9999 emit "+YYYYY-MM-DD"
             # instead of raising. Per-row try/except keeps a single bad value
