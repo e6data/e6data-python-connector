@@ -19,7 +19,8 @@ enum VectorType
     NULL,
     TIMESTAMP_TZ,
     DECIMAL128,
-    INTERVAL_DAY_SECOND
+    INTERVAL_DAY_SECOND,
+    CALENDAR_INTERVAL
 }
 
 struct Vector
@@ -53,6 +54,7 @@ union Data
     16: TimeData timeData
     17: Decimal128Data decimal128Data
     18: NumericDecimal128ConstantData numericDecimal128ConstantData
+    23: CalendarIntervalData calendarIntervalData
 }
 
 struct BoolData
@@ -154,4 +156,11 @@ struct Chunk
 {
     1: i32 size,
     2: list <Vector> vectors
+}
+
+struct CalendarIntervalData
+{
+    1: list<i32> months
+    2: list<i32> days
+    3: list<i64> microseconds
 }
