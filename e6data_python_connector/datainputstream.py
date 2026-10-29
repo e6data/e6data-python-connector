@@ -10,6 +10,7 @@ from thrift.transport import TTransport
 
 from e6data_python_connector.e6x_vector.ttypes import Chunk, Vector, VectorType
 from e6data_python_connector.constants import ZONE
+from e6data_python_connector.calendar_interval import CalendarInterval
 from e6data_python_connector.date_time_utils import (
     floor_div,
     floor_mod,
@@ -478,6 +479,8 @@ def read_values_from_array(query_columns_description: list, dis: DataInputStream
         try:
             if dtype == "LONG":
                 value_array.append(dis.read_long())
+            elif dtype == "CALENDAR_INTERVAL":
+                value_array.append(CalendarInterval(dis.read_int(), dis.read_int(), dis.read_long()))
             elif dtype == "INTERVAL_DAY_SECOND":
                 value_array.append(timedelta(microseconds=dis.read_long()))
             elif dtype == "DATE":
@@ -584,6 +587,18 @@ def get_column_from_chunk(vector: Vector, strict=False) -> list:
                     continue
                 value_array.append(vector.data.int64Data.data[
                                        row] if not vector.isConstantVector else vector.data.numericConstantData.data)
+        elif d_type == VectorType.CALENDAR_INTERVAL:
+            payload = getattr(vector.data, 'calendarIntervalData', None)
+            for row in range(vector.size):
+                if get_null(vector, row):
+                    value_array.append(None)
+                    continue
+                index = 0 if vector.isConstantVector else row
+                components = (payload.months, payload.days, payload.microseconds) if payload else ()
+                if not components or any(values is None or index >= len(values) or values[index] is None
+                                         for values in components):
+                    raise ValueError("Incomplete CALENDAR_INTERVAL vector payload")
+                value_array.append(CalendarInterval(*(values[index] for values in components)))
         elif d_type == VectorType.INTERVAL_DAY_SECOND:
             for row in range(vector.size):
                 if get_null(vector, row):

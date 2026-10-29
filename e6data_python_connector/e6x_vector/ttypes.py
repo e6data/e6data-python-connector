@@ -36,6 +36,7 @@ class VectorType(object):
     TIMESTAMP_TZ = 15
     DECIMAL128 = 16
     INTERVAL_DAY_SECOND = 17
+    CALENDAR_INTERVAL = 18
 
     _VALUES_TO_NAMES = {
         0: "BINARY",
@@ -56,6 +57,7 @@ class VectorType(object):
         15: "TIMESTAMP_TZ",
         16: "DECIMAL128",
         17: "INTERVAL_DAY_SECOND",
+        18: "CALENDAR_INTERVAL",
     }
 
     _NAMES_TO_VALUES = {
@@ -77,6 +79,7 @@ class VectorType(object):
         "TIMESTAMP_TZ": 15,
         "DECIMAL128": 16,
         "INTERVAL_DAY_SECOND": 17,
+        "CALENDAR_INTERVAL": 18,
     }
 
 
@@ -235,12 +238,13 @@ class Data(object):
      - timeData
      - decimal128Data
      - numericDecimal128ConstantData
+     - calendarIntervalData
 
     """
     thrift_spec = None
 
 
-    def __init__(self, boolData = None, int32Data = None, int64Data = None, dateData = None, float32Data = None, float64Data = None, varcharData = None, boolConstantData = None, dateConstantData = None, nullConstantData = None, numericConstantData = None, numericDecimalConstantData = None, temporalIntervalConstantData = None, timeConstantData = None, varcharConstantData = None, timeData = None, decimal128Data = None, numericDecimal128ConstantData = None,):
+    def __init__(self, boolData = None, int32Data = None, int64Data = None, dateData = None, float32Data = None, float64Data = None, varcharData = None, boolConstantData = None, dateConstantData = None, nullConstantData = None, numericConstantData = None, numericDecimalConstantData = None, temporalIntervalConstantData = None, timeConstantData = None, varcharConstantData = None, timeData = None, decimal128Data = None, numericDecimal128ConstantData = None, calendarIntervalData = None,):
         self.boolData = boolData
         self.int32Data = int32Data
         self.int64Data = int64Data
@@ -259,6 +263,7 @@ class Data(object):
         self.timeData = timeData
         self.decimal128Data = decimal128Data
         self.numericDecimal128ConstantData = numericDecimal128ConstantData
+        self.calendarIntervalData = calendarIntervalData
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -377,6 +382,12 @@ class Data(object):
                     self.numericDecimal128ConstantData.read(iprot)
                 else:
                     iprot.skip(ftype)
+            elif fid == 23:
+                if ftype == TType.STRUCT:
+                    self.calendarIntervalData = CalendarIntervalData()
+                    self.calendarIntervalData.read(iprot)
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -459,6 +470,10 @@ class Data(object):
         if self.numericDecimal128ConstantData is not None:
             oprot.writeFieldBegin('numericDecimal128ConstantData', TType.STRUCT, 18)
             self.numericDecimal128ConstantData.write(oprot)
+            oprot.writeFieldEnd()
+        if self.calendarIntervalData is not None:
+            oprot.writeFieldBegin('calendarIntervalData', TType.STRUCT, 23)
+            self.calendarIntervalData.write(oprot)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -1741,6 +1756,111 @@ class Chunk(object):
 
     def __ne__(self, other):
         return not (self == other)
+
+
+class CalendarIntervalData(object):
+    """
+    Attributes:
+     - months
+     - days
+     - microseconds
+
+    """
+    thrift_spec = None
+
+
+    def __init__(self, months = None, days = None, microseconds = None,):
+        self.months = months
+        self.days = days
+        self.microseconds = microseconds
+
+    def read(self, iprot):
+        if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
+            iprot._fast_decode(self, iprot, [self.__class__, self.thrift_spec])
+            return
+        iprot.readStructBegin()
+        while True:
+            (fname, ftype, fid) = iprot.readFieldBegin()
+            if ftype == TType.STOP:
+                break
+            if fid == 1:
+                if ftype == TType.LIST:
+                    self.months = []
+                    (_etype87, _size84) = iprot.readListBegin()
+                    for _i88 in range(_size84):
+                        _elem89 = iprot.readI32()
+                        self.months.append(_elem89)
+                    iprot.readListEnd()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 2:
+                if ftype == TType.LIST:
+                    self.days = []
+                    (_etype93, _size90) = iprot.readListBegin()
+                    for _i94 in range(_size90):
+                        _elem95 = iprot.readI32()
+                        self.days.append(_elem95)
+                    iprot.readListEnd()
+                else:
+                    iprot.skip(ftype)
+            elif fid == 3:
+                if ftype == TType.LIST:
+                    self.microseconds = []
+                    (_etype99, _size96) = iprot.readListBegin()
+                    for _i100 in range(_size96):
+                        _elem101 = iprot.readI64()
+                        self.microseconds.append(_elem101)
+                    iprot.readListEnd()
+                else:
+                    iprot.skip(ftype)
+            else:
+                iprot.skip(ftype)
+            iprot.readFieldEnd()
+        iprot.readStructEnd()
+
+    def write(self, oprot):
+        self.validate()
+        if oprot._fast_encode is not None and self.thrift_spec is not None:
+            oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
+            return
+        oprot.writeStructBegin('CalendarIntervalData')
+        if self.months is not None:
+            oprot.writeFieldBegin('months', TType.LIST, 1)
+            oprot.writeListBegin(TType.I32, len(self.months))
+            for iter102 in self.months:
+                oprot.writeI32(iter102)
+            oprot.writeListEnd()
+            oprot.writeFieldEnd()
+        if self.days is not None:
+            oprot.writeFieldBegin('days', TType.LIST, 2)
+            oprot.writeListBegin(TType.I32, len(self.days))
+            for iter103 in self.days:
+                oprot.writeI32(iter103)
+            oprot.writeListEnd()
+            oprot.writeFieldEnd()
+        if self.microseconds is not None:
+            oprot.writeFieldBegin('microseconds', TType.LIST, 3)
+            oprot.writeListBegin(TType.I64, len(self.microseconds))
+            for iter104 in self.microseconds:
+                oprot.writeI64(iter104)
+            oprot.writeListEnd()
+            oprot.writeFieldEnd()
+        oprot.writeFieldStop()
+        oprot.writeStructEnd()
+
+    def validate(self):
+        return
+
+    def __repr__(self):
+        L = ['%s=%r' % (key, value)
+             for key, value in self.__dict__.items()]
+        return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not (self == other)
 all_structs.append(Vector)
 Vector.thrift_spec = (
     None,  # 0
@@ -1773,6 +1893,11 @@ Data.thrift_spec = (
     (16, TType.STRUCT, 'timeData', [TimeData, None], None, ),  # 16
     (17, TType.STRUCT, 'decimal128Data', [Decimal128Data, None], None, ),  # 17
     (18, TType.STRUCT, 'numericDecimal128ConstantData', [NumericDecimal128ConstantData, None], None, ),  # 18
+    None,  # 19
+    None,  # 20
+    None,  # 21
+    None,  # 22
+    (23, TType.STRUCT, 'calendarIntervalData', [CalendarIntervalData, None], None, ),  # 23
 )
 all_structs.append(BoolData)
 BoolData.thrift_spec = (
@@ -1873,6 +1998,13 @@ Chunk.thrift_spec = (
     None,  # 0
     (1, TType.I32, 'size', None, None, ),  # 1
     (2, TType.LIST, 'vectors', (TType.STRUCT, [Vector, None], False), None, ),  # 2
+)
+all_structs.append(CalendarIntervalData)
+CalendarIntervalData.thrift_spec = (
+    None,  # 0
+    (1, TType.LIST, 'months', (TType.I32, None, False), None, ),  # 1
+    (2, TType.LIST, 'days', (TType.I32, None, False), None, ),  # 2
+    (3, TType.LIST, 'microseconds', (TType.I64, None, False), None, ),  # 3
 )
 fix_spec(all_structs)
 del all_structs

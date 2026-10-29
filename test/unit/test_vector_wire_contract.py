@@ -10,6 +10,8 @@ from e6data_python_connector.e6x_vector import ttypes as wire
 
 
 VALUES = [
+    wire.CalendarIntervalData([-2147483648, 2147483647], [2147483647, -2147483648],
+                              [-9223372036854775808, 9223372036854775807]),
     wire.BoolData([False, True]), wire.Int32Data([-2147483648, 2147483647]),
     wire.Int64Data([-9223372036854775808, 9223372036854775807]),
     wire.DateData([-86400000000, 0, 86400000000]),
@@ -129,6 +131,6 @@ def test_truncated_thrift_struct_is_rejected(protocol):
 
 
 def test_vector_enum_name_mapping_is_bijective():
-    assert len(wire.VectorType._VALUES_TO_NAMES) == 18
+    assert len(wire.VectorType._VALUES_TO_NAMES) == 19
     for value, name in wire.VectorType._VALUES_TO_NAMES.items():
         assert wire.VectorType._NAMES_TO_VALUES[name] == value
