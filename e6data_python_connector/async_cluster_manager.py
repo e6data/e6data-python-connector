@@ -50,6 +50,9 @@ class _ResumeState:
     def acknowledged(self):
         self.pending = 'acknowledged'
 
+    def rejected(self):
+        self.pending = None
+
 
 class _ResumeFlight:
     """One phase deadline, independently bounded shielded waiters."""
@@ -167,6 +170,8 @@ class AsyncClusterManager:
                 _remaining(deadline)
             return await self._flight.wait(self._recover, deadline)
         except (TimeoutError, grpc.RpcError) as error:
+            if isinstance(error, grpc.RpcError) and error.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                raise OperationalError('Cluster recovery failed: {}'.format(error.details())) from error
             raise OperationalError('Cluster recovery failed; a dispatched resume may still complete.') from error
 
     async def _metadata(self, strategy, deadline, rejected_token=None):
@@ -199,6 +204,8 @@ class AsyncClusterManager:
                     self.last_successful_strategy = strategy
                     return response
                 except grpc.RpcError as error:
+                    if operation == 'resume' and error.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                        self._mutation.rejected()
                     if (error.code() == grpc.StatusCode.UNAUTHENTICATED and not refreshed
                             and self._metadata_provider is not None):
                         refreshed = True

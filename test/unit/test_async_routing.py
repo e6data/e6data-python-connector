@@ -79,6 +79,16 @@ class ResumeStateTests(unittest.TestCase):
         self.assertIsNone(state.pending)
         self.assertTrue(state.observe('suspended'))
 
+    def test_definitively_rejected_resume_allows_a_later_dispatch(self):
+        state = _ResumeState()
+        state.dispatched()
+        self.assertFalse(state.observe('suspended'))
+        state.rejected()
+        self.assertIsNone(state.pending)
+        self.assertTrue(state.observe('suspended'))
+        state.dispatched()
+        self.assertEqual(state.pending, 'unknown')
+
     def test_unsupported_states_fail_closed(self):
         for value in ('failed', 'ready', 'ACTIVE', '', None):
             with self.assertRaises(RuntimeError):
@@ -179,6 +189,23 @@ class FlightTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(manager._mutation.pending)
             finally:
                 await manager.close()
+                await manager.close()
+
+    async def test_status_transport_failure_keeps_prior_mutation_uncertainty(self):
+        import socket
+        from e6data_python_connector.exceptions import OperationalError
+
+        with socket.socket() as socket_guard:
+            socket_guard.bind(('127.0.0.1', 0))
+            manager = AsyncClusterManager('127.0.0.1', socket_guard.getsockname()[1],
+                                          user='unit', password='unit', timeout=.1)
+            manager._mutation.dispatched()
+            try:
+                with self.assertRaises(OperationalError):
+                    await manager.resume()
+                self.assertEqual(manager._mutation.pending, 'unknown')
+                self.assertFalse(manager._mutation.observe('suspended'))
+            finally:
                 await manager.close()
 
     async def test_cross_loop_misuse_and_closed_manager(self):
