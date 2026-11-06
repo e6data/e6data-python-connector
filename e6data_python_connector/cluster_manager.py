@@ -571,6 +571,8 @@ class ClusterManager:
                 except _InactiveRpcError as e:
                     if self._debug:
                         logger.error(f"Failed to send resume request: {e}")
+                    if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                        raise
                     return False
             elif current_status.status == 'active':
                 if self._debug:
